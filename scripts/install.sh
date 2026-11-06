@@ -87,6 +87,11 @@ else
     if [ -n "$SEN_ERROR" ]; then
       rm -rf "$SEN_DEST"
     else
+      if [ -f "$SEN_DEST/hooks.json" ]; then
+        sed 's|powershell\.exe -NoProfile -ExecutionPolicy Bypass -File scripts/guard\.ps1|bash scripts/guard.sh|g' \
+          "$SEN_DEST/hooks.json" > "$SEN_DEST/hooks.json.tmp" && mv -f "$SEN_DEST/hooks.json.tmp" "$SEN_DEST/hooks.json"
+      fi
+      chmod +x "$SEN_DEST/scripts/"*.sh 2>/dev/null || true
       printf '%s\n' "$SEN_COMMIT" > "$SEN_DEST/.sen-commit"
       SEN_STATUS="installed"
     fi

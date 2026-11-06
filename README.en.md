@@ -2,6 +2,8 @@
 
 # Sen
 
+[![Sen CI](https://github.com/developerfs0110/Sen/actions/workflows/ci.yml/badge.svg)](https://github.com/developerfs0110/Sen/actions/workflows/ci.yml)
+
 *"Calm, clear AI work."*
 
 ## What Sen Is
@@ -69,3 +71,4 @@ Mr Bòn Bon - tunbh.study@gmail.com
 (+84) 793.166.866 - (+84) 96.158.1163
 Donate: TPBank - 61.222.666.888
 ```
+

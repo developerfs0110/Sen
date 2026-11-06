@@ -1,0 +1,32 @@
+name: Sen CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-and-test:
+    name: Validate Repo & Run Test Suite
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate repository constraints (Validate-Repo.ps1)
+        shell: powershell
+        run: |
+          $errs = @(& .\scripts\Validate-Repo.ps1 -Root .)
+          if ($errs.Count -gt 0) {
+            $errs | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+          Write-Host "Validate-Repo.ps1 passed with 0 errors."
+
+      - name: Run automated test suite (tests/run.ps1)
+        shell: powershell
+        run: |
+          & .\tests\run.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+

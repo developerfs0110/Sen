@@ -284,12 +284,37 @@ Test "hooks.json and guard.ps1 are copied by Install-SenSelf and block destructi
             "rmdir /s /q build",
             "git clean -fd",
             "git branch -D feature-x",
-            "gh repo delete owner/repo"
+            "gh repo delete owner/repo",
+            "find /var/tmp -name '*.log' -delete",
+            "python -c `"import shutil; shutil.rmtree('dist')`"",
+            "psql -c 'DROP TABLE users;'",
+            "TRUNCATE TABLE orders"
         )) {
             $payload = @{ toolCall = @{ name = "run_command"; args = @{ CommandLine = $badCmd } } } | ConvertTo-Json -Compress
             $dec = Invoke-SenGuardPs1 -InputJson $payload
             Assert-Equal "deny" $dec.decision "must deny destructive command: $badCmd"
         }
+
+        # write_file / edit_file outside workspacePaths must be denied; inside workspacePaths allowed (ask)
+        $outsidePayload = @{
+            workspacePaths = @($ws)
+            toolCall = @{
+                name = "write_file"
+                args = @{ Path = "C:\Windows\System32\drivers\etc\hosts" }
+            }
+        } | ConvertTo-Json -Compress
+        $outsideDec = Invoke-SenGuardPs1 -InputJson $outsidePayload
+        Assert-Equal "deny" $outsideDec.decision "write_file outside workspacePaths must be denied"
+
+        $insidePayload = @{
+            workspacePaths = @($ws)
+            toolCall = @{
+                name = "edit_file"
+                args = @{ Path = (Join-Path $ws "Code\app.js") }
+            }
+        } | ConvertTo-Json -Compress
+        $insideDec = Invoke-SenGuardPs1 -InputJson $insidePayload
+        Assert-Equal "ask" $insideDec.decision "edit_file inside workspacePaths must return ask"
 
         # Safe commands must return decision = ask
         foreach ($goodCmd in @(

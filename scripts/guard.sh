@@ -21,27 +21,68 @@ if [ -z "$RAW" ]; then
   out_decision "ask" ""
 fi
 
-CMD=""
-if command -v jq >/dev/null 2>&1; then
-  CMD="$(printf '%s' "$RAW" | jq -r '.toolCall.args.CommandLine // empty' 2>/dev/null || true)"
-elif command -v python3 >/dev/null 2>&1; then
-  CMD="$(python3 -c 'import json,sys
-try:
-    d=json.loads(sys.stdin.read())
-    print(d.get("toolCall",{}).get("args",{}).get("CommandLine",""))
-except Exception:
-    pass' <<< "$RAW" 2>/dev/null || true)"
-else
-  CMD="$(printf '%s' "$RAW" | tr '\r\n' ' ' | sed -n 's/.*"CommandLine"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-fi
-
-if [ -z "$CMD" ]; then
-  out_decision "ask" ""
-fi
-
 deny() {
   out_decision "deny" "[SEN GUARD] Blocked: $1. If you truly need this command, run it manually in your terminal."
 }
+
+# Check write_file / edit_file workspace boundary via python3 when available
+if command -v python3 >/dev/null 2>&1; then
+  PY_CHECK="$(python3 -c '
+import json, os, sys
+try:
+    d = json.loads(sys.stdin.read())
+    tc = d.get("toolCall") or {}
+    tname = tc.get("name") or ""
+    args = tc.get("args") or {}
+    if tname in ("write_file", "edit_file"):
+        p = args.get("Path") or ""
+        ws_list = [w for w in (d.get("workspacePaths") or []) if w]
+        if p and ws_list:
+            rp = os.path.realpath(p)
+            inside = False
+            for w in ws_list:
+                rw = os.path.realpath(w)
+                if rp == rw or rp.startswith(rw + os.sep):
+                    inside = True
+                    break
+            home_gemini = os.path.realpath(os.path.expanduser("~/.gemini"))
+            if not inside and rp.startswith(home_gemini + os.sep):
+                inside = True
+            if not inside:
+                print("DENY_PATH:" + rp)
+                sys.exit(0)
+        print("SAFE_TOOL")
+        sys.exit(0)
+    print("CMD:" + (args.get("CommandLine") or ""))
+except Exception:
+    print("FALLBACK")
+' <<< "$RAW" 2>/dev/null || echo "FALLBACK")"
+
+  case "$PY_CHECK" in
+    DENY_PATH:*)
+      out_decision "deny" "[SEN GUARD] Blocked: file write outside active workspace (${PY_CHECK#DENY_PATH:})."
+      ;;
+    SAFE_TOOL)
+      out_decision "ask" ""
+      ;;
+    CMD:*)
+      CMD="${PY_CHECK#CMD:}"
+      ;;
+    *)
+      CMD=""
+      ;;
+  esac
+else
+  if command -v jq >/dev/null 2>&1; then
+    CMD="$(printf '%s' "$RAW" | jq -r '.toolCall.args.CommandLine // empty' 2>/dev/null || true)"
+  else
+    CMD="$(printf '%s' "$RAW" | tr '\r\n' ' ' | sed -n 's/.*"CommandLine"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fi
+fi
+
+if [ -z "${CMD:-}" ]; then
+  out_decision "ask" ""
+fi
 
 if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*r'; then
   deny "Recursive delete (rm -r / rm -rf)"
@@ -51,6 +92,15 @@ if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])(remove-item|ri)\b[^|;&]*[[:
 fi
 if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])(rd|rmdir|del|erase)\b[^|;&]*[[:space:]]/s\b'; then
   deny "Recursive delete (rd/del /s)"
+fi
+if printf '%s' "$CMD" | grep -Eiq '\bfind\b[^|;&]*[[:space:]]-delete\b'; then
+  deny "Recursive find -delete"
+fi
+if printf '%s' "$CMD" | grep -Eiq '\bshutil\.rmtree[[:space:]]*\('; then
+  deny "Python shutil.rmtree recursive delete"
+fi
+if printf '%s' "$CMD" | grep -Eiq '\b(drop[[:space:]]+(database|table|schema)|truncate[[:space:]]+table)\b'; then
+  deny "Destructive SQL (DROP / TRUNCATE)"
 fi
 if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])format(\.com)?[[:space:]]+[a-zA-Z]:'; then
   deny "Disk format command"
@@ -84,4 +134,3 @@ if printf '%s' "$CMD" | grep -Eq '\bgit\b[^|;&]*\bbranch\b[^|;&]*([[:space:]]-D\
 fi
 
 out_decision "ask" ""
-

@@ -9,8 +9,28 @@ Mọi thay đổi quan trọng của plugin **Sen** và lộ trình các phiên 
 
 | Version / Phiên bản | Codename / Tên gọi | Status / Trạng thái | Key Capabilities / Tính năng chính |
 |---|---|---|---|
-| **0.1.0** | **Sen Core** (Phần lõi) | **Released / Đã phát hành** (2026-11-06) | Always-on 3-tier core rule (`rules/AGENTS.md`), 7 `sen-*` skills (`sen-setup`, `sen-environment`, `sen-update`, `sen-onboarding`, `sen-delivery-report`, `sen-release-readiness`, `sen-skill-capture`), `PreToolUse` destructive-command guard hook (`hooks.json` + `guard.ps1`/`guard.sh`), zero-token weekly update checker (`sen.lock.json` + `sen-update-notice.md`), bilingual docs (`README.md`, `README.vi.md`, `docs/guide.md`, `docs/huong-dan.md`). |
-| **0.2.0** | **Sen Office** (`sen-office`) | **Planned / Kế hoạch tiếp theo** | 3D isometric virtual office monitor (browser tab), zero-token hook event telemetry + optional AI narrative layer, `Tắt / Tiết kiệm / Chi tiết` token-mode switch with warning modal, real-time clock & comms duration log, Boss on red sofa + female Tester avatar, and dual-phase domain output simulation (post-design & post-delivery). |
+| **0.1.0** | **Sen Core** (Phần lõi) | **Released / Đã phát hành** (2026-11-06) | Always-on 3-tier core rule (`rules/AGENTS.md`), 7 `sen-*` skills, `PreToolUse` destructive-command guard hook, zero-token weekly update checker (`sen.lock.json` + `sen-update-notice.md`), bilingual docs (`README.md`, `README.en.md`, `docs/huong-dan.md`, `docs/guide.md`). |
+| **0.1.1** | **Sen Core Hardening** (Gia cố bảo vệ & Đa nền tảng) | **Released / Đã phát hành** (2026-11-06) | System-level workspace write boundary guard (`write_file` / `edit_file` blocked outside workspace), expanded destructive SQL/Python/find patterns, native POSIX hook rewiring in `install.sh`, explicit risk-over-file-count rule in `rules/AGENTS.md`, official MIT `LICENSE`, and GitHub Actions CI (`ci.yml`). |
+| **0.2.0** | **Sen Office** (`sen-office`) | **Planned / Kế hoạch tiếp theo** | 3D isometric virtual office monitor (browser tab), zero-token hook event telemetry + `PostToolUse` evidence log + optional AI narrative layer, click-on-agent inspector, `Tắt / Tiết kiệm / Chi tiết` token-mode switch with warning modal, real-time clock & comms duration log, Boss on red sofa + female Tester avatar, and dual-phase domain output simulation (post-design & post-delivery). |
+
+---
+
+## [0.1.1] - 2026-11-06
+
+### Added & Hardened / Bổ sung & Gia cố (từ 3 bài đánh giá độc lập)
+
+- **EN:**
+  1. **System-level Workspace Write Boundary (`hooks.json`, `guard.ps1`, `guard.sh`):** Expanded `PreToolUse` matcher to `"run_command|write_file|edit_file"`. Any `write_file` or `edit_file` call targeting a path outside `workspacePaths` (and `~/.gemini`) is now hard-blocked (`decision: "deny"`) at the IDE hook level.
+  2. **Expanded Destructive Command Patterns:** Added blocks for `find ... -delete`, `shutil.rmtree(`, and `DROP DATABASE / TABLE / SCHEMA` or `TRUNCATE TABLE`.
+  3. **Cross-Platform Hook Wiring (`scripts/install.sh`):** On macOS/Linux, `install.sh` automatically rewrites `.agents/plugins/sen-method/hooks.json` to invoke `bash scripts/guard.sh` natively without requiring PowerShell.
+  4. **Explicit Risk-First Priority (`rules/AGENTS.md`):** Clarified in Section 2 that risk signals override file count (*"even a 1-file change touching DB, auth, payments, or data deletion is Tier 3"*), while keeping `rules/AGENTS.md` under the `<= 6,000` byte cap.
+  5. **Official MIT License & GitHub Actions CI:** Replaced placeholder `LICENSE` with full MIT License + Author block, added `.github/workflows/ci.yml` to run `Validate-Repo.ps1` and `tests/run.ps1` on every push/PR, and added CI status badge to all README files.
+- **VI:**
+  1. **Chặn cứng ghi file ngoài Workspace ở tầng Hook (`hooks.json`, `guard.ps1`, `guard.sh`):** Mở rộng matcher sang `"run_command|write_file|edit_file"`, tự động từ chối (`decision: "deny"`) mọi thao tác tạo/sửa file nằm ngoài thư mục workspace đang mở.
+  2. **Mở rộng mẫu lệnh nguy hiểm:** Chặn thêm `find ... -delete`, `shutil.rmtree(`, và các lệnh SQL xóa bảng/cơ sở dữ liệu (`DROP DATABASE/TABLE/SCHEMA`, `TRUNCATE TABLE`).
+  3. **Tự động chuyển Hook sang Bash trên macOS/Linux (`scripts/install.sh`):** Khi cài trên macOS/Linux, `install.sh` tự động cấu hình `hooks.json` chạy `bash scripts/guard.sh` mà không cần cài PowerShell.
+  4. **Quy tắc "Rủi ro ghi đè số lượng file" (`rules/AGENTS.md`):** Nêu rõ trong Mục 2: dù chỉ sửa 1 file nhưng chạm CSDL, xác thực, thanh toán hoặc xóa dữ liệu thì vẫn bắt buộc là Cấp 3 (giữ nguyên dung lượng `< 6.000` byte).
+  5. **Giấy phép MIT chính thức & GitHub Actions CI (`.github/workflows/ci.yml`):** Hoàn thiện file `LICENSE` chuẩn MIT kèm thông tin Tác giả và tự động chạy hơn 150 bài test trên GitHub Actions sau mỗi lần push.
 
 ---
 

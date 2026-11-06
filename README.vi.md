@@ -2,6 +2,8 @@
 
 # Sen
 
+[![Sen CI](https://github.com/developerfs0110/Sen/actions/workflows/ci.yml/badge.svg)](https://github.com/developerfs0110/Sen/actions/workflows/ci.yml)
+
 *"Sen: làm việc với đội AI một cách gọn, rõ, nhẹ."*
 
 ## Sen là gì
