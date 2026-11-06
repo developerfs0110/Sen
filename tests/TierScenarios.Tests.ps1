@@ -58,3 +58,4 @@ foreach ($row in $scenarioRows) {
         Assert-Equal $r.ExpectedTier $res.Tier "Scenario #$idx ('$($r.Request)') expected tier $($r.ExpectedTier) but got $($res.Tier) (reasons: $($res.Reasons -join '; '))"
     }
 }
+

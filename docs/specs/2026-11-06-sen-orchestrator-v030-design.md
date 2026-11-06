@@ -70,3 +70,4 @@ stateDiagram-v2
    - Thêm `Add-SenExecutionLesson`, `Get-SenExecutionLessons`, `Get-SenMemorySnapshot` vào `scripts/Sen.psm1`.
 10. **`TASK-10` (P2 — Chế độ Quy mô Dự án `Mini / Standard / Enterprise`, Cài nhanh `Express` & Đồng bộ `README`):**
     - Hỗ trợ `scale` trong `Get-SenOfficeConfig` / `Set-SenOfficeConfig`, thêm chế độ `Express Setup` trong `skills/sen-setup/SKILL.md`, đồng bộ `README.md` = `README.vi.md` và kiểm tra chống lệch trong `scripts/Validate-Repo.ps1`.
+
