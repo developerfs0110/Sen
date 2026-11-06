@@ -125,7 +125,7 @@ if ([string]::IsNullOrWhiteSpace($cmd)) {
 }
 
 # 2. Check Stuck Loop Breaker (3 consecutive identical failures on this command)
-if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (Join-Path $primaryWs ".agents/office/loops.json"))) {
+if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (Join-Path $primaryWs ".agents/office/stuck.json"))) {
     Import-SenRuntimeModule
     if (Get-Command Test-SenStuckLoop -ErrorAction SilentlyContinue) {
         try {
@@ -140,21 +140,21 @@ if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (
 
 # 3. Case-insensitive destructive command patterns for run_command
 $rules = @(
-    @{ re = '\brm\s+(-[a-z]*\s+)*-[a-z]*r';                                                                                                  why = 'Recursive delete (rm -r / rm -rf)' },
-    @{ re = '\b(remove-item|ri)\b[^|;&]*\s-r(ecurse)?\b';                                                                                    why = 'Recursive delete (Remove-Item -Recurse)' },
-    @{ re = '\b(rd|rmdir|del|erase)\b[^|;&]*\s/s\b';                                                                                         why = 'Recursive delete (rd/del /s)' },
-    @{ re = '\bfind\b[^|;&]*\s-delete\b';                                                                                                    why = 'Recursive find -delete' },
-    @{ re = '\bshutil\.rmtree\s*\(';                                                                                                         why = 'Python shutil.rmtree recursive delete' },
-    @{ re = '\b(drop\s+(database|table|schema)|truncate\s+table)\b';                                                                         why = 'Destructive SQL (DROP / TRUNCATE)' },
-    @{ re = '\bformat(\.com)?\s+[a-z]:';                                                                                                     why = 'Disk format command' },
-    @{ re = '\b(diskpart|clear-disk|format-volume|remove-partition|initialize-disk)\b';                                                      why = 'Disk or partition modification' },
+    @{ re = '\brm\s+(-[a-z]*\s+)*-[a-z]*r'; why = 'Recursive delete (rm -r / rm -rf)' },
+    @{ re = '\b(remove-item|ri)\b[^|;&]*\s-r(ecurse)?\b'; why = 'Recursive delete (Remove-Item -Recurse)' },
+    @{ re = '\b(rd|rmdir|del|erase)\b[^|;&]*\s/s\b'; why = 'Recursive delete (rd/del /s)' },
+    @{ re = '\bfind\b[^|;&]*\s-delete\b'; why = 'Recursive find -delete' },
+    @{ re = '\bshutil\.rmtree\s*\('; why = 'Python shutil.rmtree recursive delete' },
+    @{ re = '\b(drop\s+(database|table|schema)|truncate\s+table)\b'; why = 'Destructive SQL (DROP / TRUNCATE)' },
+    @{ re = '\bformat(\.com)?\s+[a-z]:'; why = 'Disk format command' },
+    @{ re = '\b(diskpart|clear-disk|format-volume|remove-partition|initialize-disk)\b'; why = 'Disk or partition modification' },
     @{ re = '\bgit\b[^|;&]*\bpush\b[^|;&]*(\s--force(-with-lease)?\b|\s-f\b|\s--delete\b|\s-d\b|\s--mirror\b|\s--no-verify\b|\s\+\S|\s:\S)'; why = 'Force push, remote branch delete, or hook bypass' },
-    @{ re = '\bgit\b[^|;&]*\breset\b[^|;&]*--hard';                                                                                          why = 'git reset --hard (discards uncommitted work)' },
-    @{ re = '\bgit\b[^|;&]*\bclean\b[^|;&]*\s-[a-z]*f';                                                                                      why = 'git clean -f (deletes untracked files)' },
-    @{ re = '\bgit\b[^|;&]*\b(checkout|restore)\b[^|;&]*\s(--\s+)?\.(\s|$)';                                                                 why = 'git checkout/restore . (discards working tree changes)' },
-    @{ re = '\bgit\b[^|;&]*\bstash\s+(drop|clear)\b';                                                                                        why = 'git stash drop/clear' },
-    @{ re = '\bgit\b[^|;&]*\b(filter-branch|filter-repo)\b';                                                                                 why = 'Git history rewrite' },
-    @{ re = '\bgh\s+repo\s+delete\b';                                                                                                        why = 'GitHub repository deletion' }
+    @{ re = '\bgit\b[^|;&]*\breset\b[^|;&]*--hard'; why = 'git reset --hard (discards uncommitted work)' },
+    @{ re = '\bgit\b[^|;&]*\bclean\b[^|;&]*\s-[a-z]*f'; why = 'git clean -f (deletes untracked files)' },
+    @{ re = '\bgit\b[^|;&]*\b(checkout|restore)\b[^|;&]*\s(--\s+)?\.(\s|$)'; why = 'git checkout/restore . (discards working tree changes)' },
+    @{ re = '\bgit\b[^|;&]*\bstash\s+(drop|clear)\b'; why = 'git stash drop/clear' },
+    @{ re = '\bgit\b[^|;&]*\b(filter-branch|filter-repo)\b'; why = 'Git history rewrite' },
+    @{ re = '\bgh\s+repo\s+delete\b'; why = 'GitHub repository deletion' }
 )
 
 foreach ($r in $rules) {
