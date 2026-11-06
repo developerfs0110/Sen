@@ -125,7 +125,7 @@ if ([string]::IsNullOrWhiteSpace($cmd)) {
 }
 
 # 2. Check Stuck Loop Breaker (3 consecutive identical failures on this command)
-if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (Join-Path $primaryWs ".agents/office/stuck.json"))) {
+if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (Join-Path $primaryWs ".agents/office/loops.json"))) {
     Import-SenRuntimeModule
     if (Get-Command Test-SenStuckLoop -ErrorAction SilentlyContinue) {
         try {
