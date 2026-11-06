@@ -153,8 +153,14 @@ function Remove-SenManagedBlock {
 
 function Build-SenHarnessBridgeText {
     param([string]$Workspace, [string]$HarnessId)
+    $pluginRulesPath = Join-Path -Path $Workspace -ChildPath ".agents/plugins/sen-method/rules/AGENTS.md"
     $rulesPath = Join-Path -Path $Workspace -ChildPath ".agents/rules/AGENTS.md"
-    if (-not (Test-Path -LiteralPath $rulesPath)) {
+    if (Test-Path -LiteralPath $pluginRulesPath) {
+        $pDir = [System.IO.Path]::GetDirectoryName($rulesPath)
+        if ($pDir -and -not (Test-Path -LiteralPath $pDir)) { [System.IO.Directory]::CreateDirectory($pDir) | Out-Null }
+        Copy-Item -LiteralPath $pluginRulesPath -Destination $rulesPath -Force
+    }
+    elseif (-not (Test-Path -LiteralPath $rulesPath)) {
         $rulesPath = Join-Path -Path $Workspace -ChildPath "rules/AGENTS.md"
     }
     $coreText = if (Test-Path -LiteralPath $rulesPath) { [System.IO.File]::ReadAllText($rulesPath, [System.Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
