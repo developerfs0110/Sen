@@ -748,7 +748,11 @@ function Install-SenSelf {
     if ($null -eq $Git) { $Git = Get-SenDefaultGit }
     $dest = Join-Path -Path $Workspace -ChildPath ".agents/plugins/sen-method"
     if (Test-Path -LiteralPath $dest) {
-        return [pscustomobject]@{ Status = "exists"; Error = $null }
+        $existingCommit = Get-SenGitCommit -Path $dest -Git $Git
+        if ($existingCommit -eq "unknown" -and (Test-Path -LiteralPath $Source)) {
+            $existingCommit = Get-SenGitCommit -Path $Source -Git $Git
+        }
+        return [pscustomobject]@{ Status = "exists"; Commit = $existingCommit; Error = $null }
     }
     $payload = @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "INSTALL.md", "LICENSE", "CHANGELOG.md")
     $tmpRoot = $null
@@ -759,26 +763,28 @@ function Install-SenSelf {
             $srcRoot = Join-Path $tmpRoot "src"
             $r = & $Git @("clone", "--depth", "1", "--quiet", $Source, $srcRoot)
             if ($r.ExitCode -ne 0) {
-                return [pscustomobject]@{ Status = "failed"; Error = "git clone failed for $Source (exit $($r.ExitCode)): $($r.Output)" }
+                return [pscustomobject]@{ Status = "failed"; Commit = $null; Error = "git clone failed for $Source (exit $($r.ExitCode)): $($r.Output)" }
             }
         }
         if (-not (Test-Path -LiteralPath (Join-Path $srcRoot "plugin.json"))) {
-            return [pscustomobject]@{ Status = "failed"; Error = "plugin.json not found in Sen source $Source" }
+            return [pscustomobject]@{ Status = "failed"; Commit = $null; Error = "plugin.json not found in Sen source $Source" }
         }
+        $commit = Get-SenGitCommit -Path $srcRoot -Git $Git
         [System.IO.Directory]::CreateDirectory($dest) | Out-Null
         foreach ($item in Get-ChildItem -LiteralPath $srcRoot -Force) {
             if (($payload -contains $item.Name) -or ($item.Name -like "README*")) {
                 Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $dest $item.Name) -Recurse -Force
             }
         }
-        return [pscustomobject]@{ Status = "installed"; Error = $null }
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", [System.Text.UTF8Encoding]::new($false))
+        return [pscustomobject]@{ Status = "installed"; Commit = $commit; Error = $null }
     }
     catch {
         $err = $_.Exception.Message
         if (Test-Path -LiteralPath $dest) {
             Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
         }
-        return [pscustomobject]@{ Status = "failed"; Error = $err }
+        return [pscustomobject]@{ Status = "failed"; Commit = $null; Error = $err }
     }
     finally {
         if ($tmpRoot -and (Test-Path -LiteralPath $tmpRoot)) {
@@ -1216,7 +1222,17 @@ function Update-SenPackages {
 
                 [System.IO.Directory]::CreateDirectory($dest) | Out-Null
                 $newDestCreated = $true
-                Copy-SenTree -Source $src -Destination $dest
+                if ($id -eq "sen-method") {
+                    $senPayload = @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "INSTALL.md", "LICENSE", "CHANGELOG.md")
+                    foreach ($item in Get-ChildItem -LiteralPath $src -Force) {
+                        if (($senPayload -contains $item.Name) -or ($item.Name -like "README*")) {
+                            Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $dest $item.Name) -Recurse -Force
+                        }
+                    }
+                }
+                else {
+                    Copy-SenTree -Source $src -Destination $dest
+                }
                 [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $newCommit + "`n", [System.Text.UTF8Encoding]::new($false))
 
                 # Success: remove .sen-old

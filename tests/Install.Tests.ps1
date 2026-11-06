@@ -307,6 +307,11 @@ Test "hooks.json and guard.ps1 are copied by Install-SenSelf and block destructi
         # Malformed JSON falls back to ask safely
         $badJsonDec = Invoke-SenGuardPs1 -InputJson "{not valid json"
         Assert-Equal "ask" $badJsonDec.decision "malformed json falls back to ask"
+
+        # sen-method itself is recorded in sen.lock.json and .sen-commit
+        $lock = Read-SenLock -Workspace $ws
+        Assert-True ($lock.packages.ContainsKey("sen-method")) "sen-method recorded in sen.lock.json"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method/.sen-commit")) "sen-method .sen-commit written"
     } finally { Remove-InstallTempDir (Split-Path $ws -Parent) }
 }
 

@@ -37,6 +37,7 @@ try {
     if ($Git) { $senArgs.Git = $Git }
     $sen = Install-SenSelf @senArgs
     $result.sen = [ordered]@{ status = $sen.Status }
+    if ($sen.Commit) { $result.sen.commit = $sen.Commit }
     if ($sen.Error) { $result.sen.error = $sen.Error }
     if ($sen.Status -eq "failed") { $ok = $false }
 
@@ -46,6 +47,14 @@ try {
     $packages = Get-Content -LiteralPath (Join-Path $PSScriptRoot "packages.json") -Raw | ConvertFrom-Json
     $lock = Read-SenLock -Workspace $Workspace
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    if ($sen.Status -ne "failed") {
+        $oldSen = $lock.packages["sen-method"]
+        if (-not ($sen.Status -eq "exists" -and $oldSen -is [hashtable] -and $oldSen.commit)) {
+            $senCommit = if ($sen.Commit) { $sen.Commit } else { "unknown" }
+            $senRepoUrl = if ($SenSource -match '^(https?://|git@)') { $SenSource } else { "https://github.com/<owner>/sen-method.git" }
+            $lock.packages["sen-method"] = [ordered]@{ repo = $senRepoUrl; subPath = ""; commit = $senCommit; installedAt = $now }
+        }
+    }
     $pkgResults = @()
     $requiredOk = $true
 

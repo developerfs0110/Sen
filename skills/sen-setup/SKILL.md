@@ -12,6 +12,21 @@ description: Guided 9-step installer that sets up a Sen workspace, companion pac
 
 ---
 
+## Step 0: Show Visual Setup Roadmap & Permission Preview First
+Before running any installation command, **always display a short 4-stage visual roadmap** in the user's language so beginners (even on a brand-new Antigravity IDE with zero pre-granted permissions) know exactly what will happen, when the Safety Shield is activated, and why the IDE asks them to click **Run / Allow**:
+
+```mermaid
+flowchart LR
+  S1["Stage 1 (Steps 1-3)\nCheck Tools & Pick Drive"] --> S2["Stage 2 (Steps 4-5)\nActivate Guard Hook + Install Sen"]
+  S2 --> S3["Stage 3 (Steps 6-8)\nProfile & Weekly Auto-Update"]
+  S3 --> S4["Stage 4 (Step 9)\nOpen Workspace & 3-Tier Tour"]
+```
+
+- **Explain IDE permission prompts in 2 lines:** Tell the user that on a fresh Antigravity install, the IDE will show a **Run / Allow** button before each PowerShell/Bash command. They do not need to pre-configure any permissions; simply click **Allow** when prompted.
+- **Highlight when the Safety Shield turns on:** Point out that in **Stage 2 (Step 4)**, Sen installs a **2-layer Safety Shield** (`hooks.json` + `scripts/guard.ps1`/`guard.sh` hard-blocking `git push --force`, `git reset --hard`, and recursive deletes `rm -rf` / `Remove-Item -Recurse`, plus `.agents/rules/safety.md` confining file access to the workspace).
+
+---
+
 ## The 9-Step Setup Flow
 
 ### Step 1: Check `git` and `node` (`Get-SenToolStatus`)

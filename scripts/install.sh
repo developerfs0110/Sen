@@ -47,8 +47,15 @@ done
 SEN_DEST="$WORKSPACE/.agents/plugins/sen-method"
 SEN_STATUS="failed"
 SEN_ERROR=""
+SEN_COMMIT="unknown"
 if [ -e "$SEN_DEST" ]; then
   SEN_STATUS="exists"
+  if [ -f "$SEN_DEST/.sen-commit" ]; then
+    SEN_COMMIT="$(tr -d '\r\n ' < "$SEN_DEST/.sen-commit")"
+    [ -z "$SEN_COMMIT" ] && SEN_COMMIT="unknown"
+  elif [ -d "$SEN_SOURCE/.git" ]; then
+    SEN_COMMIT="$(git -C "$SEN_SOURCE" rev-parse HEAD 2>/dev/null || echo unknown)"
+  fi
 else
   SRC="$SEN_SOURCE"
   if [ ! -d "$SRC" ]; then
@@ -61,6 +68,12 @@ else
     SEN_ERROR="plugin.json not found in Sen source $SEN_SOURCE"
   fi
   if [ -z "$SEN_ERROR" ]; then
+    if [ -d "$SRC/.git" ]; then
+      SEN_COMMIT="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
+    elif [ -f "$SRC/.sen-commit" ]; then
+      SEN_COMMIT="$(tr -d '\r\n ' < "$SRC/.sen-commit")"
+      [ -z "$SEN_COMMIT" ] && SEN_COMMIT="unknown"
+    fi
     mkdir -p "$SEN_DEST"
     for item in plugin.json hooks.json rules skills templates scripts INSTALL.md LICENSE CHANGELOG.md "$SRC"/README*; do
       name="$(basename "$item")"
@@ -74,6 +87,7 @@ else
     if [ -n "$SEN_ERROR" ]; then
       rm -rf "$SEN_DEST"
     else
+      printf '%s\n' "$SEN_COMMIT" > "$SEN_DEST/.sen-commit"
       SEN_STATUS="installed"
     fi
   fi
@@ -106,6 +120,16 @@ old_entry() {
 old_commit() {
   old_entry "$1" | sed -n "s/^ *\"$1\":{.*\"commit\":\"\([^\"]*\)\".*/\1/p"
 }
+
+if [ "$SEN_STATUS" != "failed" ]; then
+  if ! { [ "$SEN_STATUS" = "exists" ] && [ -n "$(old_commit "sen-method")" ]; }; then
+    SEN_REPO_URL="https://github.com/<owner>/sen-method.git"
+    case "$SEN_SOURCE" in http://*|https://*|git@*) SEN_REPO_URL="$SEN_SOURCE" ;; esac
+    sen_entry="\"sen-method\":{\"repo\":\"$(json_escape "$SEN_REPO_URL")\",\"subPath\":\"\",\"commit\":\"$(json_escape "$SEN_COMMIT")\",\"installedAt\":\"$NOW\"}"
+    NEW_ENTRIES="$sen_entry"
+    NEW_IDS=" sen-method "
+  fi
+fi
 
 install_pkg() {
   id="$1"; repo="$2"; sub="$3"; dest="$WORKSPACE/$4"

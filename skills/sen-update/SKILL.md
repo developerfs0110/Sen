@@ -59,6 +59,7 @@ What `Update-SenPackages` does automatically for each package:
 - Creates an atomic backup of the current version in `<WORKSPACE>/.agents/.sen-backup/<id>-<commit>-<timestamp>/`.
 - Clones the latest upstream commit and swaps the destination directory safely via sibling rename (`.sen-old`), automatically restoring the live directory if cloning or copying fails.
 - Updates `<WORKSPACE>/.agents/sen.lock.json` and `.sen-commit` with the new commit hash and timestamp.
+- When `sen-method` itself is updated, read `<WORKSPACE>/.agents/plugins/sen-method/CHANGELOG.md` and summarize the latest version highlights + roadmap for the user in their language.
 
 ---
 

@@ -32,8 +32,16 @@ Before starting the tour, verify that the current workspace `<WORKSPACE>` is pro
 
 ---
 
-### Step 2: Introduce the 3 Tiers with Real Workspace Examples
-Greet the user by name (from `profile.md`) and explain that every work request in a Sen workspace is **automatically classified into 3 Tiers**, shown in the very first line of the AI's reply. Ground your examples in the actual folders present in their workspace (`Code/`, `docs/`, `Templates/`):
+### Step 2: Introduce the 3 Tiers & Workflow Diagram with Real Workspace Examples
+Greet the user by name (from `profile.md`), confirm that the **2-layer Safety Shield** (`hooks.json` PreToolUse Guard + `safety.md`) is active, and show them the visual flow of how Sen handles every request in their workspace (`Code/`, `docs/`, `Templates/`):
+
+```mermaid
+flowchart LR
+  Req["Your Request"] --> Classify{"Auto Tier Label"}
+  Classify -->|"Small fix (1-2 files)"| T1["[Tier 1]\nDo it now + Verify"]
+  Classify -->|"Feature / 3+ files"| T2["[Tier 2]\nConfirm once -> Execute"]
+  Classify -->|"New app / DB / Auth"| T3["[Tier 3]\nDesign & Plan -> AI Team -> Gates"]
+```
 
 | Tier | Label (VI / EN) | Concrete Example in This Workspace | What You Do |
 |---|---|---|---|
