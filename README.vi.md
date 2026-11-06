@@ -48,7 +48,7 @@ flowchart LR
 1. **Cài Antigravity IDE:** Tải và mở Antigravity IDE trên máy của bạn.
 2. **Dán một câu cài đặt vào khung chat của Antigravity:**
    ```text
-   Hãy đọc https://github.com/<owner>/sen-method/blob/main/INSTALL.md và cài Sen cho tôi.
+   Hãy đọc https://github.com/developerfs0110/Sen/blob/main/INSTALL.md và cài Sen cho tôi.
    ```
 3. **Làm theo hướng dẫn trên màn hình:** Chọn ổ đĩa đặt workspace, trả lời 4 câu ngắn để tạo hồ sơ cá nhân (`profile.md`), rồi gõ `"hướng dẫn tôi"` để trải nghiệm việc Cấp 1 đầu tiên.
 

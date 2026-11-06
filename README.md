@@ -48,7 +48,7 @@ flowchart LR
 1. **Install Antigravity IDE:** Download and open Antigravity IDE on your computer.
 2. **Paste this one-line prompt into the Antigravity chat:**
    ```text
-   Please read https://github.com/<owner>/sen-method/blob/main/INSTALL.md and install Sen for me.
+   Please read https://github.com/developerfs0110/Sen/blob/main/INSTALL.md and install Sen for me.
    ```
 3. **Follow the guided setup:** Pick a drive for your workspace, answer 4 quick questions to create your `profile.md`, and type `"onboard me"` to try your first Tier 1 task.
 

@@ -124,7 +124,7 @@ Test "Both READMEs contain verbatim slogan, 5 principles, Mermaid diagram, offic
     foreach ($txt in @($enText, $viText)) {
         Assert-True ($txt.Contains('```mermaid')) "README must contain a Mermaid diagram"
         Assert-True ($txt.Contains('<!-- office screenshot: added with sen-office -->')) "README must contain office screenshot HTML comment"
-        Assert-True ($txt.Contains('<owner>/sen-method')) "README must contain <owner>/sen-method install URL"
+        Assert-True ($txt.Contains('developerfs0110/Sen')) "README must contain developerfs0110/Sen install URL"
         Assert-True ($txt.Contains('superpowers') -and $txt.Contains('Jesse Vincent') -and $txt.Contains('MIT')) "README must credit superpowers (Jesse Vincent, MIT)"
         Assert-True ($txt.Contains('security-audit') -and $txt.Contains('Cloudflare') -and $txt.Contains('MIT')) "README must credit security-audit (Cloudflare, MIT)"
         Assert-True ($txt.Contains('vn-law-check') -and $txt.Contains('vn-web-compliance-audit') -and $txt.Contains('MIT')) "README must credit vn-law-check (Contributors to vn-web-compliance-audit, MIT)"
@@ -155,9 +155,9 @@ Test "docs/huong-dan.md and docs/guide.md have 9 sections per Spec 10.2, tier-sc
         Assert-True ($enH2[$i - 1].StartsWith("$i.")) "docs/guide.md heading #$i must start with '$i.'"
     }
 
-    # Check <owner>/sen-method placeholder and ZIP installation mention
-    Assert-True ($viText.Contains('<owner>/sen-method')) "docs/huong-dan.md must use <owner>/sen-method"
-    Assert-True ($enText.Contains('<owner>/sen-method')) "docs/guide.md must use <owner>/sen-method"
+    # Check developerfs0110/Sen URL and ZIP installation mention
+    Assert-True ($viText.Contains('developerfs0110/Sen')) "docs/huong-dan.md must use developerfs0110/Sen"
+    Assert-True ($enText.Contains('developerfs0110/Sen')) "docs/guide.md must use developerfs0110/Sen"
     Assert-True ($viText -match '(?i)\.zip') "docs/huong-dan.md must cover ZIP download"
     Assert-True ($enText -match '(?i)\.zip') "docs/guide.md must cover ZIP download"
 

@@ -93,10 +93,10 @@ Test "INSTALL.md exists at repository root" {
     Assert-True (Test-Path -LiteralPath $installMdPath) "INSTALL.md must exist at repo root"
 }
 
-Test "INSTALL.md contains <owner>/sen-method and sen-setup" {
+Test "INSTALL.md contains developerfs0110/Sen and sen-setup" {
     Assert-True (Test-Path -LiteralPath $installMdPath) "INSTALL.md must exist"
     $text = Get-Utf8Text -Path $installMdPath
-    Assert-True ($text.Contains("<owner>/sen-method")) "INSTALL.md must contain '<owner>/sen-method'"
+    Assert-True ($text.Contains("developerfs0110/Sen")) "INSTALL.md must contain 'developerfs0110/Sen'"
     Assert-True ($text.Contains("sen-setup")) "INSTALL.md must contain 'sen-setup'"
 }
 

@@ -56,3 +56,4 @@ if ($cmd -cmatch '\bgit\b[^|;&]*\bbranch\b[^|;&]*(\s-D\b|--delete\s+--force|--fo
 }
 
 Out-Decision "ask" $null
+

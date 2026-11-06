@@ -3,11 +3,11 @@
 > **Audience:** AI coding agents running inside Antigravity IDE.
 > **Language rule:** Converse with the user in the language they used to prompt you (Vietnamese if they wrote in Vietnamese, English otherwise).
 
-When a user asks you to install **Sen** from `https://github.com/<owner>/sen-method` (or a fork/mirror URL they provided), follow these exact bootstrap steps:
+When a user asks you to install **Sen** from `https://github.com/developerfs0110/Sen` (or a fork/mirror URL they provided), follow these exact bootstrap steps:
 
 ## 1. Determine the Repository URL
 - If the user provided a concrete repository URL in their prompt, use that URL.
-- Otherwise, use `https://github.com/<owner>/sen-method.git` (replacing `<owner>` with the repository owner from the URL you fetched this `INSTALL.md` from).
+- Otherwise, use `https://github.com/developerfs0110/Sen.git` (or replace `developerfs0110/Sen` with the fork URL you fetched this `INSTALL.md` from).
 
 ## 2. Fetch Sen into a Temporary Directory
 Create a clean temporary directory on the user's machine and download the repository into it:
@@ -16,12 +16,12 @@ Create a clean temporary directory on the user's machine and download the reposi
 - **Windows (PowerShell):**
   ```powershell
   $senTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("sen-install-" + [System.Guid]::NewGuid().ToString("N"))
-  git clone --depth 1 https://github.com/<owner>/sen-method.git "$senTemp"
+  git clone --depth 1 https://github.com/developerfs0110/Sen.git "$senTemp"
   ```
 - **macOS / Linux (Bash):**
   ```bash
   SEN_TEMP="$(mktemp -d 2>/dev/null || mktemp -d -t sen-install)"
-  git clone --depth 1 https://github.com/<owner>/sen-method.git "$SEN_TEMP"
+  git clone --depth 1 https://github.com/developerfs0110/Sen.git "$SEN_TEMP"
   ```
 
 ### Option B: `git` is NOT installed yet (ZIP fallback)
@@ -30,7 +30,7 @@ Download and extract the repository archive so you can read `skills/sen-setup/SK
   ```powershell
   $senTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("sen-install-" + [System.Guid]::NewGuid().ToString("N"))
   $zipPath = "$senTemp.zip"
-  Invoke-WebRequest -Uri "https://github.com/<owner>/sen-method/archive/refs/heads/main.zip" -OutFile $zipPath
+  Invoke-WebRequest -Uri "https://github.com/developerfs0110/Sen/archive/refs/heads/main.zip" -OutFile $zipPath
   Expand-Archive -LiteralPath $zipPath -DestinationPath $senTemp -Force
   Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
   $senTemp = (Get-ChildItem -LiteralPath $senTemp -Directory | Select-Object -First 1).FullName
@@ -38,7 +38,7 @@ Download and extract the repository archive so you can read `skills/sen-setup/SK
 - **macOS / Linux (Bash):**
   ```bash
   SEN_TEMP="$(mktemp -d 2>/dev/null || mktemp -d -t sen-install)"
-  curl -fsSL "https://github.com/<owner>/sen-method/archive/refs/heads/main.zip" -o "$SEN_TEMP/sen.zip"
+  curl -fsSL "https://github.com/developerfs0110/Sen/archive/refs/heads/main.zip" -o "$SEN_TEMP/sen.zip"
   unzip -q "$SEN_TEMP/sen.zip" -d "$SEN_TEMP"
   rm -f "$SEN_TEMP/sen.zip"
   SEN_TEMP="$(find "$SEN_TEMP" -mindepth 1 -maxdepth 1 -type d | head -n 1)"

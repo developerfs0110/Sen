@@ -28,10 +28,8 @@ Tài liệu này dành cho bất kỳ ai muốn làm việc cùng AI một cách
 Mở khung chat của Antigravity và dán nguyên văn câu sau:
 
 ```text
-Hãy đọc https://github.com/<owner>/sen-method/blob/main/INSTALL.md và cài Sen cho tôi.
+Hãy đọc https://github.com/developerfs0110/Sen/blob/main/INSTALL.md và cài Sen cho tôi.
 ```
-
-*(Thay `<owner>` bằng tên tài khoản GitHub chứa repo `sen-method` mà bạn được chia sẻ.)*
 
 AI sẽ tự động đọc chỉ dẫn trong `INSTALL.md` và dẫn bạn qua quy trình cài đặt 9 bước của `sen-setup`:
 1. **Kiểm tra công cụ:** AI kiểm tra máy đã có `git` chưa. Nếu chưa có, AI hỏi ý kiến bạn để cài tự động qua `winget` (Windows) hoặc `brew` (macOS). *(Lưu ý: `Node.js` chỉ cần cho văn phòng giám sát 3D `sen-office` sau này, chưa bắt buộc cho phần lõi Sen).*
@@ -45,11 +43,11 @@ AI sẽ tự động đọc chỉ dẫn trong `INSTALL.md` và dẫn bạn qua q
 ### Cách B: Tải file `.zip` thủ công (Dành cho máy chưa có Git hoặc mạng chặn Git)
 Nếu bạn không muốn dùng lệnh Git ngay từ đầu, bạn có thể tải file nén `.zip`:
 1. Mở trình duyệt web và truy cập địa chỉ:
-   `https://github.com/<owner>/sen-method/archive/refs/heads/main.zip`
-2. Giải nén file `.zip` vừa tải về vào một thư mục tạm trên máy (ví dụ `D:\sen-method-main`).
+   `https://github.com/developerfs0110/Sen/archive/refs/heads/main.zip`
+2. Giải nén file `.zip` vừa tải về vào một thư mục tạm trên máy (ví dụ `D:\Sen-main`).
 3. Mở Antigravity IDE, gõ vào khung chat:
    ```text
-   Hãy đọc file D:\sen-method-main\INSTALL.md và cài Sen từ thư mục D:\sen-method-main cho tôi.
+   Hãy đọc file D:\Sen-main\INSTALL.md và cài Sen từ thư mục D:\Sen-main cho tôi.
    ```
 4. AI sẽ dùng ngay bản giải nén trên máy của bạn và chạy tiếp các bước thiết lập Workspace như Cách A.
 

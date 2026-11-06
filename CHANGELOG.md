@@ -35,7 +35,6 @@ Mọi thay đổi quan trọng của plugin **Sen** và lộ trình các phiên 
   - `sen-delivery-report`: Evidence-backed acceptance report generator (`report.template.md`) + `docs/CONTEXT.md` checkpointing.
   - `sen-release-readiness`: Parallel 8-domain pre-release audit (`security-audit`, `vn-law-check`, plus 6 checklists under `checklists/`).
   - `sen-skill-capture`: Captures repeated workflows into workspace-local skills (`.agents/skills/<name>/`).
-  *(TODO: replace `<owner>` placeholder in `INSTALL.md`, `scripts/packages.json`, and guides once the public GitHub repository URL is finalized).*
 - **VI:** File khởi chạy `INSTALL.md` cho AI và 7 skill `sen-*` (`sen-setup` kèm bản đồ lộ trình 4 chặng cho người mới, `sen-onboarding`, `sen-environment`, `sen-update`, `sen-delivery-report`, `sen-release-readiness` kèm 6 bộ checklist, và `sen-skill-capture`).
 
 #### 4. Installer, Lockfile & Zero-Token Weekly Update Check / Bộ cài đặt, Khóa phiên bản & Kiểm tra cập nhật 0-Token

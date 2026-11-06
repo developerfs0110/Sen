@@ -84,3 +84,4 @@ if printf '%s' "$CMD" | grep -Eq '\bgit\b[^|;&]*\bbranch\b[^|;&]*([[:space:]]-D\
 fi
 
 out_decision "ask" ""
+

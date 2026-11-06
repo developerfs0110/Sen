@@ -51,7 +51,7 @@ try {
         $oldSen = $lock.packages["sen-method"]
         if (-not ($sen.Status -eq "exists" -and $oldSen -is [hashtable] -and $oldSen.commit)) {
             $senCommit = if ($sen.Commit) { $sen.Commit } else { "unknown" }
-            $senRepoUrl = if ($SenSource -match '^(https?://|git@)') { $SenSource } else { "https://github.com/<owner>/sen-method.git" }
+            $senRepoUrl = if ($SenSource -match '^(https?://|git@)') { $SenSource } else { "https://github.com/developerfs0110/Sen.git" }
             $lock.packages["sen-method"] = [ordered]@{ repo = $senRepoUrl; subPath = ""; commit = $senCommit; installedAt = $now }
         }
     }

@@ -28,10 +28,8 @@ This guide is written for anyone who wants to work with AI calmly, safely, and c
 Open the Antigravity chat panel and paste this single sentence:
 
 ```text
-Please read https://github.com/<owner>/sen-method/blob/main/INSTALL.md and install Sen for me.
+Please read https://github.com/developerfs0110/Sen/blob/main/INSTALL.md and install Sen for me.
 ```
-
-*(Replace `<owner>` with the GitHub username or organization hosting the `sen-method` repository.)*
 
 The AI will read `INSTALL.md` and walk you through the 9-step `sen-setup` flow:
 1. **Tool check:** The AI checks whether `git` is installed. If missing, it asks your permission to install it via `winget` (Windows) or `brew` (macOS). *(Note: `Node.js` is only needed later for the `sen-office` 3D monitor and is not required for core Sen).*
@@ -45,11 +43,11 @@ The AI will read `INSTALL.md` and walk you through the 9-step `sen-setup` flow:
 ### Method B: Manual `.zip` Download (For Users Without Git)
 If your computer does not have Git yet or you prefer downloading a `.zip` file first:
 1. Open your browser and download the archive:
-   `https://github.com/<owner>/sen-method/archive/refs/heads/main.zip`
-2. Extract the `.zip` file to a temporary folder (for example, `D:\sen-method-main`).
+   `https://github.com/developerfs0110/Sen/archive/refs/heads/main.zip`
+2. Extract the `.zip` file to a temporary folder (for example, `D:\Sen-main`).
 3. Open Antigravity IDE and paste into the chat:
    ```text
-   Please read D:\sen-method-main\INSTALL.md and install Sen from D:\sen-method-main for me.
+   Please read D:\Sen-main\INSTALL.md and install Sen from D:\Sen-main for me.
    ```
 4. The AI will read the extracted folder on your computer and guide you through the same interactive workspace setup as Method A.
 

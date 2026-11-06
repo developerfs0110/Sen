@@ -1,2 +1,4 @@
-﻿.superpowers/
-
+.superpowers/
+.sen-backup/
+clone/
+*.tmp

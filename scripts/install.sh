@@ -123,7 +123,7 @@ old_commit() {
 
 if [ "$SEN_STATUS" != "failed" ]; then
   if ! { [ "$SEN_STATUS" = "exists" ] && [ -n "$(old_commit "sen-method")" ]; }; then
-    SEN_REPO_URL="https://github.com/<owner>/sen-method.git"
+    SEN_REPO_URL="https://github.com/developerfs0110/Sen.git"
     case "$SEN_SOURCE" in http://*|https://*|git@*) SEN_REPO_URL="$SEN_SOURCE" ;; esac
     sen_entry="\"sen-method\":{\"repo\":\"$(json_escape "$SEN_REPO_URL")\",\"subPath\":\"\",\"commit\":\"$(json_escape "$SEN_COMMIT")\",\"installedAt\":\"$NOW\"}"
     NEW_ENTRIES="$sen_entry"
