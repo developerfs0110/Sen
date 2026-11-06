@@ -1,0 +1,23 @@
+[
+  {
+    "id": "superpowers",
+    "repo": "https://github.com/obra/superpowers.git",
+    "subPath": "",
+    "dest": ".agents/plugins/superpowers",
+    "required": true
+  },
+  {
+    "id": "security-audit",
+    "repo": "https://github.com/cloudflare/security-audit-skill.git",
+    "subPath": "skills/security-audit",
+    "dest": ".agents/skills/security-audit",
+    "required": true
+  },
+  {
+    "id": "vn-law-check",
+    "repo": "https://github.com/mhfed/vn-law-check.git",
+    "subPath": "plugins/vn-law-check/skills/vn-law-check",
+    "dest": ".agents/skills/vn-law-check",
+    "required": false
+  }
+]

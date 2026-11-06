@@ -1,0 +1,12 @@
+{
+  "lockVersion": 1,
+  "packages": {
+    "superpowers": {
+      "repo": "https://github.com/obra/superpowers.git",
+      "subPath": "",
+      "commit": "<git commit sha>",
+      "installedAt": "<ISO 8601 UTC timestamp>"
+    }
+  },
+  "lastUpdateCheck": null
+}

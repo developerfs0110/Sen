@@ -559,4 +559,226 @@ function Get-SenInstallPlan {
     return ,@($planItems.ToArray())
 }
 
-Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan
+function Get-SenLockPath {
+    param([string]$Workspace)
+    return (Join-Path -Path (Join-Path -Path $Workspace -ChildPath ".agents") -ChildPath "sen.lock.json")
+}
+
+function ConvertTo-SenHashtable {
+    param($InputObject)
+    if ($null -eq $InputObject) { return $null }
+    if ($InputObject -is [System.Management.Automation.PSCustomObject]) {
+        $h = @{}
+        foreach ($p in $InputObject.PSObject.Properties) {
+            $h[$p.Name] = ConvertTo-SenHashtable -InputObject $p.Value
+        }
+        return $h
+    }
+    if ($InputObject -is [System.Collections.IEnumerable] -and $InputObject -isnot [string]) {
+        return ,@($InputObject | ForEach-Object { ConvertTo-SenHashtable -InputObject $_ })
+    }
+    return $InputObject
+}
+
+function Read-SenLock {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace
+    )
+    $lockPath = Get-SenLockPath -Workspace $Workspace
+    $lock = @{ lockVersion = 1; packages = @{}; lastUpdateCheck = $null }
+    if (-not (Test-Path -LiteralPath $lockPath)) { return $lock }
+    $raw = [System.IO.File]::ReadAllText($lockPath, [System.Text.Encoding]::UTF8)
+    $parsed = ConvertTo-SenHashtable -InputObject (ConvertFrom-Json -InputObject $raw)
+    if ($parsed -is [hashtable]) {
+        foreach ($k in $parsed.Keys) { $lock[$k] = $parsed[$k] }
+    }
+    if ($lock.packages -isnot [hashtable]) { $lock.packages = @{} }
+    return $lock
+}
+
+function Write-SenLock {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Lock
+    )
+    $lockPath = Get-SenLockPath -Workspace $Workspace
+    $dir = [System.IO.Path]::GetDirectoryName($lockPath)
+    if (-not (Test-Path -LiteralPath $dir)) {
+        [System.IO.Directory]::CreateDirectory($dir) | Out-Null
+    }
+    $json = ConvertTo-Json -InputObject $Lock -Depth 10
+    $tmp = $lockPath + "." + [System.Guid]::NewGuid().ToString("N") + ".tmp"
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($tmp, $json, $utf8NoBom)
+    try {
+        if (Test-Path -LiteralPath $lockPath) {
+            [System.IO.File]::Replace($tmp, $lockPath, [NullString]::Value)
+        }
+        else {
+            [System.IO.File]::Move($tmp, $lockPath)
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tmp) {
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Get-SenDefaultGit {
+    return {
+        param([string[]]$GitArgs)
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            $out = & git @GitArgs 2>&1 | ForEach-Object { "$_" }
+            $code = $LASTEXITCODE
+        }
+        catch {
+            $out = $_.Exception.Message
+            $code = 1
+        }
+        finally {
+            $ErrorActionPreference = $prev
+        }
+        return [pscustomobject]@{ ExitCode = $code; Output = (@($out) -join "`n").Trim() }
+    }
+}
+
+function New-SenTempDir {
+    $p = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("sen-" + [System.Guid]::NewGuid().ToString("N").Substring(0, 12))
+    [System.IO.Directory]::CreateDirectory($p) | Out-Null
+    return $p
+}
+
+function Copy-SenTree {
+    # Copies the contents of $Source into $Destination, skipping top-level names in $Exclude.
+    param([string]$Source, [string]$Destination, [string[]]$Exclude = @(".git"))
+    [System.IO.Directory]::CreateDirectory($Destination) | Out-Null
+    foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
+        if ($Exclude -contains $item.Name) { continue }
+        Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $Destination $item.Name) -Recurse -Force
+    }
+}
+
+function Get-SenGitCommit {
+    param([string]$Path, [scriptblock]$Git)
+    $r = & $Git @("-C", $Path, "rev-parse", "HEAD")
+    if ($r.ExitCode -eq 0 -and $r.Output) { return ([string]$r.Output).Trim() }
+    return "unknown"
+}
+
+function Install-SenPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        $Package,
+        [scriptblock]$Git = $null
+    )
+    if ($null -eq $Git) { $Git = Get-SenDefaultGit }
+    $id = [string]$Package.id
+    $dest = Join-Path -Path $Workspace -ChildPath ([string]$Package.dest)
+
+    if (Test-Path -LiteralPath $dest) {
+        $commit = "unknown"
+        if (Test-Path -LiteralPath (Join-Path $dest ".git")) {
+            $commit = Get-SenGitCommit -Path $dest -Git $Git
+        }
+        return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "exists"; Error = $null }
+    }
+
+    $tmpRoot = New-SenTempDir
+    $clone = Join-Path $tmpRoot "src"
+    try {
+        $r = & $Git @("clone", "--depth", "1", "--quiet", [string]$Package.repo, $clone)
+        if ($r.ExitCode -ne 0) {
+            $msg = "git clone failed for $($Package.repo) (exit $($r.ExitCode))"
+            if ($r.Output) { $msg += ": " + $r.Output }
+            return [pscustomobject]@{ Id = $id; Commit = $null; Status = "failed"; Error = $msg }
+        }
+        $commit = Get-SenGitCommit -Path $clone -Git $Git
+        $src = $clone
+        if (-not [string]::IsNullOrEmpty([string]$Package.subPath)) {
+            $src = Join-Path $clone ([string]$Package.subPath)
+        }
+        if (-not (Test-Path -LiteralPath $src)) {
+            return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "failed"; Error = "subPath '$($Package.subPath)' not found in $($Package.repo)" }
+        }
+        try {
+            Copy-SenTree -Source $src -Destination $dest
+        }
+        catch {
+            if (Test-Path -LiteralPath $dest) {
+                Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "failed"; Error = "copy failed: $($_.Exception.Message)" }
+        }
+        return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "installed"; Error = $null }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tmpRoot) {
+            Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Install-SenSelf {
+    # Places the Sen plugin payload from a local folder or git URL into .agents/plugins/sen-method.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [string]$Source,
+        [scriptblock]$Git = $null
+    )
+    if ($null -eq $Git) { $Git = Get-SenDefaultGit }
+    $dest = Join-Path -Path $Workspace -ChildPath ".agents/plugins/sen-method"
+    if (Test-Path -LiteralPath $dest) {
+        return [pscustomobject]@{ Status = "exists"; Error = $null }
+    }
+    $payload = @("plugin.json", "rules", "skills", "templates", "scripts", "INSTALL.md", "LICENSE", "CHANGELOG.md")
+    $tmpRoot = $null
+    try {
+        $srcRoot = $Source
+        if (-not (Test-Path -LiteralPath $Source)) {
+            $tmpRoot = New-SenTempDir
+            $srcRoot = Join-Path $tmpRoot "src"
+            $r = & $Git @("clone", "--depth", "1", "--quiet", $Source, $srcRoot)
+            if ($r.ExitCode -ne 0) {
+                return [pscustomobject]@{ Status = "failed"; Error = "git clone failed for $Source (exit $($r.ExitCode)): $($r.Output)" }
+            }
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $srcRoot "plugin.json"))) {
+            return [pscustomobject]@{ Status = "failed"; Error = "plugin.json not found in Sen source $Source" }
+        }
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        foreach ($item in Get-ChildItem -LiteralPath $srcRoot -Force) {
+            if (($payload -contains $item.Name) -or ($item.Name -like "README*")) {
+                Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $dest $item.Name) -Recurse -Force
+            }
+        }
+        return [pscustomobject]@{ Status = "installed"; Error = $null }
+    }
+    catch {
+        $err = $_.Exception.Message
+        if (Test-Path -LiteralPath $dest) {
+            Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        return [pscustomobject]@{ Status = "failed"; Error = $err }
+    }
+    finally {
+        if ($tmpRoot -and (Test-Path -LiteralPath $tmpRoot)) {
+            Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf
