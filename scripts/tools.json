@@ -1,0 +1,99 @@
+[
+  {
+    "_comment": "Schema: id, displayName, versionCommand, minVersion, winget, brew, approxSizeMB, extraPaths, managers, manualUrl (fallback documentation URL for manual installation)",
+    "id": "git",
+    "displayName": "Git",
+    "versionCommand": "git --version",
+    "minVersion": "2.30.0",
+    "winget": "Git.Git",
+    "brew": "git",
+    "approxSizeMB": 350,
+    "extraPaths": [
+      "C:\\Program Files\\Git\\cmd\\git.exe",
+      "C:\\Program Files\\Git\\bin\\git.exe",
+      "C:\\Program Files (x86)\\Git\\cmd\\git.exe"
+    ],
+    "managers": [],
+    "manualUrl": null
+  },
+  {
+    "id": "node",
+    "displayName": "Node.js",
+    "versionCommand": "node --version",
+    "minVersion": "18.0.0",
+    "winget": "OpenJS.NodeJS.LTS",
+    "brew": "node",
+    "approxSizeMB": 150,
+    "extraPaths": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Program Files (x86)\\nodejs\\node.exe",
+      "%LOCALAPPDATA%\\Programs\\node\\node.exe"
+    ],
+    "managers": [
+      {
+        "name": "nvm",
+        "command": "nvm list"
+      },
+      {
+        "name": "fnm",
+        "command": "fnm list"
+      }
+    ],
+    "manualUrl": null
+  },
+  {
+    "id": "python",
+    "displayName": "Python",
+    "versionCommand": "python --version",
+    "minVersion": "3.10.0",
+    "winget": "Python.Python.3.12",
+    "brew": "python@3.12",
+    "approxSizeMB": 100,
+    "extraPaths": [
+      "C:\\Python312\\python.exe",
+      "C:\\Python311\\python.exe",
+      "C:\\Python310\\python.exe",
+      "%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe",
+      "%LOCALAPPDATA%\\Programs\\Python\\Python311\\python.exe"
+    ],
+    "managers": [
+      {
+        "name": "pyenv",
+        "command": "pyenv versions"
+      }
+    ],
+    "manualUrl": null
+  },
+  {
+    "id": "flutter",
+    "displayName": "Flutter",
+    "versionCommand": "flutter --version",
+    "minVersion": "3.0.0",
+    "winget": null,
+    "brew": "--cask flutter",
+    "approxSizeMB": 1200,
+    "extraPaths": [
+      "C:\\flutter\\bin\\flutter.bat",
+      "C:\\src\\flutter\\bin\\flutter.bat",
+      "%USERPROFILE%\\flutter\\bin\\flutter.bat"
+    ],
+    "managers": [],
+    "manualUrl": "https://docs.flutter.dev/get-started/install"
+  },
+  {
+    "id": "android-sdk",
+    "displayName": "Android Studio / SDK",
+    "versionCommand": "adb --version",
+    "minVersion": "30.0.0",
+    "winget": "Google.AndroidStudio",
+    "brew": "--cask android-studio",
+    "approxSizeMB": 2500,
+    "extraPaths": [
+      "%LOCALAPPDATA%\\Android\\Sdk\\platform-tools\\adb.exe",
+      "%ANDROID_HOME%\\platform-tools\\adb.exe",
+      "%ANDROID_SDK_ROOT%\\platform-tools\\adb.exe"
+    ],
+    "managers": [],
+    "manualUrl": null
+  }
+]

@@ -231,4 +231,332 @@ function New-SenFileFromTemplate {
     return $true
 }
 
-Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate
+function Get-SenCleanVersion {
+    param([string]$Raw)
+    if ([string]::IsNullOrEmpty($Raw)) { return $null }
+    if ($Raw -match '(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\b') {
+        return $matches[1]
+    }
+    return $null
+}
+
+function ConvertTo-SenNormalizedVersion {
+    param([string]$VersionString)
+    if ([string]::IsNullOrEmpty($VersionString)) { return $null }
+    $clean = Get-SenCleanVersion -Raw $VersionString
+    if ([string]::IsNullOrEmpty($clean)) { return $null }
+    $parts = $clean.Split('.')
+    if ($parts.Count -eq 1) {
+        return [version]("$($parts[0]).0.0")
+    }
+    elseif ($parts.Count -eq 2) {
+        return [version]("$($parts[0]).$($parts[1]).0")
+    }
+    else {
+        $take = [Math]::Min($parts.Count, 4)
+        return [version](($parts[0..($take - 1)]) -join '.')
+    }
+}
+
+function Test-SenVersionMeetsMin {
+    param(
+        [string]$DetectedVersion,
+        [string]$MinVersion
+    )
+    if ([string]::IsNullOrEmpty($MinVersion)) { return $true }
+    if ([string]::IsNullOrEmpty($DetectedVersion)) { return $false }
+    $vDetected = ConvertTo-SenNormalizedVersion -VersionString $DetectedVersion
+    $vMin = ConvertTo-SenNormalizedVersion -VersionString $MinVersion
+    if ($null -eq $vDetected -or $null -eq $vMin) { return $false }
+    return ($vDetected -ge $vMin)
+}
+
+function Invoke-SenRunner {
+    param(
+        [scriptblock]$Runner,
+        [string]$CommandLine
+    )
+    if ($null -eq $Runner) {
+        try {
+            $out = Invoke-Expression $CommandLine 2>$null
+            if ($null -eq $out) { return $null }
+            if ($out -is [System.Collections.IEnumerable] -and $out -isnot [string]) {
+                $joined = ($out -join "`n").Trim()
+                if ($joined) { return $joined } else { return $null }
+            }
+            $str = [string]$out
+            if (-not [string]::IsNullOrWhiteSpace($str)) { return $str.Trim() }
+            return $null
+        }
+        catch {
+            return $null
+        }
+    }
+    else {
+        try {
+            $out = & $Runner $CommandLine
+            if ($null -eq $out) { return $null }
+            if ($out -is [System.Collections.IEnumerable] -and $out -isnot [string]) {
+                $joined = ($out -join "`n").Trim()
+                if ($joined) { return $joined } else { return $null }
+            }
+            $str = [string]$out
+            if (-not [string]::IsNullOrWhiteSpace($str)) { return $str.Trim() }
+            return $null
+        }
+        catch {
+            return $null
+        }
+    }
+}
+
+function Get-SenToolCatalog {
+    param([string]$CatalogPath)
+    $resolvedPath = $CatalogPath
+    if ([string]::IsNullOrEmpty($resolvedPath)) {
+        $resolvedPath = Join-Path -Path $PSScriptRoot -ChildPath "tools.json"
+    }
+    if (-not (Test-Path -LiteralPath $resolvedPath)) {
+        throw "Tools catalog not found: $resolvedPath"
+    }
+    $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $resolvedPath).Path, [System.Text.Encoding]::UTF8)
+    $cleaned = [regex]::Replace($raw, '(?m)^\s*//.*$', '')
+    return @(ConvertFrom-Json -InputObject $cleaned)
+}
+
+function Get-SenToolStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Id,
+        [Parameter(Mandatory = $false)]
+        [string]$Catalog = "",
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$Runner = $null,
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$PathChecker = $null
+    )
+
+    if ($null -eq $PathChecker) {
+        $PathChecker = {
+            param([string]$P)
+            return (Test-Path -LiteralPath $P)
+        }
+    }
+
+    $catalogTools = Get-SenToolCatalog -CatalogPath $Catalog
+    $tool = $catalogTools | Where-Object { $_.id -eq $Id } | Select-Object -First 1
+
+    if ($null -eq $tool) {
+        return [pscustomobject]@{
+            Id      = $Id
+            Status  = 'missing'
+            Version = $null
+            Source  = $null
+        }
+    }
+
+    $minVersion = $tool.minVersion
+
+    # 1. Check PATH via versionCommand
+    if (-not [string]::IsNullOrEmpty($tool.versionCommand)) {
+        $pathOutput = Invoke-SenRunner -Runner $Runner -CommandLine $tool.versionCommand
+        if (-not [string]::IsNullOrEmpty($pathOutput)) {
+            $ver = Get-SenCleanVersion -Raw $pathOutput
+            if (-not [string]::IsNullOrEmpty($ver)) {
+                $isOk = Test-SenVersionMeetsMin -DetectedVersion $ver -MinVersion $minVersion
+                $status = if ($isOk) { 'ok' } else { 'outdated' }
+                return [pscustomobject]@{
+                    Id      = $tool.id
+                    Status  = $status
+                    Version = $ver
+                    Source  = 'PATH'
+                }
+            }
+        }
+    }
+
+    # 2. Check extraPaths
+    if ($tool.extraPaths) {
+        foreach ($rawPath in $tool.extraPaths) {
+            if ([string]::IsNullOrEmpty($rawPath)) { continue }
+            $expanded = [System.Environment]::ExpandEnvironmentVariables($rawPath)
+            $exists = & $PathChecker $expanded
+            if ($exists) {
+                $vArgs = "--version"
+                if (-not [string]::IsNullOrEmpty($tool.versionCommand)) {
+                    $tokens = $tool.versionCommand -split '\s+', 2
+                    if ($tokens.Count -ge 2) {
+                        $vArgs = $tokens[1]
+                    }
+                }
+                $probeCmd = "& `"$expanded`" $vArgs"
+                $extraOutput = Invoke-SenRunner -Runner $Runner -CommandLine $probeCmd
+                if (-not [string]::IsNullOrEmpty($extraOutput)) {
+                    $ver = Get-SenCleanVersion -Raw $extraOutput
+                    if (-not [string]::IsNullOrEmpty($ver)) {
+                        $isOk = Test-SenVersionMeetsMin -DetectedVersion $ver -MinVersion $minVersion
+                        $status = if ($isOk) { 'ok' } else { 'outdated' }
+                        return [pscustomobject]@{
+                            Id      = $tool.id
+                            Status  = $status
+                            Version = $ver
+                            Source  = 'extraPath'
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # 3. Check managers
+    if ($tool.managers) {
+        foreach ($mgr in $tool.managers) {
+            $mgrName = $null
+            $mgrCmd = $null
+            if ($mgr -is [string]) {
+                $mgrName = ($mgr -split '\s+')[0]
+                $mgrCmd = $mgr
+            }
+            elseif ($mgr.PSObject.Properties['name']) {
+                $mgrName = [string]$mgr.name
+                $mgrCmd = [string]$mgr.command
+            }
+            if ([string]::IsNullOrEmpty($mgrCmd)) { continue }
+
+            $mgrOutput = Invoke-SenRunner -Runner $Runner -CommandLine $mgrCmd
+            if (-not [string]::IsNullOrEmpty($mgrOutput)) {
+                $activeVer = $null
+                $lines = $mgrOutput -split "[\r\n]+"
+                foreach ($line in $lines) {
+                    if ($line -match '^\s*(?:\*|->)\s*v?(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)') {
+                        $activeVer = $matches[1]
+                        break
+                    }
+                }
+
+                if ([string]::IsNullOrEmpty($activeVer)) {
+                    $matchesList = [regex]::Matches($mgrOutput, '(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\b')
+                    $bestNorm = $null
+                    $bestRaw = $null
+                    foreach ($m in $matchesList) {
+                        $cand = $m.Groups[1].Value
+                        $norm = ConvertTo-SenNormalizedVersion -VersionString $cand
+                        if ($null -ne $norm) {
+                            if ($null -eq $bestNorm -or $norm -gt $bestNorm) {
+                                $bestNorm = $norm
+                                $bestRaw = $cand
+                            }
+                        }
+                    }
+                    $activeVer = $bestRaw
+                }
+
+                if (-not [string]::IsNullOrEmpty($activeVer)) {
+                    $isOk = Test-SenVersionMeetsMin -DetectedVersion $activeVer -MinVersion $minVersion
+                    $status = if ($isOk) { 'ok' } else { 'outdated' }
+                    return [pscustomobject]@{
+                        Id      = $tool.id
+                        Status  = $status
+                        Version = $activeVer
+                        Source  = $mgrName
+                    }
+                }
+            }
+        }
+    }
+
+    # 4. Missing
+    return [pscustomobject]@{
+        Id      = $tool.id
+        Status  = 'missing'
+        Version = $null
+        Source  = $null
+    }
+}
+
+function Get-SenInstallPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Ids,
+        [Parameter(Mandatory = $false)]
+        [string[]]$Required = @(),
+        [Parameter(Mandatory = $false)]
+        [string]$Catalog = "",
+        [Parameter(Mandatory = $false)]
+        [string]$Platform = "",
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$Runner = $null,
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$PathChecker = $null
+    )
+
+    $isWin = $false
+    if (-not [string]::IsNullOrEmpty($Platform)) {
+        if ($Platform -match '(?i)^(win|windows|windows_nt|win32)$') {
+            $isWin = $true
+        }
+        elseif ($Platform -match '(?i)^(mac|macos|darwin|osx)$') {
+            $isWin = $false
+        }
+        else {
+            $isWin = ($Platform -like "*win*")
+        }
+    }
+    else {
+        if (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue) {
+            $isWin = [bool]$IsWindows
+        }
+        else {
+            $isWin = ($env:OS -eq 'Windows_NT')
+        }
+    }
+
+    $catalogTools = Get-SenToolCatalog -CatalogPath $Catalog
+    $planItems = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($toolId in $Ids) {
+        if ([string]::IsNullOrEmpty($toolId)) { continue }
+        $tool = $catalogTools | Where-Object { $_.id -eq $toolId } | Select-Object -First 1
+        if ($null -eq $tool) { continue }
+
+        $statusObj = Get-SenToolStatus -Id $toolId -Catalog $Catalog -Runner $Runner -PathChecker $PathChecker
+        if ($statusObj.Status -eq 'missing' -or $statusObj.Status -eq 'outdated') {
+            $isRequired = ($null -ne $Required -and $Required -contains $toolId)
+            $cmd = $null
+
+            if ($isWin) {
+                if (-not [string]::IsNullOrEmpty($tool.winget)) {
+                    $cmd = "winget install --id $($tool.winget) -e --source winget"
+                }
+            }
+            else {
+                if (-not [string]::IsNullOrEmpty($tool.brew)) {
+                    $cmd = "brew install $($tool.brew)"
+                }
+            }
+
+            $manualUrl = $null
+            if ($tool.PSObject.Properties['manualUrl'] -and -not [string]::IsNullOrEmpty($tool.manualUrl)) {
+                $manualUrl = [string]$tool.manualUrl
+            }
+
+            $planItems.Add([pscustomobject]@{
+                Id             = $tool.id
+                DisplayName    = $tool.displayName
+                Version        = $tool.minVersion
+                ApproxSizeMB   = $tool.approxSizeMB
+                Required       = [bool]$isRequired
+                Command        = $cmd
+                Status         = $statusObj.Status
+                CurrentVersion = $statusObj.Version
+                ManualUrl      = $manualUrl
+            })
+        }
+    }
+
+    return ,@($planItems.ToArray())
+}
+
+Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan
