@@ -4,7 +4,8 @@
 . "$PSScriptRoot/Assert.ps1"
 
 $repoRoot    = (Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath "..")).Path
-$readmeEn    = Join-Path -Path $repoRoot -ChildPath "README.md"
+$readmeDefault = Join-Path -Path $repoRoot -ChildPath "README.md"
+$readmeEn    = Join-Path -Path $repoRoot -ChildPath "README.en.md"
 $readmeVi    = Join-Path -Path $repoRoot -ChildPath "README.vi.md"
 $guideEn     = Join-Path -Path $repoRoot -ChildPath "docs/guide.md"
 $guideVi     = Join-Path -Path $repoRoot -ChildPath "docs/huong-dan.md"
@@ -56,15 +57,17 @@ $principlesEn = @(
     "Compound over time"
 )
 
-Test "README.md and README.vi.md exist and cross-link on line 1" {
-    Assert-True (Test-Path -LiteralPath $readmeEn) "README.md must exist"
+Test "README.md defaults to Vietnamese and cross-links with README.en.md" {
+    Assert-True (Test-Path -LiteralPath $readmeDefault) "README.md must exist"
+    Assert-True (Test-Path -LiteralPath $readmeEn) "README.en.md must exist"
     Assert-True (Test-Path -LiteralPath $readmeVi) "README.vi.md must exist"
 
-    $enLines = (Get-Utf8Text $readmeEn) -split "`r?`n"
-    $viLines = (Get-Utf8Text $readmeVi) -split "`r?`n"
+    $defLines = (Get-Utf8Text $readmeDefault) -split "`r?`n"
+    $enLines  = (Get-Utf8Text $readmeEn) -split "`r?`n"
 
-    Assert-True ($enLines[0] -match '\[.+?\]\(README\.vi\.md\)') "Line 1 of README.md must link to README.vi.md"
-    Assert-True ($viLines[0] -match '\[.+?\]\(README\.md\)') "Line 1 of README.vi.md must link to README.md"
+    Assert-True ($defLines[0] -match '\[.+?\]\(README\.en\.md\)') "Line 1 of README.md (Vietnamese default) must link to README.en.md"
+    Assert-True ($enLines[0] -match '\[.+?\]\(README\.md\)') "Line 1 of README.en.md must link to README.md"
+    Assert-True ((Get-Utf8Text $readmeDefault).Contains($sloganVi)) "Default README.md must be in Vietnamese"
 }
 
 Test "README.md and README.vi.md have the 8 sections in Spec 10.1 order" {

@@ -1,4 +1,4 @@
-[English](README.md) | **Tiếng Việt**
+**Tiếng Việt** | [English](README.en.md)
 
 # Sen
 
