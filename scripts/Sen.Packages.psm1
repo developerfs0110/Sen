@@ -616,7 +616,8 @@ function Restore-SenPackage {
         [string]$Id
     )
     try {
-        $pkg = Get-SenPackagesCatalog | Where-Object { $_.id -eq $Id } | Select-Object -First 1
+        $catalogPackages = Get-SenPackagesCatalog
+        $pkg = $catalogPackages | Where-Object { $_.id -eq $Id } | Select-Object -First 1
         $lock = Read-SenLock -Workspace $Workspace
         $dest = if ($null -ne $pkg) {
             Join-Path -Path $Workspace -ChildPath ([string]$pkg.dest)

@@ -417,7 +417,8 @@ function Get-SenToolStatus {
     if ($null -eq $PathChecker) {
         $PathChecker = { param([string]$P) return (Test-Path -LiteralPath $P) }
     }
-    $tool = Get-SenToolCatalog -CatalogPath $Catalog | Where-Object { $_.id -eq $Id } | Select-Object -First 1
+    $catalogTools = Get-SenToolCatalog -CatalogPath $Catalog
+    $tool = $catalogTools | Where-Object { $_.id -eq $Id } | Select-Object -First 1
     if ($null -eq $tool) {
         return (New-SenToolStatusResult -Id $Id -Version $null -MinVersion $null -Source $null)
     }
