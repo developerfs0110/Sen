@@ -1,0 +1,39 @@
+# tests/run.ps1
+# ASCII-only test runner for PowerShell 5.1+
+
+$ErrorActionPreference = "Continue"
+
+$global:TotalTests = 0
+$global:PassedTests = 0
+$global:FailedTests = 0
+
+. "$PSScriptRoot/Assert.ps1"
+
+$testFiles = Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.Tests.ps1" | Sort-Object Name
+
+if ($testFiles.Count -eq 0) {
+    Write-Host "No test files found in $PSScriptRoot"
+    exit 0
+}
+
+Write-Host "Running $($testFiles.Count) test file(s)..."
+
+foreach ($file in $testFiles) {
+    Write-Host "`n[$($file.Name)]" -ForegroundColor Cyan
+    try {
+        . $file.FullName
+    }
+    catch {
+        $global:FailedTests++
+        Write-Host "  FAIL: $($file.Name) execution failed" -ForegroundColor Red
+        Write-Host "        $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+Write-Host "`n----------------------------------------"
+Write-Host "Test Results: $($global:PassedTests) passed, $($global:FailedTests) failed ($($global:TotalTests) total)"
+
+if ($global:FailedTests -gt 0) {
+    exit $global:FailedTests
+}
+exit 0

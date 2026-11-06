@@ -1,0 +1,14 @@
+{
+  "name": "sen-method",
+  "displayName": "Sen",
+  "version": "0.1.0",
+  "description": "Calm, clear AI work with tiered execution, lean rules, and structured skills.",
+  "author": {
+    "name": "Mr Bòn Bon"
+  },
+  "suggestedPrompts": [
+    "Help me onboard with Sen methodology",
+    "Check Sen environment and installed tools",
+    "Inspect Sen updates and workspace status"
+  ]
+}
