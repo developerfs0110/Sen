@@ -787,4 +787,361 @@ function Install-SenSelf {
     }
 }
 
-Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf
+function Get-SenPackagesCatalog {
+    param([string]$CatalogPath = "")
+    $resolved = $CatalogPath
+    if ([string]::IsNullOrEmpty($resolved)) {
+        $resolved = Join-Path -Path $PSScriptRoot -ChildPath "packages.json"
+    }
+    if (-not (Test-Path -LiteralPath $resolved)) {
+        throw "Packages catalog not found: $resolved"
+    }
+    $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $resolved).Path, [System.Text.Encoding]::UTF8)
+    return @(ConvertFrom-Json -InputObject $raw)
+}
+
+function Get-SenUpdateStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$Git = $null
+    )
+
+    if ($null -eq $Git) { $Git = Get-SenDefaultGit }
+
+    $catalogPackages = Get-SenPackagesCatalog
+    $lock = Read-SenLock -Workspace $Workspace
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($pkg in $catalogPackages) {
+        $id = [string]$pkg.id
+        if (-not $lock.packages.ContainsKey($id)) {
+            continue
+        }
+
+        $currentCommit = "unknown"
+        if ($lock.packages[$id] -and $lock.packages[$id].commit) {
+            $currentCommit = [string]$lock.packages[$id].commit
+        }
+
+        $repo = if ($lock.packages[$id] -and $lock.packages[$id].repo) {
+            [string]$lock.packages[$id].repo
+        }
+        else {
+            [string]$pkg.repo
+        }
+
+        $latestCommit = "unknown"
+        $r = & $Git @("ls-remote", $repo, "HEAD")
+        if ($r.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($r.Output)) {
+            $tokens = $r.Output.Trim() -split '\s+'
+            if ($tokens.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($tokens[0])) {
+                $latestCommit = $tokens[0].Trim()
+            }
+        }
+
+        $hasUpdate = $false
+        if ($latestCommit -ne "unknown" -and $currentCommit -ne "unknown" -and $latestCommit -ne $currentCommit) {
+            $hasUpdate = $true
+        }
+
+        $summary = ""
+        if ($hasUpdate) {
+            $tmpRoot = New-SenTempDir
+            $cloneTmp = Join-Path $tmpRoot "src"
+            try {
+                $cRes = & $Git @("clone", "--depth", "5", "--quiet", $repo, $cloneTmp)
+                if ($cRes.ExitCode -eq 0) {
+                    $lRes = & $Git @("-C", $cloneTmp, "log", "-5", "--oneline")
+                    if ($lRes.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($lRes.Output)) {
+                        $lines = @($lRes.Output -split "[\r\n]+") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                        $summary = (($lines | Select-Object -First 5) -join "`n").Trim()
+                    }
+                }
+            }
+            catch { }
+            finally {
+                if (Test-Path -LiteralPath $tmpRoot) {
+                    Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
+        $results.Add([pscustomobject]@{
+            Id        = $id
+            Current   = $currentCommit
+            Latest    = $latestCommit
+            HasUpdate = [bool]$hasUpdate
+            Summary   = [string]$summary
+        })
+    }
+
+    return ,@($results.ToArray())
+}
+
+function Update-SenPackages {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Ids,
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$Git = $null
+    )
+
+    if ($null -eq $Git) { $Git = Get-SenDefaultGit }
+    $catalogPackages = Get-SenPackagesCatalog
+    $backupParent = Join-Path -Path $Workspace -ChildPath ".agents/.sen-backup"
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($id in $Ids) {
+        if ([string]::IsNullOrEmpty($id)) { continue }
+        $pkg = $catalogPackages | Where-Object { $_.id -eq $id } | Select-Object -First 1
+        if ($null -eq $pkg) {
+            $results.Add([pscustomobject]@{
+                Id     = $id
+                Status = "failed"
+                Commit = $null
+                Error  = "Package '$id' not found in catalog"
+            })
+            continue
+        }
+
+        $lock = Read-SenLock -Workspace $Workspace
+        $currentCommit = "unknown"
+        if ($lock.packages[$id] -and $lock.packages[$id].commit) {
+            $currentCommit = [string]$lock.packages[$id].commit
+        }
+
+        $dest = Join-Path -Path $Workspace -ChildPath ([string]$pkg.dest)
+        $backupDir = Join-Path -Path $backupParent -ChildPath "$id-$currentCommit"
+
+        # 1. Create backup if dest exists
+        if (Test-Path -LiteralPath $dest) {
+            if (-not (Test-Path -LiteralPath $backupParent)) {
+                [System.IO.Directory]::CreateDirectory($backupParent) | Out-Null
+            }
+            if (Test-Path -LiteralPath $backupDir) {
+                Remove-Item -LiteralPath $backupDir -Recurse -Force
+            }
+            [System.IO.Directory]::CreateDirectory($backupDir) | Out-Null
+            Copy-SenTree -Source $dest -Destination $backupDir
+
+            $backupCommitFile = Join-Path -Path $backupDir -ChildPath ".sen-commit"
+            if (-not (Test-Path -LiteralPath $backupCommitFile)) {
+                [System.IO.File]::WriteAllText($backupCommitFile, $currentCommit + "`n", [System.Text.UTF8Encoding]::new($false))
+            }
+
+            $meta = @{
+                id        = $id
+                commit    = $currentCommit
+                timestamp = [DateTime]::UtcNow.ToString("o")
+            }
+            $metaJson = ConvertTo-Json -InputObject $meta -Compress
+            [System.IO.File]::WriteAllText((Join-Path $backupDir ".sen-backup-meta.json"), $metaJson, [System.Text.UTF8Encoding]::new($false))
+        }
+
+        # 2. Clone new version to temporary directory
+        $tmpRoot = New-SenTempDir
+        $cloneTmp = Join-Path $tmpRoot "src"
+        $installFailed = $false
+        $errorMsg = $null
+        $newCommit = $null
+
+        try {
+            $repo = if ($lock.packages[$id] -and $lock.packages[$id].repo) {
+                [string]$lock.packages[$id].repo
+            }
+            else {
+                [string]$pkg.repo
+            }
+
+            $r = & $Git @("clone", "--depth", "1", "--quiet", $repo, $cloneTmp)
+            if ($r.ExitCode -ne 0) {
+                $installFailed = $true
+                $errorMsg = "git clone failed for $repo (exit $($r.ExitCode)): $($r.Output)"
+            }
+            else {
+                $newCommit = Get-SenGitCommit -Path $cloneTmp -Git $Git
+                $src = $cloneTmp
+                if (-not [string]::IsNullOrEmpty([string]$pkg.subPath)) {
+                    $src = Join-Path $cloneTmp ([string]$pkg.subPath)
+                }
+                if (-not (Test-Path -LiteralPath $src)) {
+                    $installFailed = $true
+                    $errorMsg = "subPath '$($pkg.subPath)' not found in $repo"
+                }
+                else {
+                    # Replace dest
+                    if (Test-Path -LiteralPath $dest) {
+                        Remove-Item -LiteralPath $dest -Recurse -Force
+                    }
+                    [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+                    Copy-SenTree -Source $src -Destination $dest
+                    [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $newCommit + "`n", [System.Text.UTF8Encoding]::new($false))
+
+                    # Update lock
+                    $lock = Read-SenLock -Workspace $Workspace
+                    $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    $lock.packages[$id] = [ordered]@{
+                        repo        = $repo
+                        subPath     = $pkg.subPath
+                        commit      = $newCommit
+                        installedAt = $now
+                    }
+                    Write-SenLock -Workspace $Workspace -Lock $lock
+
+                    $results.Add([pscustomobject]@{
+                        Id     = $id
+                        Status = "updated"
+                        Commit = $newCommit
+                        Error  = $null
+                    })
+                }
+            }
+        }
+        catch {
+            $installFailed = $true
+            $errorMsg = $_.Exception.Message
+        }
+        finally {
+            if (Test-Path -LiteralPath $tmpRoot) {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # 3. If install failed, restore backup!
+        if ($installFailed) {
+            if (Test-Path -LiteralPath $backupDir) {
+                if (Test-Path -LiteralPath $dest) {
+                    Remove-Item -LiteralPath $dest -Recurse -Force
+                }
+                [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+                Copy-SenTree -Source $backupDir -Destination $dest -Exclude @(".git", ".sen-backup-meta.json")
+                if (Test-Path -LiteralPath (Join-Path $backupDir ".sen-commit")) {
+                    Copy-Item -LiteralPath (Join-Path $backupDir ".sen-commit") -Destination (Join-Path $dest ".sen-commit") -Force
+                }
+            }
+            $results.Add([pscustomobject]@{
+                Id     = $id
+                Status = "failed"
+                Commit = $currentCommit
+                Error  = $errorMsg
+            })
+        }
+    }
+
+    return ,@($results.ToArray())
+}
+
+function Restore-SenPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [string]$Id
+    )
+
+    $catalogPackages = Get-SenPackagesCatalog
+    $pkg = $catalogPackages | Where-Object { $_.id -eq $Id } | Select-Object -First 1
+    if ($null -eq $pkg) {
+        return [pscustomobject]@{
+            Id     = $Id
+            Status = "failed"
+            Commit = $null
+            Error  = "Package '$Id' not found in catalog"
+        }
+    }
+
+    $backupParent = Join-Path -Path $Workspace -ChildPath ".agents/.sen-backup"
+    if (-not (Test-Path -LiteralPath $backupParent)) {
+        return [pscustomobject]@{
+            Id     = $Id
+            Status = "failed"
+            Commit = $null
+            Error  = "No backup directory found for package '$Id'"
+        }
+    }
+
+    $backupDirs = @(Get-ChildItem -LiteralPath $backupParent -Directory | Where-Object { $_.Name -like "$Id-*" })
+    if ($backupDirs.Count -eq 0) {
+        return [pscustomobject]@{
+            Id     = $Id
+            Status = "failed"
+            Commit = $null
+            Error  = "No backups found for package '$Id'"
+        }
+    }
+
+    $sortedBackups = $backupDirs | Sort-Object -Descending -Property {
+        $metaPath = Join-Path $_.FullName ".sen-backup-meta.json"
+        if (Test-Path -LiteralPath $metaPath) {
+            try {
+                $rawMeta = [System.IO.File]::ReadAllText($metaPath, [System.Text.Encoding]::UTF8)
+                $metaObj = ConvertFrom-Json -InputObject $rawMeta
+                if ($metaObj.timestamp) { return [string]$metaObj.timestamp }
+            }
+            catch { }
+        }
+        return $_.LastWriteTimeUtc.ToString("o")
+    }
+
+    $targetBackup = $sortedBackups[0]
+
+    $restoredCommit = $null
+    $metaPath = Join-Path $targetBackup.FullName ".sen-backup-meta.json"
+    if (Test-Path -LiteralPath $metaPath) {
+        try {
+            $rawMeta = [System.IO.File]::ReadAllText($metaPath, [System.Text.Encoding]::UTF8)
+            $metaObj = ConvertFrom-Json -InputObject $rawMeta
+            if ($metaObj.commit) { $restoredCommit = [string]$metaObj.commit }
+        }
+        catch { }
+    }
+    if ([string]::IsNullOrEmpty($restoredCommit)) {
+        $backupCommitFile = Join-Path $targetBackup.FullName ".sen-commit"
+        if (Test-Path -LiteralPath $backupCommitFile) {
+            $restoredCommit = ([System.IO.File]::ReadAllText($backupCommitFile)).Trim()
+        }
+    }
+    if ([string]::IsNullOrEmpty($restoredCommit)) {
+        $restoredCommit = $targetBackup.Name.Substring($Id.Length + 1)
+    }
+
+    $dest = Join-Path -Path $Workspace -ChildPath ([string]$pkg.dest)
+    if (Test-Path -LiteralPath $dest) {
+        Remove-Item -LiteralPath $dest -Recurse -Force
+    }
+    [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+    Copy-SenTree -Source $targetBackup.FullName -Destination $dest -Exclude @(".git", ".sen-backup-meta.json")
+    [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $restoredCommit + "`n", [System.Text.UTF8Encoding]::new($false))
+
+    $lock = Read-SenLock -Workspace $Workspace
+    $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    if ($lock.packages.ContainsKey($Id)) {
+        $lock.packages[$Id].commit = $restoredCommit
+        $lock.packages[$Id].installedAt = $now
+    }
+    else {
+        $lock.packages[$Id] = [ordered]@{
+            repo        = $pkg.repo
+            subPath     = $pkg.subPath
+            commit      = $restoredCommit
+            installedAt = $now
+        }
+    }
+    Write-SenLock -Workspace $Workspace -Lock $lock
+
+    return [pscustomobject]@{
+        Id     = $Id
+        Status = "restored"
+        Commit = $restoredCommit
+        Error  = $null
+    }
+}
+
+Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage
