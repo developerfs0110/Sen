@@ -18,14 +18,28 @@ function Remove-MockRepo {
     }
 }
 
+function New-ValidPluginJson {
+    param(
+        $Overrides = @{}
+    )
+    $obj = @{
+        name = "sen-method"
+        displayName = "Sen"
+        version = "0.1.0"
+        author = @{
+            name = ("Mr B" + [char]0x00F2 + "n Bon")
+        }
+    }
+    foreach ($k in $Overrides.Keys) {
+        $obj[$k] = $Overrides[$k]
+    }
+    return ($obj | ConvertTo-Json)
+}
+
 Test "plugin.json with unknown field foo reports unknown plugin.json field: foo" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            version = "0.1.0"
-            foo = "bar"
-        } | ConvertTo-Json
+        $json = New-ValidPluginJson -Overrides @{ foo = "bar" }
         Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
 
         if (-not (Test-Path -LiteralPath $validateScript)) {
@@ -49,11 +63,7 @@ Test "plugin.json with unknown field foo reports unknown plugin.json field: foo"
 Test "skill directory not starting with sen- reports skill name must start with sen-: abc" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            version = "0.1.0"
-        } | ConvertTo-Json
-        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
 
         $skillDir = Join-Path $repo "skills/abc"
         New-Item -ItemType Directory -Path $skillDir -Force | Out-Null
@@ -87,11 +97,7 @@ description: test
 Test "skill name mismatch in frontmatter reports skill name mismatch: sen-y" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            version = "0.1.0"
-        } | ConvertTo-Json
-        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
 
         $skillDir = Join-Path $repo "skills/sen-y"
         New-Item -ItemType Directory -Path $skillDir -Force | Out-Null
@@ -125,11 +131,7 @@ description: test
 Test "rules/AGENTS.md with 6001 bytes reports rules/AGENTS.md exceeds 6000 bytes" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            version = "0.1.0"
-        } | ConvertTo-Json
-        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
 
         $rulesDir = Join-Path $repo "rules"
         New-Item -ItemType Directory -Path $rulesDir -Force | Out-Null
@@ -154,14 +156,38 @@ Test "rules/AGENTS.md with 6001 bytes reports rules/AGENTS.md exceeds 6000 bytes
     }
 }
 
+Test "rules/AGENTS.md with 100 lines reports rules/AGENTS.md exceeds 99 lines" {
+    $repo = New-MockRepo
+    try {
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
+
+        $rulesDir = Join-Path $repo "rules"
+        New-Item -ItemType Directory -Path $rulesDir -Force | Out-Null
+        $hundredLines = 1..100 | ForEach-Object { "line $_" }
+        Set-Content -LiteralPath (Join-Path $rulesDir "AGENTS.md") -Value $hundredLines -Encoding UTF8
+
+        if (-not (Test-Path -LiteralPath $validateScript)) {
+            throw "Validate-Repo.ps1 script not found at $validateScript"
+        }
+        $errors = @(& $validateScript -Root $repo)
+        $hasMatch = $false
+        foreach ($err in $errors) {
+            if ($err -like "*rules/AGENTS.md exceeds 99 lines*") {
+                $hasMatch = $true
+                break
+            }
+        }
+        Assert-True $hasMatch "Expected 'rules/AGENTS.md exceeds 99 lines' in errors: $($errors -join '; ')"
+    }
+    finally {
+        Remove-MockRepo $repo
+    }
+}
+
 Test "personal data detection matches in skills/ and ignores exempt README" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            version = "0.1.0"
-        } | ConvertTo-Json
-        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
 
         $skillDir = Join-Path $repo "skills/sen-test"
         New-Item -ItemType Directory -Path $skillDir -Force | Out-Null
@@ -207,11 +233,7 @@ Author: Mr Bon Bon - tunbh.study@gmail.com
 Test "relative markdown link to non-existent file reports broken link" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            version = "0.1.0"
-        } | ConvertTo-Json
-        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
 
         $readmeContent = @"
 # Overview
@@ -237,15 +259,45 @@ See [Missing Guide](docs/missing-guide.md) for details.
     }
 }
 
+Test "plugin.json with invalid required fields reports constraint errors" {
+    $repo = New-MockRepo
+    try {
+        $badJson = @{
+            name = "wrong-name"
+            displayName = "WrongDisplay"
+            version = "0.1.0"
+            author = @{
+                name = "Wrong Author"
+            }
+        } | ConvertTo-Json
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $badJson -Encoding UTF8
+
+        if (-not (Test-Path -LiteralPath $validateScript)) {
+            throw "Validate-Repo.ps1 script not found at $validateScript"
+        }
+        $errors = @(& $validateScript -Root $repo)
+
+        $hasNameError = $false
+        $hasDisplayError = $false
+        $hasAuthorError = $false
+        foreach ($err in $errors) {
+            if ($err -like "*plugin.json name must be sen-method*") { $hasNameError = $true }
+            if ($err -like "*plugin.json displayName must be Sen*") { $hasDisplayError = $true }
+            if ($err -like "*plugin.json author.name must be*") { $hasAuthorError = $true }
+        }
+        Assert-True $hasNameError "Expected name constraint error in: $($errors -join '; ')"
+        Assert-True $hasDisplayError "Expected displayName constraint error in: $($errors -join '; ')"
+        Assert-True $hasAuthorError "Expected author constraint error in: $($errors -join '; ')"
+    }
+    finally {
+        Remove-MockRepo $repo
+    }
+}
+
 Test "minimal valid repository produces zero errors" {
     $repo = New-MockRepo
     try {
-        $json = @{
-            name = "sen-method"
-            displayName = "Sen"
-            version = "0.1.0"
-        } | ConvertTo-Json
-        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value $json -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $repo "plugin.json") -Value (New-ValidPluginJson) -Encoding UTF8
 
         $docsDir = Join-Path $repo "docs"
         New-Item -ItemType Directory -Path $docsDir -Force | Out-Null

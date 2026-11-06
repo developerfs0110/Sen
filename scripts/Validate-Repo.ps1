@@ -14,7 +14,6 @@ try {
 catch {
     Write-Error "Invalid root path: $Root"
     if ($MyInvocation.InvocationName -ne '.') {
-        $host.SetShouldExit(1)
         exit 1
     }
     return @("Invalid root path: $Root")
@@ -44,6 +43,26 @@ if (Test-Path -LiteralPath $pluginPath) {
             if ($prop -notin $allowedFields) {
                 $errors.Add("unknown plugin.json field: $prop")
             }
+        }
+
+        # Check required values per Global Constraints
+        if ($obj.name -ne "sen-method") {
+            $errors.Add("plugin.json name must be sen-method")
+        }
+        if ($obj.displayName -ne "Sen") {
+            $errors.Add("plugin.json displayName must be Sen")
+        }
+
+        $expectedAuthor = "Mr B" + [char]0x00F2 + "n Bon"
+        $actualAuthor = $null
+        if ($obj.author -is [string]) {
+            $actualAuthor = $obj.author
+        }
+        elseif ($obj.author -and $obj.author.name) {
+            $actualAuthor = $obj.author.name
+        }
+        if ($actualAuthor -ne $expectedAuthor) {
+            $errors.Add("plugin.json author.name must be $expectedAuthor")
         }
     }
     catch {
@@ -77,12 +96,16 @@ if (Test-Path -LiteralPath $skillsDir) {
     }
 }
 
-# 3. Validate rules/AGENTS.md size limit
+# 3. Validate rules/AGENTS.md size limit and line count
 $agentsMd = Join-Path -Path $resolvedRoot -ChildPath "rules/AGENTS.md"
 if (Test-Path -LiteralPath $agentsMd) {
     $fInfo = Get-Item -LiteralPath $agentsMd
     if ($fInfo.Length -gt 6000) {
         $errors.Add("rules/AGENTS.md exceeds 6000 bytes ($($fInfo.Length) bytes)")
+    }
+    $lines = @(Get-Content -LiteralPath $agentsMd)
+    if ($lines.Count -gt 99) {
+        $errors.Add("rules/AGENTS.md exceeds 99 lines ($($lines.Count) lines)")
     }
 }
 
@@ -186,13 +209,11 @@ $isDotSourced = ($MyInvocation.InvocationName -eq '.')
 if ($errors.Count -gt 0) {
     Write-Output $errors
     if (-not $isDotSourced) {
-        $host.SetShouldExit(1)
         exit 1
     }
 }
 else {
     if (-not $isDotSourced) {
-        $host.SetShouldExit(0)
         exit 0
     }
 }
