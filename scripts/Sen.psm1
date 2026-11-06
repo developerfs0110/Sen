@@ -691,6 +691,10 @@ function Install-SenPackage {
         if (Test-Path -LiteralPath (Join-Path $dest ".git")) {
             $commit = Get-SenGitCommit -Path $dest -Git $Git
         }
+        elseif (Test-Path -LiteralPath (Join-Path $dest ".sen-commit")) {
+            $marker = ([System.IO.File]::ReadAllText((Join-Path $dest ".sen-commit"))).Trim()
+            if ($marker) { $commit = $marker }
+        }
         return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "exists"; Error = $null }
     }
 
@@ -713,6 +717,8 @@ function Install-SenPackage {
         }
         try {
             Copy-SenTree -Source $src -Destination $dest
+            # Pending commit marker: lets a later run recover the commit if the lock was not written.
+            [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", [System.Text.UTF8Encoding]::new($false))
         }
         catch {
             if (Test-Path -LiteralPath $dest) {

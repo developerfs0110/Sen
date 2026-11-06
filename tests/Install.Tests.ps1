@@ -214,3 +214,35 @@ Test "install.ps1 works in a path with spaces and Vietnamese diacritics" {
         Assert-True ($safety.Contains($ws)) "unicode workspace path substituted"
     } finally { Remove-InstallTempDir $root }
 }
+
+Test "install.ps1 retry after partial failure records the first run's commit from .sen-commit" {
+    $ws = Join-Path (New-InstallTempDir) "ws"
+    try {
+        $first = Invoke-InstallScript -Workspace $ws -Git (New-FakeGit -FailRepos @("security-audit-skill") -Commit "run1sha")
+        Assert-True ($first.ExitCode -ne 0) "run 1 fails"
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $ws ".agents/sen.lock.json"))) "no lock after run 1"
+        $second = Invoke-InstallScript -Workspace $ws -Git (New-FakeGit -Commit "run2sha")
+        Assert-Equal 0 $second.ExitCode
+        Assert-Equal "exists" (@($second.Json.packages | Where-Object id -eq "superpowers")[0].status)
+        $lock = Read-SenLock -Workspace $ws
+        Assert-Equal "run1sha" $lock.packages["superpowers"].commit "superpowers keeps its real commit"
+        Assert-Equal "run2sha" $lock.packages["security-audit"].commit
+    } finally { Remove-InstallTempDir (Split-Path $ws -Parent) }
+}
+
+Test "install.ps1 with a Sen source lacking plugin.json fails without lock" {
+    $root = New-InstallTempDir
+    $ws = Join-Path $root "ws"
+    $badSrc = Join-Path $root "badsrc"
+    [System.IO.Directory]::CreateDirectory($badSrc) | Out-Null
+    try {
+        $lines = @(& $installScript.Path -Workspace $ws -SenSource $badSrc -Git (New-FakeGit))
+        $code = $LASTEXITCODE
+        $json = $lines[$lines.Count - 1] | ConvertFrom-Json
+        Assert-Equal 1 $code
+        Assert-Equal $false $json.lockWritten
+        Assert-Equal "failed" $json.sen.status
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $ws ".agents/sen.lock.json"))) "no lock file"
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method"))) "no partial Sen dest"
+    } finally { Remove-InstallTempDir $root }
+}
