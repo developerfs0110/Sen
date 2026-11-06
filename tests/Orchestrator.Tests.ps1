@@ -211,3 +211,29 @@ Test "guard.ps1 blocks direct write to .git/config and enforces Execution Contra
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "Measure-SenCodeHealth verifies Sen repo itself fits 800/1500/1000 thresholds and detects oversized logic files" {
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath "..")).Path
+    $selfHealth = Measure-SenCodeHealth -Path $repoRoot
+    Assert-True $selfHealth.Healthy "Sen repository itself must pass Measure-SenCodeHealth with 0 oversized files (got $($selfHealth.OversizedFiles.Count))"
+    Assert-Equal 100 $selfHealth.Score "Sen repository health score must be 100"
+
+    $ws = New-OrchTestWorkspace
+    try {
+        $bigLogic = Join-Path $ws "giant.ts"
+        $uiFile = Join-Path $ws "dashboard.html"
+        $lines850 = @(1..850 | ForEach-Object { "const x$_ = $_;" })
+        $lines1200 = @(1..1200 | ForEach-Object { "<div>row $_</div>" })
+        [System.IO.File]::WriteAllLines($bigLogic, $lines850, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::WriteAllLines($uiFile, $lines1200, [System.Text.UTF8Encoding]::new($false))
+
+        $h = Measure-SenCodeHealth -Path $ws
+        Assert-True (-not $h.Healthy) "Workspace with 850-line logic file must be marked unhealthy"
+        Assert-Equal 1 $h.OversizedFiles.Count "Only giant.ts (850 > 800) should be flagged; 1200-line HTML UI file (<= 1500) must pass"
+        Assert-Equal "giant.ts" $h.OversizedFiles[0].path
+        Assert-Equal "logic" $h.OversizedFiles[0].category
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

@@ -16,7 +16,8 @@ $Expected = @(
     'sen-delivery-report',
     'sen-release-readiness',
     'sen-skill-capture',
-    'sen-office'
+    'sen-office',
+    'sen-clean-code'
 )
 
 $RequiredStrings = @{
@@ -68,6 +69,11 @@ $RequiredStrings = @{
         'start-office.ps1',
         'Set-SenOfficeConfig',
         'Write-SenOfficeShowcase'
+    )
+    'sen-clean-code' = @(
+        'Measure-SenCodeHealth',
+        'New-SenRestorePoint',
+        '800'
     )
 }
 
@@ -144,10 +150,10 @@ foreach ($s in $Expected) {
     }
 }
 
-Test "Expected skills list contains all 8 skills and matches skills/ directories" {
-    Assert-Equal 8 $Expected.Count "Expected skills count must be 8"
+Test "Expected skills list contains all 9 skills and matches skills/ directories" {
+    Assert-Equal 9 $Expected.Count "Expected skills count must be 9"
     $dirs = @(Get-ChildItem -LiteralPath $skillsRoot -Directory | Select-Object -ExpandProperty Name)
-    Assert-Equal 8 $dirs.Count "skills/ must contain exactly 8 directories (got $($dirs.Count))"
+    Assert-Equal 9 $dirs.Count "skills/ must contain exactly 9 directories (got $($dirs.Count))"
     foreach ($d in $dirs) {
         Assert-True ($Expected -contains $d) "Directory 'skills/$d' must be in Expected list"
     }
