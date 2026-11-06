@@ -64,4 +64,4 @@ Manual check for `rules/AGENTS.md`. / Kiểm tra thủ công rule lõi.
 
 | Date / Ngày | Model | Passed / Đạt | Notes / Ghi chú |
 |---|---|---|---|
-| | | /35 | |
+| | | /32 | |
