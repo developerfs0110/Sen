@@ -78,6 +78,7 @@ fi
 # Check for updates across packages in packages.json
 UPDATES_FOUND=0
 NOTICE_BODY=""
+INSTRUCTION="Mention these updates once, in the user's language, and offer to run the sen-update skill."
 
 if [[ -f "$PACKAGES_FILE" ]]; then
   PKG_IDS=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' "$PACKAGES_FILE" | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
@@ -90,6 +91,18 @@ if [[ -f "$PACKAGES_FILE" ]]; then
         if [[ -n "$LATEST_COMMIT" && "$LATEST_COMMIT" != "$CURR_COMMIT" ]]; then
           UPDATES_FOUND=1
           NOTICE_BODY="${NOTICE_BODY}- **${PKG_ID}**: current '${CURR_COMMIT}', latest '${LATEST_COMMIT}'"$'\n'
+
+          # Cap commit summary at 3 lines per package to conserve token budget in the notice rule.
+          TMP_CLONE=$(mktemp -d 2>/dev/null || mktemp -d -t 'sen-clone')
+          if git clone --depth 5 --quiet "$REPO" "$TMP_CLONE" 2>/dev/null; then
+            LOG_LINES=$(git -C "$TMP_CLONE" log -5 --oneline 2>/dev/null | head -n 3 || true)
+            while IFS= read -r line; do
+              if [[ -n "$line" ]]; then
+                NOTICE_BODY="${NOTICE_BODY}  * ${line}"$'\n'
+              fi
+            done <<< "$LOG_LINES"
+          fi
+          rm -rf "$TMP_CLONE"
         fi
       fi
     fi
@@ -98,26 +111,51 @@ fi
 
 if [[ $UPDATES_FOUND -eq 1 ]]; then
   mkdir -p "$(dirname "$NOTICE_FILE")"
-  cat <<EOF > "$NOTICE_FILE"
-# Sen Update Notice
+  RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for the following package(s):"$'\n\n'"${NOTICE_BODY}"$'\n'"${INSTRUCTION}"$'\n'
+  printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
 
-Updates are available for the following package(s):
-
-${NOTICE_BODY}
-Mention these updates once, in the user's language, and offer to run the sen-update skill.
-EOF
+  # Enforce 800-byte limit
+  BYTE_COUNT=$(wc -c < "$NOTICE_FILE" || echo 0)
+  if [[ $BYTE_COUNT -gt 800 ]]; then
+    # Fallback to compact notice without summaries
+    COMPACT_BODY=$(grep '^- \*\*' "$NOTICE_FILE" || true)
+    RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for the following package(s):"$'\n\n'"${COMPACT_BODY}"$'\n\n'"${INSTRUCTION}"$'\n'
+    printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
+    BYTE_COUNT=$(wc -c < "$NOTICE_FILE" || echo 0)
+    if [[ $BYTE_COUNT -gt 800 ]]; then
+      # Truncate to first 3 items with (+more)
+      FIRST_ITEMS=$(echo "$COMPACT_BODY" | head -n 3)
+      RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for:"$'\n\n'"${FIRST_ITEMS}"$'\n'"- *(+more)*"$'\n\n'"${INSTRUCTION}"$'\n'
+      printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
+    fi
+  fi
 else
   if [[ -f "$NOTICE_FILE" ]]; then
     rm -f "$NOTICE_FILE"
   fi
 fi
 
-# Update lastUpdateCheck in lock file
+# Update lastUpdateCheck in lock file safely using jq or python3 (no sed json injection)
 NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
-if grep -q '"lastUpdateCheck"' "$LOCK_FILE"; then
-  sed -i.bak -e "s/\"lastUpdateCheck\"[[:space:]]*:[[:space:]]*[^,}]*/\"lastUpdateCheck\": \"$NOW_UTC\"/" "$LOCK_FILE" && rm -f "${LOCK_FILE}.bak"
+if command -v jq >/dev/null 2>&1; then
+  TMP_LOCK="${LOCK_FILE}.tmp.$$"
+  jq --arg now "$NOW_UTC" '.lastUpdateCheck = $now' "$LOCK_FILE" > "$TMP_LOCK" && mv "$TMP_LOCK" "$LOCK_FILE"
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -c "
+import json, sys
+path = sys.argv[1]
+now_str = sys.argv[2]
+try:
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    data['lastUpdateCheck'] = now_str
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+except Exception:
+    pass
+" "$LOCK_FILE" "$NOW_UTC"
 else
-  sed -i.bak -e "s/}[[:space:]]*$/  \"lastUpdateCheck\": \"$NOW_UTC\"\n}/" "$LOCK_FILE" && rm -f "${LOCK_FILE}.bak"
+  echo "Warning: neither jq nor python3 is available; sen.lock.json lastUpdateCheck was not updated." >&2
 fi
 
 exit 0

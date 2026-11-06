@@ -27,13 +27,25 @@ else {
 
 $argumentString = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptToRun`" -Workspace `"$Workspace`""
 
+$userId = if ($env:USERDOMAIN -and $env:USERNAME) {
+    "$($env:USERDOMAIN)\$($env:USERNAME)"
+}
+elseif ($env:USERNAME) {
+    $env:USERNAME
+}
+else {
+    [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+}
+
 if ($DryRun) {
     Write-Output "DryRun: Would register task '$taskName'"
     Write-Output "Action: powershell.exe $argumentString"
+    Write-Output "User: $userId"
     Write-Output "Trigger: Daily"
     return [pscustomobject]@{
         TaskName  = $taskName
         Action    = "powershell.exe $argumentString"
+        User      = $userId
         Trigger   = "Daily"
         Workspace = $Workspace
         DryRun    = $true
@@ -42,7 +54,7 @@ if ($DryRun) {
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argumentString
 $trigger = New-ScheduledTaskTrigger -Daily -At "09:00"
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 Write-Output "Registered scheduled task '$taskName'"

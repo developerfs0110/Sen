@@ -42,67 +42,96 @@ if (-not $gatePassed) {
     exit 0
 }
 
-# Run update check
-$statusArgs = @{ Workspace = $Workspace }
-if ($Git) { $statusArgs.Git = $Git }
-$updates = @(Get-SenUpdateStatus @statusArgs)
-$available = @($updates | Where-Object { $_.HasUpdate -eq $true })
-
 $noticePath = Join-Path -Path $Workspace -ChildPath ".agents/rules/sen-update-notice.md"
 
-if ($available.Count -gt 0) {
-    $instruction = "Mention these updates once, in the user's language, and offer to run the sen-update skill."
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("# Sen Update Notice")
-    $lines.Add("")
-    $lines.Add("Updates are available for the following package(s):")
-    $lines.Add("")
-    foreach ($u in $available) {
-        $lines.Add("- **$($u.Id)**: current '$($u.Current)', latest '$($u.Latest)'")
-        if (-not [string]::IsNullOrWhiteSpace($u.Summary)) {
-            $summaryLines = @($u.Summary -split "[\r\n]+") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-            foreach ($sl in ($summaryLines | Select-Object -First 3)) {
-                $lines.Add("  * $sl")
+try {
+    # Run update check
+    $statusArgs = @{ Workspace = $Workspace }
+    if ($Git) { $statusArgs.Git = $Git }
+    $updates = @(Get-SenUpdateStatus @statusArgs)
+    $available = @($updates | Where-Object { $_.HasUpdate -eq $true })
+
+    if ($available.Count -gt 0) {
+        $instruction = "Mention these updates once, in the user's language, and offer to run the sen-update skill."
+        $utf8 = [System.Text.UTF8Encoding]::new($false)
+
+        function Build-NoticeText {
+            param(
+                [object[]]$Items,
+                [int]$OmittedCount,
+                [bool]$WithSummary
+            )
+            $sb = [System.Text.StringBuilder]::new()
+            [void]$sb.AppendLine("# Sen Update Notice")
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine("Updates are available for the following package(s):")
+            [void]$sb.AppendLine("")
+            foreach ($u in $Items) {
+                [void]$sb.AppendLine("- **$($u.Id)**: current '$($u.Current)', latest '$($u.Latest)'")
+                if ($WithSummary -and -not [string]::IsNullOrWhiteSpace($u.Summary)) {
+                    # Cap commit summary at 3 lines per package to conserve token budget in the notice rule.
+                    $lines = @($u.Summary -split "[\r\n]+") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                    foreach ($sl in ($lines | Select-Object -First 3)) {
+                        [void]$sb.AppendLine("  * $sl")
+                    }
+                }
+            }
+            if ($OmittedCount -gt 0) {
+                [void]$sb.AppendLine("- *(+$OmittedCount more)*")
+            }
+            [void]$sb.AppendLine("")
+            [void]$sb.AppendLine($instruction)
+            return $sb.ToString().TrimEnd("`r`n") + "`n"
+        }
+
+        $finalContent = ""
+        # 1. Full notice with summaries
+        $cand = Build-NoticeText -Items $available -OmittedCount 0 -WithSummary $true
+        if ($utf8.GetByteCount($cand) -le 800) {
+            $finalContent = $cand
+        }
+        else {
+            # 2. All packages without summaries
+            $cand = Build-NoticeText -Items $available -OmittedCount 0 -WithSummary $false
+            if ($utf8.GetByteCount($cand) -le 800) {
+                $finalContent = $cand
+            }
+            else {
+                # 3. Truncate package list and append (+N more)
+                $fitted = $false
+                for ($k = $available.Count - 1; $k -ge 1; $k--) {
+                    $sub = @($available | Select-Object -First $k)
+                    $omitted = $available.Count - $k
+                    $cand = Build-NoticeText -Items $sub -OmittedCount $omitted -WithSummary $false
+                    if ($utf8.GetByteCount($cand) -le 800) {
+                        $finalContent = $cand
+                        $fitted = $true
+                        break
+                    }
+                }
+                if (-not $fitted) {
+                    $finalContent = "# Sen Update Notice`n`nUpdates are available (+$(@($available).Count) packages)`n`n$instruction`n"
+                }
             }
         }
-    }
-    $lines.Add("")
-    $lines.Add($instruction)
-    $lines.Add("")
-    $content = $lines -join "`n"
 
-    # Enforce at most 800 bytes
-    $utf8Encoding = [System.Text.UTF8Encoding]::new($false)
-    $bytes = $utf8Encoding.GetBytes($content)
-    if ($bytes.Length -gt 800) {
-        $shortLines = [System.Collections.Generic.List[string]]::new()
-        $shortLines.Add("# Sen Update Notice")
-        $shortLines.Add("")
-        $shortLines.Add("Updates are available for:")
-        foreach ($u in $available) {
-            $shortLines.Add("- **$($u.Id)**: latest '$($u.Latest)'")
+        $rulesDir = Join-Path -Path $Workspace -ChildPath ".agents/rules"
+        if (-not (Test-Path -LiteralPath $rulesDir)) {
+            [System.IO.Directory]::CreateDirectory($rulesDir) | Out-Null
         }
-        $shortLines.Add("")
-        $shortLines.Add($instruction)
-        $shortLines.Add("")
-        $content = $shortLines -join "`n"
+        [System.IO.File]::WriteAllText($noticePath, $finalContent, $utf8)
     }
-
-    $rulesDir = Join-Path -Path $Workspace -ChildPath ".agents/rules"
-    if (-not (Test-Path -LiteralPath $rulesDir)) {
-        [System.IO.Directory]::CreateDirectory($rulesDir) | Out-Null
-    }
-    [System.IO.File]::WriteAllText($noticePath, $content, $utf8Encoding)
-}
-else {
-    if (Test-Path -LiteralPath $noticePath) {
-        Remove-Item -LiteralPath $noticePath -Force -ErrorAction SilentlyContinue
+    else {
+        if (Test-Path -LiteralPath $noticePath) {
+            Remove-Item -LiteralPath $noticePath -Force -ErrorAction SilentlyContinue
+        }
     }
 }
-
-# Update lastUpdateCheck in lock
-$lock = Read-SenLock -Workspace $Workspace
-$lock.lastUpdateCheck = $nowUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
-Write-SenLock -Workspace $Workspace -Lock $lock
+finally {
+    # Item 7: check-updates.ps1 always updates lastUpdateCheck, even on a git failure
+    $lock = Read-SenLock -Workspace $Workspace
+    $lock.lastUpdateCheck = $nowUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    Write-SenLock -Workspace $Workspace -Lock $lock
+}
 
 exit 0

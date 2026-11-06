@@ -310,9 +310,9 @@ Test "Update-SenPackages creates backup and restores on clone failure" {
         Assert-Equal "failed" $res[0].Status
 
         # Backup exists
-        $backupDir = Join-Path $ws ".agents/.sen-backup/superpowers-old111"
-        Assert-True (Test-Path -LiteralPath $backupDir) "backup directory created"
-        Assert-Equal "original superpowers v1" ([System.IO.File]::ReadAllText((Join-Path $backupDir "SKILL.md")))
+        $backupDirs = @(Get-ChildItem -LiteralPath (Join-Path $ws ".agents/.sen-backup") -Directory | Where-Object { $_.Name -like "superpowers-old111-*" })
+        Assert-True ($backupDirs.Count -gt 0) "backup directory created"
+        Assert-Equal "original superpowers v1" ([System.IO.File]::ReadAllText((Join-Path $backupDirs[0].FullName "SKILL.md")))
 
         # Package dest restored
         Assert-Equal "original superpowers v1" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
@@ -362,8 +362,8 @@ Test "Update-SenPackages updates package, refreshes .sen-commit and lock" {
         Assert-Equal "new222" $res[0].Commit
 
         # Backup exists
-        $backupDir = Join-Path $ws ".agents/.sen-backup/superpowers-old111"
-        Assert-True (Test-Path -LiteralPath $backupDir) "backup exists"
+        $backupDirs = @(Get-ChildItem -LiteralPath (Join-Path $ws ".agents/.sen-backup") -Directory | Where-Object { $_.Name -like "superpowers-old111-*" })
+        Assert-True ($backupDirs.Count -gt 0) "backup exists"
 
         # Dest updated
         Assert-True (Test-Path -LiteralPath (Join-Path $dest "SKILL.md")) "SKILL.md in dest"
@@ -479,5 +479,225 @@ Test "check-updates.ps1 and Update-SenPackages work in workspace path with space
     }
     finally {
         Remove-UpdateTempDir $root
+    }
+}
+
+Test "Atomic backup ignores .partial and missing meta on restore" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "v1")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "v1-commit`n")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{
+                    repo        = "https://github.com/obra/superpowers.git"
+                    subPath     = ""
+                    commit      = "v1-commit"
+                    installedAt = "2026-11-01T00:00:00Z"
+                }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        # Make a valid backup
+        $bk = New-SenPackageBackup -Workspace $ws -Id "superpowers" -Dest $dest -Commit "v1-commit"
+        Assert-Equal $true $bk.Success
+        Assert-True (-not $bk.BackupDir.EndsWith(".partial")) "final backup drops .partial"
+
+        # Create an incomplete .partial backup
+        $bkParent = Join-Path $ws ".agents/.sen-backup"
+        $partialDir = Join-Path $bkParent "superpowers-v2-corrupt.partial"
+        [System.IO.Directory]::CreateDirectory($partialDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $partialDir "SKILL.md"), "corrupt")
+
+        # Create a backup lacking meta
+        $noMetaDir = Join-Path $bkParent "superpowers-v3-nometa"
+        [System.IO.Directory]::CreateDirectory($noMetaDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $noMetaDir "SKILL.md"), "nometa")
+
+        # Restore must find v1-commit and ignore the partial/no-meta dirs
+        $res = Restore-SenPackage -Workspace $ws -Id "superpowers"
+        Assert-Equal "restored" $res.Status
+        Assert-Equal "v1-commit" $res.Commit
+        Assert-Equal "v1" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Restore selects backups by meta.id and never collides between sen and sen-method" {
+    $ws = New-UpdateTempDir
+    try {
+        $destSen = Join-Path $ws ".agents/plugins/sen"
+        $destMethod = Join-Path $ws ".agents/plugins/sen-method"
+        [System.IO.Directory]::CreateDirectory($destSen) | Out-Null
+        [System.IO.Directory]::CreateDirectory($destMethod) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $destSen "SKILL.md"), "sen content")
+        [System.IO.File]::WriteAllText((Join-Path $destMethod "SKILL.md"), "sen-method content")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "sen"        = @{ repo = "r1"; subPath = ""; commit = "sen-c1"; dest = ".agents/plugins/sen" }
+                "sen-method" = @{ repo = "r2"; subPath = ""; commit = "method-c2"; dest = ".agents/plugins/sen-method" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        # Create backups for both
+        $bk1 = New-SenPackageBackup -Workspace $ws -Id "sen" -Dest $destSen -Commit "sen-c1"
+        $bk2 = New-SenPackageBackup -Workspace $ws -Id "sen-method" -Dest $destMethod -Commit "method-c2"
+        Assert-True $bk1.Success
+        Assert-True $bk2.Success
+
+        # Overwrite dests with dirty content
+        [System.IO.File]::WriteAllText((Join-Path $destSen "SKILL.md"), "dirty sen")
+        [System.IO.File]::WriteAllText((Join-Path $destMethod "SKILL.md"), "dirty method")
+
+        # Restore sen: must pick sen-c1, not method-c2
+        $rSen = Restore-SenPackage -Workspace $ws -Id "sen"
+        Assert-Equal "restored" $rSen.Status
+        Assert-Equal "sen-c1" $rSen.Commit
+        Assert-Equal "sen content" ([System.IO.File]::ReadAllText((Join-Path $destSen "SKILL.md")))
+
+        # Restore sen-method: must pick method-c2
+        $rMethod = Restore-SenPackage -Workspace $ws -Id "sen-method"
+        Assert-Equal "restored" $rMethod.Status
+        Assert-Equal "method-c2" $rMethod.Commit
+        Assert-Equal "sen-method content" ([System.IO.File]::ReadAllText((Join-Path $destMethod "SKILL.md")))
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Restore backs up dest first so restore can be rolled back" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "initial content v1")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "v1`n")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{ repo = "r"; subPath = ""; commit = "v1" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        # Backup v1
+        $bk1 = New-SenPackageBackup -Workspace $ws -Id "superpowers" -Dest $dest -Commit "v1"
+        Assert-True $bk1.Success
+
+        # Simulate update to v2
+        Start-Sleep -Milliseconds 1100
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "updated content v2")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "v2`n")
+        $lock.packages["superpowers"].commit = "v2"
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        # Restore to v1: this must backup v2 first
+        Start-Sleep -Milliseconds 1100
+        $r1 = Restore-SenPackage -Workspace $ws -Id "superpowers"
+        Assert-Equal "restored" $r1.Status
+        Assert-Equal "v1" $r1.Commit
+        Assert-Equal "initial content v1" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+
+        # Now call restore again: should restore v2 (the pre-restore backup of v2)
+        Start-Sleep -Milliseconds 1100
+        $r2 = Restore-SenPackage -Workspace $ws -Id "superpowers"
+        Assert-Equal "restored" $r2.Status
+        Assert-Equal "v2" $r2.Commit
+        Assert-Equal "updated content v2" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Get-SenUpdateStatus handles ls-remote error gracefully without throwing and updates lastUpdateCheck" {
+    $ws = New-UpdateTempDir
+    try {
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{ repo = "https://github.com/obra/superpowers.git"; subPath = ""; commit = "v1" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $failingGit = {
+            param([string[]]$GitArgs)
+            if ($GitArgs[0] -eq "ls-remote") {
+                return [pscustomobject]@{ ExitCode = 128; Output = "fatal: could not resolve host" }
+            }
+            return [pscustomobject]@{ ExitCode = 1; Output = "error" }
+        }
+
+        # Should not throw
+        $status = Get-SenUpdateStatus -Workspace $ws -Git $failingGit
+        Assert-Equal 1 @($status).Count
+        Assert-Equal $false $status[0].HasUpdate
+        Assert-True ($status[0].Error -match "could not resolve host") "error reported in result"
+
+        # check-updates.ps1 should run and update lastUpdateCheck even with failing git
+        & $checkScript -Workspace $ws -Git $failingGit
+        $lockAfter = Read-SenLock -Workspace $ws
+        Assert-True (-not [string]::IsNullOrEmpty($lockAfter.lastUpdateCheck)) "lastUpdateCheck updated on git failure"
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "check-updates.ps1 enforces 800-byte limit with 30 packages with long ids" {
+    $ws = New-UpdateTempDir
+    try {
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{}
+        }
+        $remotes = @{}
+        for ($i = 1; $i -le 30; $i++) {
+            $longId = "extraordinarily-long-package-identifier-for-antigravity-testing-tool-$i"
+            $repo = "https://example.com/repo-$i.git"
+            $lock.packages[$longId] = @{
+                repo        = $repo
+                subPath     = ""
+                commit      = "old-commit-sha-number-$i"
+                installedAt = "2026-11-01T00:00:00Z"
+            }
+            $remotes[$repo] = "new-commit-sha-number-$i"
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $git = New-UpdateFakeGit -RemoteHeads $remotes -CloneCommit "newcommit" -LogLines @("feat: update $i")
+        & $checkScript -Workspace $ws -Force -Git $git
+
+        $noticePath = Join-Path $ws ".agents/rules/sen-update-notice.md"
+        Assert-True (Test-Path -LiteralPath $noticePath) "notice written"
+
+        $fInfo = Get-Item -LiteralPath $noticePath
+        Assert-True ($fInfo.Length -le 800) "notice length must be <= 800 bytes, was $($fInfo.Length)"
+
+        $content = [System.IO.File]::ReadAllText($noticePath, [System.Text.Encoding]::UTF8)
+        $expectedSentence = "Mention these updates once, in the user's language, and offer to run the sen-update skill."
+        Assert-True ($content.Contains($expectedSentence)) "must contain exact required instruction sentence"
+        Assert-True ($content.Contains("(+")) "must contain (+N more) indicator when truncated"
+    }
+    finally {
+        Remove-UpdateTempDir $ws
     }
 }
