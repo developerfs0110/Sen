@@ -51,6 +51,10 @@ try:
             if not inside:
                 print("DENY_PATH:" + rp)
                 sys.exit(0)
+            norm_rp = rp.replace("\\", "/").lower()
+            if "/.git/config" in norm_rp or "/.git/hooks" in norm_rp:
+                print("DENY_GIT:" + rp)
+                sys.exit(0)
         print("SAFE_TOOL")
         sys.exit(0)
     print("CMD:" + (args.get("CommandLine") or ""))
@@ -61,6 +65,9 @@ except Exception:
   case "$PY_CHECK" in
     DENY_PATH:*)
       out_decision "deny" "[SEN GUARD] Blocked: file write outside active workspace (${PY_CHECK#DENY_PATH:})."
+      ;;
+    DENY_GIT:*)
+      out_decision "deny" "[SEN GUARD] Blocked: direct modification of protected Git metadata (${PY_CHECK#DENY_GIT:})."
       ;;
     SAFE_TOOL)
       out_decision "ask" ""

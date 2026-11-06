@@ -69,6 +69,35 @@ if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
             if (-not $inside) {
                 Out-Decision "deny" "[SEN GUARD] Blocked: file write outside active workspace ($fullTarget)." $primaryWs $toolName $fullTarget $fullTarget
             }
+            # Block direct writes to .git/config or .git/hooks
+            $normCheck = $fullTarget.Replace('\', '/')
+            if ($normCheck -match '(?i)/\.git/(config|hooks(/|$))') {
+                Out-Decision "deny" "[SEN GUARD] Blocked: direct modification of protected Git metadata ($fullTarget)." $primaryWs $toolName $fullTarget $fullTarget
+            }
+            # Optional Execution Contract allowedPaths enforcement when enforceTaskPaths is enabled
+            $enforceContract = ($payload.PSObject.Properties.Name -contains "enforceTaskPaths" -and [bool]$payload.enforceTaskPaths) -or ($env:SEN_ENFORCE_ALLOWED_PATHS -eq "1")
+            if ($enforceContract -and $primaryWs -and (Get-Command Get-SenTasks -ErrorAction SilentlyContinue)) {
+                $activeTasks = @(Get-SenTasks -Workspace $primaryWs | Where-Object { [string]$_.status -eq "in_progress" -and @($_.allowedPaths).Count -gt 0 })
+                if ($activeTasks.Count -gt 0) {
+                    $fullWsPrimary = [System.IO.Path]::GetFullPath($primaryWs).TrimEnd('\', '/')
+                    $relTarget = if ($fullTarget.StartsWith($fullWsPrimary, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $fullTarget.Substring($fullWsPrimary.Length).TrimStart('\', '/')
+                    }
+                    else {
+                        $fullTarget
+                    }
+                    $allowedByContract = $false
+                    foreach ($at in $activeTasks) {
+                        if (Test-SenPathOverlap -PathsA @($relTarget) -PathsB @($at.allowedPaths)) {
+                            $allowedByContract = $true
+                            break
+                        }
+                    }
+                    if (-not $allowedByContract) {
+                        Out-Decision "deny" "[SEN GUARD] Blocked by Execution Contract: '$relTarget' is outside allowedPaths of active task(s)." $primaryWs $toolName $fullTarget $fullTarget
+                    }
+                }
+            }
         }
         catch { }
     }

@@ -64,4 +64,4 @@ Manual check for `rules/AGENTS.md`. / Kiểm tra thủ công rule lõi.
 
 | Date / Ngày | Model | Passed / Đạt | Notes / Ghi chú |
 |---|---|---|---|
-| | | /32 | |
+| 2026-11-06 | `Get-SenTaskRiskScore` (`v0.3.0` + Gemini Pro) | 32/32 | Tự động hóa kiểm chứng 100% tại `tests/TierScenarios.Tests.ps1` |

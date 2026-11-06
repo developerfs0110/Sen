@@ -204,6 +204,17 @@ foreach ($psf in $psFiles) {
     }
 }
 
+# 7. Validate README.md and README.vi.md stay synchronized when both exist
+$readmeMain = Join-Path -Path $resolvedRoot -ChildPath "README.md"
+$readmeVi   = Join-Path -Path $resolvedRoot -ChildPath "README.vi.md"
+if ((Test-Path -LiteralPath $readmeMain) -and (Test-Path -LiteralPath $readmeVi)) {
+    $tMain = ([System.IO.File]::ReadAllText($readmeMain, [System.Text.Encoding]::UTF8)).Replace("`r`n", "`n").Trim()
+    $tVi   = ([System.IO.File]::ReadAllText($readmeVi, [System.Text.Encoding]::UTF8)).Replace("`r`n", "`n").Trim()
+    if ($tMain -ne $tVi) {
+        $errors.Add("README.md and README.vi.md are out of sync")
+    }
+}
+
 $isDotSourced = ($MyInvocation.InvocationName -eq '.')
 
 if ($errors.Count -gt 0) {

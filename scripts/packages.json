@@ -4,6 +4,7 @@
     "repo": "https://github.com/obra/superpowers.git",
     "subPath": "",
     "dest": ".agents/plugins/superpowers",
+    "pinnedCommit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
     "required": true
   },
   {
@@ -11,6 +12,7 @@
     "repo": "https://github.com/cloudflare/security-audit-skill.git",
     "subPath": "skills/security-audit",
     "dest": ".agents/skills/security-audit",
+    "pinnedCommit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
     "required": true
   },
   {
@@ -18,6 +20,7 @@
     "repo": "https://github.com/mhfed/vn-law-check.git",
     "subPath": "plugins/vn-law-check/skills/vn-law-check",
     "dest": ".agents/skills/vn-law-check",
+    "pinnedCommit": "c6391e04702a79c692592e1dbcfc720dfe3bb909",
     "required": false
   }
 ]

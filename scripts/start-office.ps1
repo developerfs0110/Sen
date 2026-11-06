@@ -123,6 +123,10 @@ try {
                 $evs = @(Read-SenOfficeEvents -Workspace $resolvedWs -Limit 150)
                 $sh = Read-SenOfficeShowcase -Workspace $resolvedWs
                 $q = Get-SenAntigravityQuota
+                $tks = @(Get-SenTasks -Workspace $resolvedWs)
+                $met = Get-SenQualityMetrics -Workspace $resolvedWs
+                $rec = Get-SenRecoveryState -Workspace $resolvedWs
+                $les = @(Get-SenExecutionLessons -Workspace $resolvedWs)
                 $st = [ordered]@{
                     live      = $true
                     workspace = $resolvedWs
@@ -130,6 +134,10 @@ try {
                     events    = $evs
                     showcase  = $sh
                     quota     = $q
+                    tasks     = $tks
+                    metrics   = $met
+                    recovery  = $rec
+                    lessons   = $les
                 }
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $st -Depth 8 -Compress))
                 Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes

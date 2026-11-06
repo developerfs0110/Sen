@@ -17,3 +17,4 @@ Trước khi tuyên bố hoàn thành hoặc thực hiện `git commit` / `git p
 1. Chạy `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Validate-Repo.ps1 .` — phải đạt **0 lỗi** (`rules/AGENTS.md` <= 6.000 bytes và <= 99 dòng; tất cả tệp `.ps1`/`.psm1` chỉ dùng mã ASCII; không rò rỉ đường dẫn cá nhân; không đứt liên kết Markdown).
 2. Chạy `powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/run.ps1` — phải vượt qua **100% bài kiểm thử**.
 3. Sau khi cập nhật mã nguồn, đồng bộ bản cài đặt trực tiếp tại `.agents/plugins/sen-method/` trong workspace.
+

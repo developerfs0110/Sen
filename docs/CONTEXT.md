@@ -1,38 +1,27 @@
-# Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.2.0`)
+# Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.3.0`)
 
 - **Cập nhật lần cuối:** 2026-11-06
-- **Cột mốc hiện tại:** `v0.2.0` (**Sen Office** — Trung tâm điều hành AI 3D Chibi, 10 nâng cấp UI/Quản trị & Bộ hiển thị đầu ra 2 giai đoạn) — **Đã phát hành & đẩy lên GitHub**
+- **Cột mốc hiện tại:** `v0.3.0` (**Sen Orchestrator & Control Center** — Bộ máy Điều phối Agent & Quản lý Trạng thái Task thực sự, Chấm điểm Rủi ro xác định `32/32`, Quy trình Backlog `docs/TODO.md`, Điểm khôi phục tự động, Ghim Commit Chuỗi cung ứng & Bộ nhớ 3 Lớp) — **Đã hoàn tất & Kiểm chứng**
 - **Kho mã nguồn:** `https://github.com/developerfs0110/Sen.git` (nhánh `main`)
 - **Quy ước Git của dự án:** Tất cả nội dung bình luận khi commit/push Git (`git commit`) bắt buộc viết bằng **tiếng Việt** (xem [AGENTS.md](../AGENTS.md)).
 
 ---
 
 ## 1. Trạng thái hiện tại
-Cả **Phần 1 (`v0.1.0` + `v0.1.1` Sen Core & Gia cố bảo mật)** và **Phần 2 (`v0.2.0` `sen-office`)** đều đã hoàn tất, vượt qua toàn bộ bài kiểm thử (`170/170` bài test, `Validate-Repo.ps1` `0` lỗi), đã đẩy lên `origin/main` và đồng bộ vào thư mục plugin trực tiếp của workspace.
+Cả 3 giai đoạn lớn (**`v0.1.0`/`v0.1.1` Sen Core & Gia cố bảo mật**, **`v0.2.0` Sen Office 3D Chibi**, và **`v0.3.0` Sen Orchestrator & AI Control Center**) đều đã hoàn tất 100%, vượt qua toàn bộ **211/211 bài kiểm thử tự động trên 11 bộ test** (`tests/run.ps1` `0` lỗi) và `Validate-Repo.ps1` (`0` lỗi).
 
-## 2. Các quyết định thiết kế đã chốt
-- **Kiến trúc đóng gói tích hợp (Bundled Architecture):** `sen-office` nằm trực tiếp trong `developerfs0110/Sen` ([office/index.html](../office/index.html), [skills/sen-office/SKILL.md](../skills/sen-office/SKILL.md), [scripts/office-post.ps1](../scripts/office-post.ps1), [scripts/start-office.ps1](../scripts/start-office.ps1) và [scripts/Sen.psm1](../scripts/Sen.psm1)).
-- **Dàn nhân vật 3D Chibi Designer-Toy:** Tất cả 9 vai trò AI + Boss sử dụng mô hình Chibi đổ bóng 3D với vòng trạng thái dưới mặt sàn (không có vòng màu che mặt), trang phục/phụ kiện đặc trưng theo vai trò, chớp mắt và hiệu ứng thở/gõ phím.
-- **10/10 Cải tiến Thực tiễn Tốt nhất (tham khảo từ `khanh020905/my-office`, giấy phép MIT):**
-  1. Biểu tượng và màu màn hình máy tính động theo trạng thái (`</>`, `✓_`, `🔍`, `!`)
-  2. Thẻ thông tin khu vực phòng & tủ rack Phòng Server (`Place Cards`)
-  3. Ngăn kiểm tra 6 chỉ số (`Read · Edit · Cmd · Time · Model · State` + bằng chứng xác thực từ hệ thống)
-  4. Cốc cà phê bốc khói + Chế độ Ngày/Đêm (`🌙/☀️`)
-  5. Bộ chuyển chế độ xem (`🏢 Sàn 3D | 📋 2D Gọn | 🎯 Đầu ra 2 Giai đoạn | 🔀 Chia đôi`) + Ẩn thông tin nhạy cảm (`🔒`)
-  6. Thanh tua lại lịch sử sự kiện (`⏪`)
-  7. Bộ ngắt vòng lặp kẹt lệnh (`Test-SenStuckLoop` — tự động chặn ở lần thử thứ 4 sau 3 lần thất bại liên tiếp trên cùng công cụ + mục tiêu)
-  8. Tự động che giấu khóa bí mật (`Protect-SenRedactedText` trước khi ghi vào `events.jsonl`)
-  9. Thẻ cảnh báo lệnh bị chặn (`🛑 LỆNH BỊ CHẶN` + nút Copy Command khi `guard` chặn lệnh nguy hiểm)
-  10. Hiển thị hạn mức Antigravity chỉ đọc (`Get-SenAntigravityQuota`)
-- **Bộ hiển thị đầu ra 2 giai đoạn (Dual-Phase Output Visualizer):** Đối chiếu Giai đoạn 1 (Bản thiết kế & Kế hoạch sau khi chốt phương án) với Giai đoạn 2 (Kết quả thực tế đã kiểm chứng & 4 Cổng chất lượng).
+## 2. Các quyết định thiết kế đã chốt (`v0.1.0` → `v0.3.0`)
+- **Bộ máy Điều phối & Quản lý Trạng thái Task (`v0.3.0`):** Lưu trạng thái công việc có cấu trúc tại `.agents/office/tasks.json` (`New-SenTask`, `Get-SenTasks`, `Get-SenReadyTasks`, `Start-SenTask`, `Submit-SenTaskForReview`, `Complete-SenTaskReview`, `Test-SenDeliveryGate`, `Get-SenRecoveryState`, `Get-SenQualityMetrics`), tự động chặn xung đột file (`File Lock` theo `allowedPaths`) khi nhiều Developer chạy song song.
+- **Quy trình Backlog chuẩn hóa (`TASK-02`):** Mọi yêu cầu *"lưu vào task cần làm"* được ghi tự động vào [docs/TODO.md](./TODO.md) và `.agents/office/tasks.json` (`Add-SenBacklogItem`).
+- **Bộ chấm điểm rủi ro xác định (`Get-SenTaskRiskScore`):** Chấm điểm theo yếu tố rủi ro + độ lan tỏa file (`SharedComponent`, `PublicApi`, `FileCount`, `Database/Auth/Payment/DataDeletion`), vượt qua tự động `32/32` kịch bản trong [tests/tier-scenarios.md](../tests/tier-scenarios.md).
+- **An toàn Thực thi & Chuỗi cung ứng:** Ghim `pinnedCommit` trong [scripts/packages.json](../scripts/packages.json), tạo điểm khôi phục nhanh (`New-SenRestorePoint` / `Restore-SenRestorePoint`), chặn sửa `.git/config` và kiểm tra `allowedPaths` trong [scripts/guard.ps1](../scripts/guard.ps1).
+- **Trung tâm Điều hành 3D AI Office & Control Center:** Giao diện [office/index.html](../office/index.html) tích hợp 5 chế độ xem (`🏢 Sàn 3D`, `📋 2D Gọn`, `📊 Quản lý Task & DAG`, `🎯 Đầu ra 2 Giai đoạn`, `🔀 Chia đôi`) và **Bộ nhớ 3 Lớp** (`User · Project · Execution Lessons`).
 
 ## 3. Các cổng chất lượng đã kiểm chứng
-- `scripts/Validate-Repo.ps1`: **ĐẠT (0 lỗi)** (`rules/AGENTS.md` = `5,968 / 6,000` bytes, `80 / 99` dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; toàn bộ 8 kỹ năng `sen-*` hợp lệ).
-- `tests/run.ps1`: **ĐẠT (170 / 170 bài kiểm thử trên 9 bộ test)**.
-- `bash -n`: **ĐẠT** trên `guard.sh`, `office-post.sh`, `start-office.sh`, `install.sh`, `check-updates.sh`.
-- Cổng Bảo mật & Bản quyền: **ĐẠT** (Giấy phép MIT [LICENSE](../LICENSE) + ghi công đầy đủ cho `obra/superpowers`, `cloudflare/security-audit-skill`, `mhfed/vn-law-check`, và `khanh020905/my-office`).
+- `scripts/Validate-Repo.ps1`: **ĐẠT (0 lỗi)** (`rules/AGENTS.md` <= 6.000 bytes & <= 99 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).
+- `tests/run.ps1`: **ĐẠT (211 / 211 bài kiểm thử trên 11 bộ test, bao gồm `TierScenarios.Tests.ps1` và `Orchestrator.Tests.ps1`)**.
+- `bash -n`: **ĐẠT** trên toàn bộ script `.sh`.
 
-## 4. Bước tiếp theo
-- Sẵn sàng sử dụng cho các dự án thực tế trong workspace.
-- Gõ `"mở văn phòng"` bất cứ lúc nào để mở Trung tâm điều hành 3D AI Office, hoặc mở phiên trò chuyện mới (chỉ cần đọc tệp `docs/CONTEXT.md` này để khôi phục ngữ cảnh).
-- Mọi lần commit/push Git tiếp theo của dự án này đều viết bình luận bằng **tiếng Việt**.
+## 4. Bước tiếp theo & Danh sách Việc cần làm (`docs/TODO.md`)
+- Toàn bộ 10 hạng mục (`TASK-01` → `TASK-10`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
+- Sẵn sàng sử dụng thực tế hoặc mở `http://127.0.0.1:47890/` (bấm tab **📊 Quản lý Task & DAG**) để giám sát trực tiếp.

@@ -24,6 +24,7 @@ flowchart LR
 
 - **Explain IDE permission prompts in 2 lines:** Tell the user that on a fresh Antigravity install, the IDE will show a **Run / Allow** button before each PowerShell/Bash command. They do not need to pre-configure any permissions; simply click **Allow** when prompted.
 - **Highlight when the Safety Shield turns on:** Point out that in **Stage 2 (Step 4)**, Sen installs a **2-layer Safety Shield** (`hooks.json` + `scripts/guard.ps1`/`guard.sh` hard-blocking `git push --force`, `git reset --hard`, and recursive deletes `rm -rf` / `Remove-Item -Recurse`, plus `.agents/rules/safety.md` confining file access to the workspace).
+- **Express 1-Step Mode (`"cài nhanh"` / `"express setup"`):** Offer the user a choice between **Express Mode** (uses the top recommended drive `<Drive>:\Sen-Workspace`, installs required packages at their pinned commits, sets default `Standard` project scale, and skips optional prompts like `vn-law-check` and OS scheduler until asked) and **Guided 9-Step Mode** (below).
 
 ---
 

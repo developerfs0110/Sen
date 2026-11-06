@@ -9,11 +9,11 @@ $global:FailedTests = 0
 
 . "$PSScriptRoot/Assert.ps1"
 
-$testFiles = Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.Tests.ps1" | Sort-Object Name
+$testFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.Tests.ps1" | Sort-Object Name)
 
 if ($testFiles.Count -eq 0) {
-    Write-Host "No test files found in $PSScriptRoot"
-    exit 0
+    Write-Host "ERROR: No test files found in $PSScriptRoot" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host "Running $($testFiles.Count) test file(s)..."
@@ -32,6 +32,11 @@ foreach ($file in $testFiles) {
 
 Write-Host "`n----------------------------------------"
 Write-Host "Test Results: $($global:PassedTests) passed, $($global:FailedTests) failed ($($global:TotalTests) total)"
+
+if ($global:TotalTests -le 0) {
+    Write-Host "ERROR: Zero assertions were executed." -ForegroundColor Red
+    exit 1
+}
 
 if ($global:FailedTests -gt 0) {
     exit $global:FailedTests

@@ -66,8 +66,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if os.path.isfile(sh_p):
                 try: sh = json.load(open(sh_p, "r", encoding="utf-8"))
                 except Exception: pass
+            tks = []
+            tk_p = os.path.join(off_dir, "tasks.json")
+            if os.path.isfile(tk_p):
+                try:
+                    tobj = json.load(open(tk_p, "r", encoding="utf-8"))
+                    tks = tobj.get("tasks", []) if isinstance(tobj, dict) else tobj
+                except Exception: pass
+            les = []
+            ls_p = os.path.join(off_dir, "lessons.json")
+            if os.path.isfile(ls_p):
+                try: les = json.load(open(ls_p, "r", encoding="utf-8"))
+                except Exception: pass
             self._send(200, "application/json; charset=utf-8", json.dumps({
                 "live": True, "workspace": ws, "config": cfg, "events": evs, "showcase": sh,
+                "tasks": tks, "lessons": les,
                 "quota": {"available": False, "models": []}
             }))
         else:

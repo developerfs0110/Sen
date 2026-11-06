@@ -507,17 +507,18 @@
 <!-- Top Bar -->
 <div class="o-top">
   <div class="top-left">
-    <span class="rec">CAM 01 · SEN OFFICE 3D (v0.2.0)</span>
+    <span class="rec">CAM 01 · SEN OFFICE 3D (v0.3.0)</span>
     <span class="conn-pill demo" id="connPill">🔵 DEMO MODE</span>
     <span id="status">Sẵn sàng</span>
   </div>
   <div class="top-right">
-    <!-- View Switcher: 3D | 2D | Dual-Phase | Split -->
+    <!-- View Switcher: 3D | 2D | Task Manager | Dual-Phase | Split -->
     <span class="modes" id="viewModes">
       <button data-v="3d" class="sel" onclick="setView('3d')">🏢 Sàn 3D</button>
       <button data-v="2d" onclick="setView('2d')">📋 2D Gọn</button>
+      <button data-v="tasks" onclick="setView('tasks')">📊 Quản lý Task & DAG</button>
       <button data-v="dual" onclick="setView('dual')">🎯 Đầu ra (2 Giai đoạn)</button>
-      <button data-v="split" onclick="setView('split')">🔀 Chia đôi (3D + Đầu ra)</button>
+      <button data-v="split" onclick="setView('split')">🔀 Chia đôi (Tất cả)</button>
     </span>
     <!-- Token Mode Switcher: Off | Eco | Full -->
     <span class="modes" id="modes">
@@ -629,6 +630,52 @@
     </thead>
     <tbody id="tbody2d"></tbody>
   </table>
+</section>
+
+<!-- Task Manager, DAG & Quality Metrics Control Center (v0.3.0) -->
+<section class="view-2d" id="taskManagerView" style="margin-top:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <h3 style="margin:0;font-size:15.5px">📊 Trung tâm Điều phối Task, Đồ thị Phụ thuộc (DAG) & Hợp đồng Thực thi (v0.3.0)</h3>
+    <span class="conn-pill live" id="tmScalePill">Quy mô: Standard · Khóa File (File Lock): BẬT</span>
+  </div>
+  <!-- 7-Stage Pipeline Banner -->
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:12px;font-size:11.5px;text-align:center">
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:7px;padding:6px"><b>1. USER REQUEST</b><br><span style="color:var(--muted)">Yêu cầu / Backlog</span></div>
+    <div style="background:#0d1117;border:1px solid #8957e5;border-radius:7px;padding:6px"><b>2. PM / RISK</b><br><span style="color:#d2a8ff">Chấm điểm rủi ro</span></div>
+    <div style="background:#0d1117;border:1px solid #3fb950;border-radius:7px;padding:6px"><b>3. BA · ARCH · SCOUT</b><br><span style="color:#7ee787">Khảo sát & Thiết kế</span></div>
+    <div style="background:rgba(88,166,255,.12);border:1.5px solid #58a6ff;border-radius:7px;padding:6px"><b>4. TASK MANAGER</b><br><span style="color:#79c0ff">DAG · File Lock · State</span></div>
+    <div style="background:#0d1117;border:1px solid #d29922;border-radius:7px;padding:6px"><b>5. DEV A || DEV B</b><br><span style="color:#e3b341">Song song an toàn</span></div>
+    <div style="background:#0d1117;border:1px solid #db61a2;border-radius:7px;padding:6px"><b>6. QA · SEC · LEGAL</b><br><span style="color:#ff9bce">Kiểm thử & Review</span></div>
+    <div style="background:#0d1117;border:1px solid #2ea043;border-radius:7px;padding:6px"><b>7. DELIVERY GATE</b><br><span style="color:#56d364">Bằng chứng & Bàn giao</span></div>
+  </div>
+  <!-- 4 Quality Metrics Cards -->
+  <div class="gate-grid" style="margin-bottom:12px">
+    <div class="gate-pill"><b id="mSuccessRate">100%</b><span>Task Success Rate</span></div>
+    <div class="gate-pill"><b id="mFirstPass">100%</b><span>First-Pass Rate (0 Rework)</span></div>
+    <div class="gate-pill"><b id="mReworkRate" style="color:#58a6ff">0%</b><span>Rework Rate</span></div>
+    <div class="gate-pill"><b id="mTestPass">100%</b><span>Verified Test Pass Rate</span></div>
+  </div>
+  <table class="tbl-2d">
+    <thead>
+      <tr>
+        <th>Mã Task</th>
+        <th>Tên Task & Module</th>
+        <th>Cấp / Rủi ro</th>
+        <th>Phụ trách</th>
+        <th>Phụ thuộc (DAG)</th>
+        <th>Khóa File (Allowed Paths)</th>
+        <th>Trạng thái</th>
+        <th>Bằng chứng Kiểm định (Gate 6)</th>
+      </tr>
+    </thead>
+    <tbody id="tbodyTasks"></tbody>
+  </table>
+  <div style="margin-top:10px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:9px 12px;font-size:12px">
+    <b style="color:#f0f6fc">🧠 Bộ nhớ 3 Lớp (User Memory · Project Memory · Execution Lessons):</b>
+    <div id="lessonsBox" class="redactable" style="margin-top:5px;color:#c9d1d9;line-height:1.55">
+      • <b>User Memory:</b> <code>.agents/profile.md</code> (Ngôn ngữ Tiếng Việt) · <b>Project Memory:</b> <code>AGENTS.md</code> + <code>docs/CONTEXT.md</code> + <code>docs/TODO.md</code> (Commit bằng tiếng Việt).
+    </div>
+  </div>
 </section>
 
 <!-- Dual-Phase Domain Output Visualizer -->
@@ -1277,11 +1324,59 @@ function applyMode(m) {
   }
 }
 
+const DEMO_TASKS = [
+  { id: 'TASK-01', title: 'Task Manager, DAG & Execution Contract', module: 'Orchestrator', tier: 3, riskLevel: 'high', assignee: 'be', dependsOn: [], allowedPaths: ['scripts/Sen.psm1'], status: 'done', evidence: { command: 'tests/run.ps1', exitCode: 0, reviewer: 'tester' } },
+  { id: 'TASK-02', title: 'Quy trình Backlog (docs/TODO.md)', module: 'Core Rule', tier: 2, riskLevel: 'medium', assignee: 'pm', dependsOn: ['TASK-01'], allowedPaths: ['rules/AGENTS.md', 'docs/TODO.md'], status: 'done', evidence: { command: 'Validate-Repo.ps1', exitCode: 0, reviewer: 'pm' } },
+  { id: 'TASK-03', title: 'Chấm điểm Rủi ro (Get-SenTaskRiskScore) & 32 Kịch bản', module: 'Risk Engine', tier: 3, riskLevel: 'high', assignee: 'ba', dependsOn: ['TASK-01'], allowedPaths: ['tests/TierScenarios.Tests.ps1'], status: 'done', evidence: { command: 'tests/run.ps1', exitCode: 0, reviewer: 'tester' } },
+  { id: 'TASK-08', title: 'Bảng điều khiển AI Control Center & Metrics', module: 'Sen Office', tier: 2, riskLevel: 'medium', assignee: 'fe', dependsOn: ['TASK-01'], allowedPaths: ['office/index.html'], status: 'done', evidence: { command: 'Validate-Repo.ps1', exitCode: 0, reviewer: 'sec' } }
+];
+
+function renderTaskManager(tasks, metrics, lessons, scale) {
+  const list = (Array.isArray(tasks) && tasks.length > 0) ? tasks : DEMO_TASKS;
+  if (scale) {
+    document.getElementById('tmScalePill').textContent = `Quy mô: ${scale.toUpperCase()} · Khóa File (File Lock): BẬT`;
+  }
+  if (metrics) {
+    document.getElementById('mSuccessRate').textContent = `${metrics.taskSuccessRatePct ?? 100}%`;
+    document.getElementById('mFirstPass').textContent = `${metrics.firstPassRatePct ?? 100}%`;
+    document.getElementById('mReworkRate').textContent = `${metrics.reworkRatePct ?? 0}%`;
+    document.getElementById('mTestPass').textContent = `${metrics.testPassRatePct ?? 100}%`;
+  }
+  const tb = document.getElementById('tbodyTasks');
+  if (tb) {
+    tb.innerHTML = list.map(t => {
+      const roleKey = R[t.assignee] ? t.assignee : (t.assignee === 'dev_fe' ? 'fe' : t.assignee === 'dev_be' ? 'be' : 'pm');
+      const rObj = R[roleKey] || R.pm;
+      const deps = Array.isArray(t.dependsOn) && t.dependsOn.length ? t.dependsOn.join(', ') : '—';
+      const paths = Array.isArray(t.allowedPaths) && t.allowedPaths.length ? t.allowedPaths.map(p => `<code>${p}</code>`).join(' ') : '<code>*</code>';
+      const stCol = t.status === 'done' ? '#3fb950' : t.status === 'in_progress' ? '#58a6ff' : t.status === 'reviewing' ? '#db61a2' : t.status === 'backlog' ? '#8b949e' : '#d29922';
+      const evTxt = (t.evidence && t.evidence.command) ? `<span style="color:#7ee787">✓ ${t.evidence.command} (Exit ${t.evidence.exitCode ?? 0})</span>` : '<span style="color:var(--muted)">Chờ kiểm thử</span>';
+      return `<tr>
+        <td><b>${t.id}</b></td>
+        <td><b>${t.title}</b><br><small style="color:var(--muted)">Module: ${t.module || 'Core'}</small></td>
+        <td>Cấp ${t.tier || 2} · <span style="color:#e3b341">${t.riskLevel || 'medium'}</span></td>
+        <td><span style="color:${rObj.c};font-weight:700">● ${rObj.n}</span></td>
+        <td><code>${deps}</code></td>
+        <td class="redactable">${paths}</td>
+        <td><b style="color:${stCol}">${(t.status || 'ready').toUpperCase()}</b></td>
+        <td class="redactable">${evTxt}</td>
+      </tr>`;
+    }).join('');
+  }
+  if (Array.isArray(lessons) && lessons.length > 0) {
+    const lb = document.getElementById('lessonsBox');
+    if (lb) {
+      lb.innerHTML = lessons.map(l => `• <b>[${l.category}]</b> ${l.problem} ➔ <span style="color:#7ee787">${l.solution}</span>`).join('<br>');
+    }
+  }
+}
+
 function setView(v) {
   currentView = v;
   document.querySelectorAll('#viewModes button').forEach(b => b.classList.toggle('sel', b.dataset.v === v));
   document.getElementById('main3dWrap').style.display = (v === '3d' || v === 'split') ? 'grid' : 'none';
   document.getElementById('view2d').classList.toggle('show', v === '2d');
+  document.getElementById('taskManagerView').classList.toggle('show', v === 'tasks' || v === 'split');
   document.getElementById('dualPhase').classList.toggle('show', v === 'dual' || v === 'split');
 }
 
@@ -1359,9 +1454,13 @@ async function pollLiveServer() {
         document.getElementById('p2Summary').textContent = data.showcase.phase2.summary;
       }
     }
+    if (data.tasks || data.metrics || data.lessons) {
+      renderTaskManager(data.tasks, data.metrics, data.lessons, data.config ? data.config.scale : 'standard');
+    }
   } catch (e) {}
 }
 
+renderTaskManager(DEMO_TASKS, null, null, 'standard');
 selectActor('pm');
 setTimeout(() => run('multi'), 350);
 if (location.protocol !== 'file:') {
