@@ -221,11 +221,11 @@ function Read-SenOfficeEvents {
         for ($i = $start; $i -lt $lines.Count; $i++) {
             $ln = $lines[$i].Trim()
             if ($ln) {
-                try { $out.Add((ConvertFrom-Json -InputObject $ln)) } catch { }
+                try { $out.Add((ConvertFrom-Json -InputObject $ln)) } catch { <# Skip malformed JSONL line #> }
             }
         }
     }
-    catch { }
+    catch { <# Return partial or empty list if events.jsonl is concurrently locked #> }
     return $out.ToArray()
 }
 
@@ -444,9 +444,192 @@ function Get-SenTaskRiskScore {
     }
 }
 
+function Get-SenControlFlowDepth {
+    param($Node, $StopNode)
+    $d = 1
+    $p = $Node.Parent
+    while ($null -ne $p -and $p -ne $StopNode) {
+        if ($p -is [System.Management.Automation.Language.IfStatementAst] -or
+            $p -is [System.Management.Automation.Language.ForEachStatementAst] -or
+            $p -is [System.Management.Automation.Language.ForStatementAst] -or
+            $p -is [System.Management.Automation.Language.WhileStatementAst] -or
+            $p -is [System.Management.Automation.Language.SwitchStatementAst] -or
+            $p -is [System.Management.Automation.Language.TryStatementAst]) {
+            $d++
+        }
+        $p = $p.Parent
+    }
+    return $d
+}
+
+function Measure-SenPowerShellAstSmells {
+    param(
+        [string]$FullPath,
+        [string]$RelPath,
+        [int]$MaxFunctionLines,
+        [int]$MaxNestingDepth,
+        $LongFunctions,
+        $DeepNesting,
+        $EmptyCatches,
+        $DefinedFunctions
+    )
+    $tokens = $null; $errs = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($FullPath, [ref]$tokens, [ref]$errs)
+    $funcs = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
+    foreach ($fn in $funcs) {
+        $fnLines = $fn.Extent.EndLineNumber - $fn.Extent.StartLineNumber + 1
+        $DefinedFunctions.Add([pscustomobject]@{ name = $fn.Name; path = $RelPath; line = $fn.Extent.StartLineNumber })
+        if ($fnLines -gt $MaxFunctionLines) {
+            $LongFunctions.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fn.Name; lines = $fnLines; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" })
+        }
+        $ctrlNodes = $fn.Body.FindAll({
+            param($n)
+            $n -is [System.Management.Automation.Language.IfStatementAst] -or
+            $n -is [System.Management.Automation.Language.ForEachStatementAst] -or
+            $n -is [System.Management.Automation.Language.ForStatementAst] -or
+            $n -is [System.Management.Automation.Language.WhileStatementAst] -or
+            $n -is [System.Management.Automation.Language.SwitchStatementAst] -or
+            $n -is [System.Management.Automation.Language.TryStatementAst]
+        }, $false)
+        $maxD = 0
+        foreach ($cn in $ctrlNodes) {
+            $depth = Get-SenControlFlowDepth -Node $cn -StopNode $fn.Body
+            if ($depth -gt $maxD) { $maxD = $depth }
+        }
+        if ($maxD -gt $MaxNestingDepth) {
+            $DeepNesting.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fn.Name; depth = $maxD; maxDepth = $MaxNestingDepth; rule = "Sonar:S134/CWE-1121" })
+        }
+    }
+    $catches = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CatchClauseAst] }, $true)
+    foreach ($c in $catches) {
+        if ($c.Body.Statements.Count -eq 0 -and $c.Extent.Text -notmatch '#') {
+            $EmptyCatches.Add([pscustomobject][ordered]@{ path = $RelPath; line = $c.Extent.StartLineNumber; rule = "PSAvoidUsingEmptyCatchBlock/Sonar:S108/CWE-1069" })
+        }
+    }
+}
+
+function Find-SenDuplicateCodeBlocks {
+    param([hashtable]$FileSubstantiveLines, [int]$WindowSize = 8)
+    $seen = @{}
+    $dups = [System.Collections.Generic.List[object]]::new()
+    $reportedKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($rel in $FileSubstantiveLines.Keys) {
+        $normLines = $FileSubstantiveLines[$rel]
+        if ($normLines.Count -lt $WindowSize) { continue }
+        for ($i = 0; $i -le ($normLines.Count - $WindowSize); $i++) {
+            $block = ($normLines[$i..($i + $WindowSize - 1)]) -join "`n"
+            if (-not $seen.ContainsKey($block)) {
+                $seen[$block] = $rel
+            }
+            elseif ($seen[$block] -ne $rel -and -not $reportedKeys.Contains("$($seen[$block])|$rel")) {
+                [void]$reportedKeys.Add("$($seen[$block])|$rel")
+                $dups.Add([pscustomobject][ordered]@{ fileA = $seen[$block]; fileB = $rel; lines = $WindowSize; rule = "Sonar:CPD/CWE-1041" })
+            }
+        }
+    }
+    return $dups
+}
+
+function Measure-SenCodeHealth {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [int]$MaxLogicLines = 800,
+        [int]$MaxLogicBytes = 46080,
+        [int]$MaxUiLines = 1500,
+        [int]$MaxUiBytes = 81920,
+        [int]$MaxTestLines = 1000,
+        [int]$MaxTestBytes = 61440,
+        [int]$MaxFunctionLines = 100,
+        [int]$MaxNestingDepth = 4
+    )
+    $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
+    $exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
+    $skipRe = '(?i)[\\/](node_modules|dist|build|coverage|vendor|\.git|\.next|\.venv|venv|clone|\.superpowers|\.gemini|\.sen-backup|\.sen-restore|snapshots)[\\/]'
+
+    $files = @(Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+        ($exts -contains $_.Extension.ToLowerInvariant()) -and ($_.FullName -notmatch $skipRe)
+    })
+
+    $oversized = [System.Collections.Generic.List[object]]::new()
+    $longFuncs = [System.Collections.Generic.List[object]]::new()
+    $deepNest  = [System.Collections.Generic.List[object]]::new()
+    $emptyCat  = [System.Collections.Generic.List[object]]::new()
+    $deadFuncs = [System.Collections.Generic.List[object]]::new()
+    $definedFn = [System.Collections.Generic.List[object]]::new()
+    $subLines  = @{}
+    $corpusSb  = [System.Text.StringBuilder]::new()
+    $todoCount = 0; $totalLines = 0
+
+    foreach ($f in $files) {
+        $rel = $f.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
+        $isTest = $rel -match '(?i)(\.Tests\.ps1|\.test\.[jt]sx?|\.spec\.[jt]sx?|^tests?[\\/]|_test\.(py|go))$'
+        $isUi   = (-not $isTest) -and ($f.Extension -match '(?i)^\.(html|css|vue)$')
+        $cat    = if ($isTest) { 'test' } elseif ($isUi) { 'ui' } else { 'logic' }
+        $maxL   = if ($cat -eq 'test') { $MaxTestLines } elseif ($cat -eq 'ui') { $MaxUiLines } else { $MaxLogicLines }
+        $maxB   = if ($cat -eq 'test') { $MaxTestBytes } elseif ($cat -eq 'ui') { $MaxUiBytes } else { $MaxLogicBytes }
+
+        $rawText = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+        [void]$corpusSb.AppendLine($rawText)
+        $lines = @([System.IO.File]::ReadAllLines($f.FullName))
+        $totalLines += $lines.Count
+        foreach ($ln in $lines) {
+            if ($ln -match '(?i)\b(TODO|FIXME|HACK):') { $todoCount++ }
+        }
+        if ($lines.Count -gt $maxL -or [int]$f.Length -gt $maxB) {
+            $oversized.Add([pscustomobject][ordered]@{ path = $rel; category = $cat; lines = $lines.Count; maxLines = $maxL; bytes = [int]$f.Length; maxBytes = $maxB; rule = "Sonar:S104/CWE-1080" })
+        }
+        if ($cat -eq 'logic') {
+            $subLines[$rel] = @($lines | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -ge 28 -and $_ -notmatch '^(#|//|param\(|\[Parameter|\[CmdletBinding|Export-ModuleMember|\}|\{|return\b)' })
+            if ($f.Extension -match '(?i)^\.psm?1$') {
+                Measure-SenPowerShellAstSmells -FullPath $f.FullName -RelPath $rel -MaxFunctionLines $MaxFunctionLines -MaxNestingDepth $MaxNestingDepth -LongFunctions $longFuncs -DeepNesting $deepNest -EmptyCatches $emptyCat -DefinedFunctions $definedFn
+            }
+            elseif ($rawText -match 'catch\s*(\([^)]*\))?\s*\{\s*\}') {
+                $emptyCat.Add([pscustomobject][ordered]@{ path = $rel; line = 1; rule = "ESLint:no-empty/Sonar:S108/CWE-1069" })
+            }
+        }
+    }
+
+    $corpus = $corpusSb.ToString()
+    foreach ($fn in $definedFn) {
+        $matchesCount = [regex]::Matches($corpus, "\b$([regex]::Escape($fn.name))\b").Count
+        if ($matchesCount -le 1) {
+            $deadFuncs.Add([pscustomobject][ordered]@{ path = $fn.path; function = $fn.name; line = $fn.line; rule = "Sonar:S1144/CWE-561" })
+        }
+    }
+    $dupBlocks = @(Find-SenDuplicateCodeBlocks -FileSubstantiveLines $subLines -WindowSize 8)
+
+    $issueCount = $oversized.Count + $longFuncs.Count + $deepNest.Count + $emptyCat.Count + $deadFuncs.Count + $dupBlocks.Count
+    $healthy = ($issueCount -eq 0)
+    $score = [Math]::Max(0, 100 - ($oversized.Count * 15) - ($longFuncs.Count * 10) - ($deepNest.Count * 10) - ($dupBlocks.Count * 10) - ($emptyCat.Count * 5) - ($deadFuncs.Count * 5))
+    $rec = if ($healthy) {
+        "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)."
+    }
+    else {
+        "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'."
+    }
+
+    return [pscustomobject][ordered]@{
+        Healthy         = [bool]$healthy
+        Score           = [int]$score
+        ScannedFiles    = [int]$files.Count
+        TotalLines      = [int]$totalLines
+        TodoCount       = [int]$todoCount
+        OversizedFiles  = @($oversized.ToArray())
+        LongFunctions   = @($longFuncs.ToArray())
+        DeepNesting     = @($deepNest.ToArray())
+        DuplicateBlocks = $dupBlocks
+        EmptyCatches    = @($emptyCat.ToArray())
+        DeadFunctions   = @($deadFuncs.ToArray())
+        Standards       = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
+        Recommendation  = $rec
+    }
+}
+
 $senOrchestratorPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Orchestrator.psm1"
 if (Test-Path -LiteralPath $senOrchestratorPath) {
     Import-Module -Name $senOrchestratorPath -Global -Force
 }
 
-Export-ModuleMember -Function Write-SenAtomicJson, Read-SenSafeJson, Test-SenPathOverlap, Protect-SenRedactedText, Get-SenOfficeConfig, Set-SenOfficeConfig, Write-SenOfficeEvent, Read-SenOfficeEvents, Clear-SenOfficeEvents, Test-SenStuckLoop, Write-SenOfficeShowcase, Read-SenOfficeShowcase, Get-SenAntigravityQuota, Get-SenTaskRiskScore
+Export-ModuleMember -Function Write-SenAtomicJson, Read-SenSafeJson, Test-SenPathOverlap, Protect-SenRedactedText, Get-SenOfficeConfig, Set-SenOfficeConfig, Write-SenOfficeEvent, Read-SenOfficeEvents, Clear-SenOfficeEvents, Test-SenStuckLoop, Write-SenOfficeShowcase, Read-SenOfficeShowcase, Get-SenAntigravityQuota, Get-SenTaskRiskScore, Measure-SenCodeHealth

@@ -99,5 +99,5 @@ try {
     Write-SenOfficeEvent -Workspace $ws -From $from -To $to -Lane $lane -EcoText $ecoText -FullText $ecoText `
         -Kind $kind -Hold 1 -Source "hook-post" -Tool $toolName -Target $targetVal -Command $cmdArg -Model $model | Out-Null
 }
-catch { }
+catch { <# PostToolUse telemetry is best-effort and must never fail a tool call #> }
 exit 0

@@ -54,7 +54,7 @@ for ($try = 0; $try -lt 20; $try++) {
         $usePort = $candidate
         break
     }
-    catch { }
+    catch { <# Port busy; try next port in range #> }
 }
 if ($null -eq $listener) {
     throw "Could not bind Local Office Server on ports $usePort..$($usePort + 19)"
@@ -65,7 +65,7 @@ $url = "http://127.0.0.1:$usePort/"
 Write-Host ("SEN_OFFICE_URL=" + $url)
 
 if (-not $NoBrowser) {
-    try { Start-Process $url } catch { }
+    try { Start-Process $url } catch { <# Ignore headless environments without browser #> }
 }
 
 function Send-HttpResponse($stream, [int]$statusCode, [string]$statusText, [string]$contentType, [byte[]]$bodyBytes) {
@@ -162,9 +162,9 @@ try {
                 Send-HttpResponse $stream 404 "Not Found" "application/json; charset=utf-8" $nf
             }
         }
-        catch { }
+        catch { <# Ignore disconnected HTTP client socket #> }
         finally {
-            try { $client.Close() } catch { }
+            try { $client.Close() } catch { <# Socket already closed #> }
         }
     }
 }

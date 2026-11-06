@@ -17,7 +17,7 @@ function Import-SenRuntimeModule {
             Import-Module $runtimeMod -Force -ErrorAction SilentlyContinue
             $script:senRuntimeLoaded = $true
         }
-        catch { }
+        catch { <# Non-fatal if runtime module fails to load; guard still enforces static rules #> }
     }
 }
 
@@ -31,7 +31,7 @@ function Out-Decision([string]$decision, [string]$reason, [string]$ws = "", [str
                     -Source "guard-denied" -Tool $tool -Target $target -Command $cmdText -Model "pro" | Out-Null
             }
         }
-        catch { }
+        catch { <# Telemetry failure must never prevent guard decision output #> }
     }
     $obj = [ordered]@{ decision = $decision }
     if ($reason) { $obj.reason = $reason }
@@ -114,7 +114,7 @@ if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
                 }
             }
         }
-        catch { }
+        catch { <# Fall back to ask if path normalization fails on malformed path #> }
     }
     Out-Decision "ask" $null
 }
@@ -134,7 +134,7 @@ if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (
                 Out-Decision "deny" ("[SEN GUARD] " + $loopCheck.Reason) $primaryWs $toolName $cmd $cmd
             }
         }
-        catch { }
+        catch { <# Ignore stuck-loop read error and continue to static command rules #> }
     }
 }
 

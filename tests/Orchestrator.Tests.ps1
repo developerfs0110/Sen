@@ -212,26 +212,51 @@ Test "guard.ps1 blocks direct write to .git/config and enforces Execution Contra
     }
 }
 
-Test "Measure-SenCodeHealth verifies Sen repo itself fits 800/1500/1000 thresholds and detects oversized logic files" {
+Test "Measure-SenCodeHealth verifies Sen repo passes all 6 ISO/Sonar/PSScriptAnalyzer dimensions and catches smells" {
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath "..")).Path
     $selfHealth = Measure-SenCodeHealth -Path $repoRoot
-    Assert-True $selfHealth.Healthy "Sen repository itself must pass Measure-SenCodeHealth with 0 oversized files (got $($selfHealth.OversizedFiles.Count))"
+    Assert-True $selfHealth.Healthy "Sen repository itself must pass all 6 Clean Code checks (got Score=$($selfHealth.Score), Rec=$($selfHealth.Recommendation))"
     Assert-Equal 100 $selfHealth.Score "Sen repository health score must be 100"
+    Assert-Equal 0 $selfHealth.OversizedFiles.Count "0 oversized files"
+    Assert-Equal 0 $selfHealth.LongFunctions.Count "0 long functions (>100 lines)"
+    Assert-Equal 0 $selfHealth.DeepNesting.Count "0 deeply nested functions (>4 levels)"
+    Assert-Equal 0 $selfHealth.DuplicateBlocks.Count "0 duplicate code blocks"
+    Assert-Equal 0 $selfHealth.EmptyCatches.Count "0 undocumented empty catch blocks"
+    Assert-Equal 0 $selfHealth.DeadFunctions.Count "0 dead functions"
 
     $ws = New-OrchTestWorkspace
     try {
         $bigLogic = Join-Path $ws "giant.ts"
         $uiFile = Join-Path $ws "dashboard.html"
+        $smellyPs = Join-Path $ws "smelly.ps1"
         $lines850 = @(1..850 | ForEach-Object { "const x$_ = $_;" })
         $lines1200 = @(1..1200 | ForEach-Object { "<div>row $_</div>" })
         [System.IO.File]::WriteAllLines($bigLogic, $lines850, [System.Text.UTF8Encoding]::new($false))
         [System.IO.File]::WriteAllLines($uiFile, $lines1200, [System.Text.UTF8Encoding]::new($false))
 
+        $psContent = @"
+function Invoke-UnusedDeadHelper {
+    if (`$true) {
+        foreach (`$a in @(1..2)) {
+            if (`$a -eq 1) {
+                while (`$false) {
+                    try {
+                        if (`$a -gt 0) { Write-Output `$a }
+                    } catch { }
+                }
+            }
+        }
+    }
+}
+"@
+        [System.IO.File]::WriteAllText($smellyPs, $psContent, [System.Text.UTF8Encoding]::new($false))
+
         $h = Measure-SenCodeHealth -Path $ws
-        Assert-True (-not $h.Healthy) "Workspace with 850-line logic file must be marked unhealthy"
-        Assert-Equal 1 $h.OversizedFiles.Count "Only giant.ts (850 > 800) should be flagged; 1200-line HTML UI file (<= 1500) must pass"
-        Assert-Equal "giant.ts" $h.OversizedFiles[0].path
-        Assert-Equal "logic" $h.OversizedFiles[0].category
+        Assert-True (-not $h.Healthy) "Workspace with code smells must be marked unhealthy"
+        Assert-Equal 1 $h.OversizedFiles.Count "giant.ts (>800L) flagged; dashboard.html (1200L <= 1500L UI) allowed"
+        Assert-Equal 1 $h.DeepNesting.Count "6-level nested function flagged (Sonar:S134/CWE-1121)"
+        Assert-Equal 1 $h.EmptyCatches.Count "Bare catch {} flagged (PSAvoidUsingEmptyCatchBlock/CWE-1069)"
+        Assert-Equal 1 $h.DeadFunctions.Count "Unreferenced Invoke-UnusedDeadHelper flagged (Sonar:S1144/CWE-561)"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

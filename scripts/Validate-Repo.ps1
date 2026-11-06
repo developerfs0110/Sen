@@ -171,7 +171,7 @@ foreach ($md in $mdFiles) {
         try {
             $pathOnly = [System.Uri]::UnescapeDataString($pathOnly)
         }
-        catch { }
+        catch { <# Keep raw pathOnly if percent-encoding is literal #> }
 
         $targetFullPath = $null
         if ($pathOnly.StartsWith("/") -or $pathOnly.StartsWith("\")) {
