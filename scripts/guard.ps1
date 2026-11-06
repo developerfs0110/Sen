@@ -45,9 +45,19 @@ try {
         Out-Decision "ask" $null
     }
     $payload = $raw | ConvertFrom-Json
-    $toolName = if ($payload.toolCall -and $payload.toolCall.name) { [string]$payload.toolCall.name } elseif ($payload.tool_name) { [string]$payload.tool_name } else { "" }
+    $rawTool = if ($payload.toolCall -and $payload.toolCall.name) { [string]$payload.toolCall.name } elseif ($payload.tool_name) { [string]$payload.tool_name } else { "" }
+    $toolName = $rawTool
+    switch -Regex ($rawTool) {
+        '^(?i)(run_command|bash|run_terminal_cmd|shell|exec)$' { $toolName = "run_command"; break }
+        '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { $toolName = "write_file"; break }
+        '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { $toolName = "edit_file"; break }
+    }
     $toolArgs = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } else { $null }
-    $wsList = @($payload.workspacePaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $wsCandidates = [System.Collections.Generic.List[string]]::new()
+    if ($payload.workspacePaths) { foreach ($w in @($payload.workspacePaths)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
+    if ($payload.workspace_roots) { foreach ($w in @($payload.workspace_roots)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
+    if ($payload.cwd -and -not [string]::IsNullOrWhiteSpace([string]$payload.cwd)) { $wsCandidates.Add([string]$payload.cwd) }
+    $wsList = @($wsCandidates.ToArray())
     $primaryWs = if ($wsList.Count -gt 0) { [string]$wsList[0] } else { "" }
 }
 catch {
@@ -56,7 +66,7 @@ catch {
 
 # 1. Enforce workspace boundary on write_file / edit_file when workspacePaths is provided
 if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
-    $targetPath = if ($toolArgs -and $toolArgs.Path) { [string]$toolArgs.Path } else { "" }
+    $targetPath = if ($toolArgs -and $toolArgs.Path) { [string]$toolArgs.Path } elseif ($toolArgs -and $toolArgs.file_path) { [string]$toolArgs.file_path } elseif ($toolArgs -and $toolArgs.target_file) { [string]$toolArgs.target_file } elseif ($toolArgs -and $toolArgs.path) { [string]$toolArgs.path } else { "" }
     if (-not [string]::IsNullOrWhiteSpace($targetPath) -and $wsList.Count -gt 0) {
         try {
             $fullTarget = [System.IO.Path]::GetFullPath($targetPath).TrimEnd('\', '/')
@@ -119,7 +129,7 @@ if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
     Out-Decision "ask" $null
 }
 
-$cmd = if ($toolArgs -and $toolArgs.CommandLine) { [string]$toolArgs.CommandLine } else { "" }
+$cmd = if ($toolArgs -and $toolArgs.CommandLine) { [string]$toolArgs.CommandLine } elseif ($toolArgs -and $toolArgs.command) { [string]$toolArgs.command } elseif ($toolArgs -and $toolArgs.cmd) { [string]$toolArgs.cmd } else { "" }
 if ([string]::IsNullOrWhiteSpace($cmd)) {
     Out-Decision "ask" $null
 }

@@ -1,0 +1,296 @@
+# tests/Harness.Tests.ps1
+# Unit and integration tests for Sen v0.4.0 Multi-Harness Adapter & Two-Way Plan/TODO Sync (ASCII-only)
+
+. "$PSScriptRoot/Assert.ps1"
+
+$senModule = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/Sen.psm1"
+Import-Module $senModule -Force
+
+$guardScript = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/guard.ps1"
+$postScript  = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/office-post.ps1"
+
+function New-HarnessTestWorkspace {
+    $p = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("sen-harness-" + [Guid]::NewGuid().ToString("N").Substring(0, 10))
+    [System.IO.Directory]::CreateDirectory($p) | Out-Null
+    $rulesDir = Join-Path -Path $p -ChildPath ".agents/rules"
+    [System.IO.Directory]::CreateDirectory($rulesDir) | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $rulesDir "AGENTS.md"), "# Sen Core Rule`nAlways tier requests.")
+    [System.IO.File]::WriteAllText((Join-Path $rulesDir "profile.md"), "# Profile`n- Name: Boss")
+    return $p
+}
+
+function Invoke-HarnessHookJson([string]$ScriptPath, [hashtable]$PayloadObj) {
+    $json = $PayloadObj | ConvertTo-Json -Depth 8 -Compress
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = "powershell"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Write($json)
+    $proc.StandardInput.Close()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+    if ([string]::IsNullOrWhiteSpace($stdout)) { return $null }
+    return ($stdout | ConvertFrom-Json)
+}
+
+Test "Get-SenSupportedHarnesses returns all 6 target harnesses" {
+    $list = @(Get-SenSupportedHarnesses)
+    Assert-Equal 6 $list.Count "Should return 6 harnesses"
+    $ids = @($list | ForEach-Object { $_.Id })
+    foreach ($expected in @("antigravity", "claude", "cursor", "copilot", "windsurf", "codex")) {
+        Assert-True ($ids -contains $expected) "Missing harness: $expected"
+    }
+}
+
+Test "ConvertFrom-SenHookPayload normalizes Antigravity, Claude Code, and Cursor payloads" {
+    $ag = [pscustomobject]@{
+        toolCall = [pscustomobject]@{ name = "run_command"; args = [pscustomobject]@{ CommandLine = "git status" } }
+        workspacePaths = @("D:/ws")
+    }
+    $nAg = ConvertFrom-SenHookPayload -InputObject $ag
+    Assert-Equal "run_command" $nAg.CanonicalTool "Antigravity run_command canonical tool"
+    Assert-Equal "git status" $nAg.CommandLine "Antigravity CommandLine extracted"
+    Assert-Equal "D:/ws" $nAg.WorkspacePath "Antigravity workspacePaths[0] extracted"
+
+    $cc = [pscustomobject]@{
+        tool_name  = "Bash"
+        tool_input = [pscustomobject]@{ command = "rm -rf /tmp/x" }
+        cwd        = "D:/cc-ws"
+    }
+    $nCc = ConvertFrom-SenHookPayload -InputObject $cc
+    Assert-Equal "run_command" $nCc.CanonicalTool "Claude Code Bash maps to run_command"
+    Assert-Equal "rm -rf /tmp/x" $nCc.CommandLine "Claude Code command extracted"
+    Assert-Equal "D:/cc-ws" $nCc.WorkspacePath "Claude Code cwd extracted"
+
+    $ccEdit = [pscustomobject]@{
+        tool_name  = "MultiEdit"
+        tool_input = [pscustomobject]@{ file_path = "D:/cc-ws/src/app.ts" }
+        cwd        = "D:/cc-ws"
+    }
+    $nCcEdit = ConvertFrom-SenHookPayload -InputObject $ccEdit
+    Assert-Equal "edit_file" $nCcEdit.CanonicalTool "Claude Code MultiEdit maps to edit_file"
+    Assert-Equal "D:/cc-ws/src/app.ts" $nCcEdit.TargetPath "Claude Code file_path extracted"
+
+    $cur = [pscustomobject]@{
+        tool_name       = "run_terminal_cmd"
+        tool_input      = [pscustomobject]@{ command = "npm test" }
+        workspace_roots = @("D:/cur-ws")
+    }
+    $nCur = ConvertFrom-SenHookPayload -InputObject $cur
+    Assert-Equal "run_command" $nCur.CanonicalTool "Cursor run_terminal_cmd maps to run_command"
+    Assert-Equal "npm test" $nCur.CommandLine "Cursor command extracted"
+    Assert-Equal "D:/cur-ws" $nCur.WorkspacePath "Cursor workspace_roots[0] extracted"
+}
+
+Test "Install-SenHarness projects rules and hooks non-destructively across all 6 harnesses" {
+    $ws = New-HarnessTestWorkspace
+    try {
+        # Pre-seed user content in CLAUDE.md and .claude/settings.json
+        [System.IO.File]::WriteAllText((Join-Path $ws "CLAUDE.md"), "# Existing Project Notes`nKeep this line!`n")
+        $claudeDir = Join-Path $ws ".claude"
+        [System.IO.Directory]::CreateDirectory($claudeDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $claudeDir "settings.json"), '{"env":{"CUSTOM_FLAG":"1"}}')
+
+        $res = Install-SenHarness -Workspace $ws -Harness @("all")
+        Assert-Equal 6 $res.Installed.Count "All 6 harnesses should be installed"
+
+        $claudeMd = [System.IO.File]::ReadAllText((Join-Path $ws "CLAUDE.md"))
+        Assert-True ($claudeMd.Contains("Keep this line!")) "User content in CLAUDE.md must be preserved"
+        Assert-True ($claudeMd.Contains("<!-- SEN-METHOD:START -->")) "Managed block must be added to CLAUDE.md"
+
+        $claudeSettings = [System.IO.File]::ReadAllText((Join-Path $claudeDir "settings.json")) | ConvertFrom-Json
+        Assert-Equal "1" $claudeSettings.env.CUSTOM_FLAG "Pre-existing settings.json keys must be preserved"
+        Assert-True ($null -ne $claudeSettings.hooks.PreToolUse) "Claude PreToolUse hook must be configured"
+        Assert-True ($null -ne $claudeSettings.hooks.PostToolUse) "Claude PostToolUse hook must be configured"
+
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".cursor/rules/sen-method.mdc")) "Cursor .mdc rule created"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".cursor/hooks.json")) "Cursor hooks.json created"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".github/copilot-instructions.md")) "Copilot instructions created"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".windsurfrules")) "Windsurf rules created"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws "AGENTS.md")) "Root AGENTS.md created for Codex/OpenCode"
+
+        $status = @(Test-SenHarnessStatus -Workspace $ws)
+        foreach ($st in $status) {
+            Assert-True $st.Installed "Harness $($st.Id) should report Installed = true"
+        }
+
+        $un = Uninstall-SenHarness -Workspace $ws -Harness @("claude")
+        Assert-True ($un.Uninstalled -contains "claude") "Claude harness uninstalled"
+        $claudeMdAfter = [System.IO.File]::ReadAllText((Join-Path $ws "CLAUDE.md"))
+        Assert-True ($claudeMdAfter.Contains("Keep this line!")) "User content in CLAUDE.md still preserved after uninstall"
+        Assert-True (-not $claudeMdAfter.Contains("<!-- SEN-METHOD:START -->")) "Managed block removed after uninstall"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Sync-SenPlanToTasks and Sync-SenTasksToMarkdown perform 2-way sync between Markdown and tasks.json" {
+    $ws = New-HarnessTestWorkspace
+    try {
+        $docsDir = Join-Path $ws "docs"
+        $plansDir = Join-Path $ws "docs/superpowers/plans"
+        [System.IO.Directory]::CreateDirectory($plansDir) | Out-Null
+
+        $todoContent = "# Backlog`n`n- [ ] **TASK-99 (P0): Auto Sync Test Item**`n"
+        [System.IO.File]::WriteAllText((Join-Path $docsDir "TODO.md"), $todoContent)
+
+        $planContent = @'
+# Feature Plan
+
+### Task 1 (`AUTO-01`): Build Core Adapter
+
+**Files:**
+- Create: `scripts/Adapter.ps1`
+
+- [ ] **Step 1: Write test**
+
+### Task 2 (`AUTO-02`): Build Guard Hook
+
+**Files:**
+- Modify: `scripts/guard.ps1`
+'@
+        $planFile = Join-Path $plansDir "2026-11-07-test-plan.md"
+        [System.IO.File]::WriteAllText($planFile, $planContent)
+
+        $syncRes = Sync-SenPlanToTasks -Workspace $ws -PlanPath $planFile
+        Assert-True ($syncRes.SyncedCount -ge 3) "Should sync AUTO-01, AUTO-02, and TASK-99"
+
+        $tasks = @(Get-SenTasks -Workspace $ws)
+        $auto1 = $tasks | Where-Object { $_.id -eq "AUTO-01" } | Select-Object -First 1
+        $auto2 = $tasks | Where-Object { $_.id -eq "AUTO-02" } | Select-Object -First 1
+        $t99   = $tasks | Where-Object { $_.id -eq "TASK-99" } | Select-Object -First 1
+
+        Assert-True ($null -ne $auto1) "AUTO-01 created in tasks.json"
+        Assert-True ($null -ne $auto2) "AUTO-02 created in tasks.json"
+        Assert-True ($null -ne $t99) "TASK-99 created in tasks.json"
+        Assert-Equal "ready" $auto1.status "AUTO-01 starts ready"
+        Assert-Equal "pending" $auto2.status "AUTO-02 depends on AUTO-01"
+
+        # Complete AUTO-01 and TASK-99, verify Markdown checkboxes auto-tick to [x]
+        [void](Start-SenTask -Workspace $ws -Id "AUTO-01")
+        [void](Submit-SenTaskForReview -Workspace $ws -Id "AUTO-01")
+        [void](Complete-SenTaskReview -Workspace $ws -Id "AUTO-01" -Passed $true -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+
+        $t99.status = "in_progress"
+        [void](Save-SenTasks -Workspace $ws -Tasks $tasks)
+        [void](Complete-SenTaskReview -Workspace $ws -Id "TASK-99" -Passed $true -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+
+        $updatedTodo = [System.IO.File]::ReadAllText((Join-Path $docsDir "TODO.md"))
+        Assert-True ($updatedTodo.Contains("- [x] **TASK-99")) "TODO.md must be auto-updated to [x] for TASK-99"
+
+        $updatedPlan = [System.IO.File]::ReadAllText($planFile)
+        Assert-True ($updatedPlan.Contains("[x]")) "Plan file must have [x] ticked after task completion"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "guard.ps1 and office-post.ps1 enforce safety and auto-sync plans on Claude Code and Cursor payloads" {
+    $ws = New-HarnessTestWorkspace
+    try {
+        # 1. Claude Code Bash destructive command must be denied
+        $ccRm = Invoke-HarnessHookJson -ScriptPath $guardScript -PayloadObj @{
+            tool_name  = "Bash"
+            tool_input = @{ command = "rm -rf /important" }
+            cwd        = $ws
+        }
+        Assert-Equal "deny" $ccRm.decision "Claude Code Bash rm -rf must be denied by guard.ps1"
+
+        # 2. Claude Code Write outside workspace must be denied
+        $outsidePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "outside-secret.txt"
+        $ccWriteOut = Invoke-HarnessHookJson -ScriptPath $guardScript -PayloadObj @{
+            tool_name  = "Write"
+            tool_input = @{ file_path = $outsidePath }
+            cwd        = $ws
+        }
+        Assert-Equal "deny" $ccWriteOut.decision "Claude Code Write outside cwd must be denied by guard.ps1"
+
+        # 3. Cursor run_terminal_cmd git push --force must be denied
+        $curForce = Invoke-HarnessHookJson -ScriptPath $guardScript -PayloadObj @{
+            tool_name       = "run_terminal_cmd"
+            tool_input      = @{ command = "git push origin main --force" }
+            workspace_roots = @($ws)
+        }
+        Assert-Equal "deny" $curForce.decision "Cursor git push --force must be denied by guard.ps1"
+
+        # 4. office-post.ps1 on Claude Code Write to docs/superpowers/plans/*.md auto-syncs tasks into tasks.json
+        $plansDir = Join-Path $ws "docs/superpowers/plans"
+        [System.IO.Directory]::CreateDirectory($plansDir) | Out-Null
+        $planFile = Join-Path $plansDir "2026-11-07-auto.md"
+        $planBody = @'
+# Auto Hook Plan
+
+### Task 1 (`HOOK-01`): Hook Auto Task
+
+**Files:**
+- Create: `src/hook.ts`
+'@
+        [System.IO.File]::WriteAllText($planFile, $planBody)
+
+        [void](Invoke-HarnessHookJson -ScriptPath $postScript -PayloadObj @{
+            tool_name  = "Write"
+            tool_input = @{ file_path = $planFile }
+            cwd        = $ws
+        })
+
+        $tasks = @(Get-SenTasks -Workspace $ws)
+        $hTask = $tasks | Where-Object { $_.id -eq "HOOK-01" } | Select-Object -First 1
+        Assert-True ($null -ne $hTask) "office-post.ps1 must auto-sync HOOK-01 from plan file on Write event"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Process Compliance 3-Tier Engine filters (*) and (**), enforces Stage Gates without infinite loops, and auto-updates from manifest" {
+    $ws = New-HarnessTestWorkspace
+    try {
+        $cat = Get-SenProcessCatalog
+        Assert-Equal 12 $cat.steps.Count "Master process-manifest.json must contain 12 standard steps"
+
+        # Initialize project (*) for Tier 3 Core project (excludes web_mobile S4-VN-LAW -> 11 steps)
+        $audit = Initialize-SenProcessAudit -Workspace $ws -ProjectName "SenCore" -Tier 3 -ProjectScope "core"
+        Assert-Equal 11 $audit.selectedSteps.Count "Tier 3 core project should select 11 steps (*)"
+
+        # Stage 1 gate should pass immediately since S1-RISK and S1-AUDIT-INIT are satisfied
+        $g1 = Test-SenStageGate -Workspace $ws -Stage 1
+        Assert-True $g1.Passed "Stage 1 gate should pass after initialization"
+
+        # Stage 2 gate should initially fail because Spec, Plan, and DAG are missing
+        $g2Before = Test-SenStageGate -Workspace $ws -Stage 2
+        Assert-True (-not $g2Before.Passed) "Stage 2 gate must fail when Spec/Plan/DAG are missing"
+        Assert-True ($g2Before.MissingSteps -contains "S2-DESIGN-SPEC") "Missing S2-DESIGN-SPEC detected"
+
+        # Create Spec with Resource Cost, Plan, Restore Point, Task, and CONTEXT.md
+        $specsDir = Join-Path $ws "docs/superpowers/specs"
+        $plansDir = Join-Path $ws "docs/superpowers/plans"
+        [System.IO.Directory]::CreateDirectory($specsDir) | Out-Null
+        [System.IO.Directory]::CreateDirectory($plansDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $specsDir "2026-11-07-spec.md"), "# Spec`nBest-of-the-Best`n| Option | Resource Cost |")
+        [System.IO.File]::WriteAllText((Join-Path $plansDir "2026-11-07-plan.md"), "### Task 1 (P-01): Work`n- [x] Step 1")
+        [System.IO.File]::WriteAllText((Join-Path $ws "docs/CONTEXT.md"), "# Context`nUpdated")
+
+        [void](New-SenRestorePoint -Workspace $ws -Files @("docs/CONTEXT.md") -Label "test")
+        [void](New-SenTask -Workspace $ws -Id "P-01" -Title "Work" -Tier 3)
+        [void](Start-SenTask -Workspace $ws -Id "P-01")
+        [void](Submit-SenTaskForReview -Workspace $ws -Id "P-01")
+        [void](Complete-SenTaskReview -Workspace $ws -Id "P-01" -Passed $true -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+
+        $g2After = Test-SenStageGate -Workspace $ws -Stage 2
+        Assert-True $g2After.Passed "Stage 2 gate must pass once Spec, Plan, and DAG exist"
+
+        $finalComp = Test-SenProjectCompliance -Workspace $ws
+        Assert-True $finalComp.Compliant "End-of-project compliance must verify all (**) and (*) are 100% done"
+        Assert-Equal 11 $finalComp.CompletedCount "All 11 selected steps (*) completed and latched"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

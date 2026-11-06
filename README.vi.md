@@ -8,7 +8,7 @@
 
 ## Sen là gì
 
-**Sen** là một phương pháp luận làm việc với đội AI agent trong Antigravity IDE, được đóng gói thành plugin để bất kỳ ai cũng có thể cài vào workspace của mình. Mọi yêu cầu công việc đều tự động được phân thành 3 cấp độ để AI biết lúc nào làm ngay, lúc nào xin duyệt một lần, và lúc nào cần thiết kế, lập kế hoạch cùng cả đội chuyên trách. Bạn luôn nắm quyền kiểm soát tiến độ, chất lượng và chi phí token bằng chính ngôn ngữ của mình mà không cần học thuộc các câu lệnh phức tạp.
+**Sen** là một phương pháp luận và bộ điều phối làm việc với đội AI agent đa nền tảng (**Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**), được đóng gói thành plugin để bất kỳ ai cũng có thể cài vào workspace của mình. Mọi yêu cầu công việc đều tự động được phân thành 3 cấp độ để AI biết lúc nào làm ngay, lúc nào xin duyệt một lần, và lúc nào cần thiết kế, lập kế hoạch cùng cả đội chuyên trách. Bạn luôn nắm quyền kiểm soát tiến độ, chất lượng và chi phí token bằng chính ngôn ngữ của mình mà không cần học thuộc các câu lệnh phức tạp.
 
 ## Vấn đề Sen giải quyết
 

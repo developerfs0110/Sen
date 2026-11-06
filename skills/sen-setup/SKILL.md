@@ -95,11 +95,12 @@ Parse the JSON result printed on the final stdout line (`workspace`, `sen`, `pac
 
 ---
 
-### Step 5: Report Installation Summary
+### Step 5: Report Installation Summary & Project Multi-Harness Bridges (`Install-SenHarness`)
 Summarize what `install.ps1` / `install.sh` did in the user's language:
 - Which items were newly installed (`status: "installed"`) vs. already present and preserved untouched (`status: "exists"`).
 - Whether `.agents/rules/safety.md` was newly created (`safetyCreated: true`) or kept as-is (`false`).
 - Confirm that `.agents/sen.lock.json` was written with the locked commit hashes.
+- Run `Install-SenHarness -Workspace "<WORKSPACE>" -Harness @("all")` so the workspace works seamlessly across **Antigravity**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, and **Codex CLI / OpenCode**.
 
 ---
 

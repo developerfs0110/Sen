@@ -675,4 +675,4 @@ function Restore-SenPackage {
     }
 }
 
-Export-ModuleMember -Function Get-SenLockPath, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf, Get-SenPackagesCatalog, New-SenPackageBackup, Get-SenPackageBackups, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage
+Export-ModuleMember -Function Get-SenLockPath, ConvertTo-SenHashtable, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf, Get-SenPackagesCatalog, New-SenPackageBackup, Get-SenPackageBackups, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage

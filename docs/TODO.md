@@ -55,3 +55,23 @@
 - [x] **TASK-10: Chế độ Quy mô Dự án (`Mini` / `Standard` / `Enterprise`), Chế độ Cài đặt Nhanh (`Express Setup`) & Đồng bộ `README`**
   - **Nguồn:** Đánh giá của ChatGPT (Mục 5.4), Claude và Grok.
   - **Kết quả (`v0.3.0`):** Đã bổ sung cấu hình `scale` (`mini | standard | enterprise`), thêm chế độ **Express 1-Step Mode** trong [skills/sen-setup/SKILL.md](../skills/sen-setup/SKILL.md), và thêm cổng kiểm tra chống lệch giữa `README.md` và `README.vi.md` trong [scripts/Validate-Repo.ps1](../scripts/Validate-Repo.ps1).
+
+---
+
+## Nhóm P0 — Lộ Trình `v0.4.0` (Đa Nền Tảng / Đa Mô Hình & Chuẩn Thẩm Định Chuyên Gia)
+
+- [x] **TASK-11 (P0): Quy chuẩn Thẩm định Chuyên gia Khách quan (`Best-of-the-Best Proof`) và Cột Tài nguyên Tiêu tốn (`Resource Cost`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
+  - **Nội dung:** Trước khi đề xuất một phương án, bắt buộc đóng vai chuyên gia độc lập phân tích khách quan các phương án để chứng minh danh sách phương án đưa ra là tốt nhất và phương án đề xuất là tốt nhất trong các phương án tốt nhất (*Best-of-the-Best*). Ngoài ra, mọi bảng so sánh phương án bắt buộc có thêm cột **Tài nguyên tiêu tốn** (Token/Quota, Thời gian thực thi, CPU/RAM/Ổ cứng, Chi phí bảo trì).
+
+- [x] **TASK-12 (P0): Triển khai Kiến trúc Đa Nền Tảng & Đa Mô Hình (`Multi-Harness Adapter v0.4.0`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
+  - **Nội dung:** Mở rộng Sen chạy xuyên suốt trên **Antigravity**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, và **Codex CLI / OpenCode** từ nguồn chân lý duy nhất (`.agents/`), kèm chuẩn hóa đa hình cho `scripts/guard.ps1` và `scripts/office-post.ps1`.
+
+- [x] **TASK-13 (P0): Tự động hóa 2 chiều 0-Token giữa Markdown (`plans/*.md`, `TODO.md`) và `.agents/office/tasks.json` (`Sync-SenPlanToTasks` & `Sync-SenTasksToMarkdown`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07) về cơ chế chống quên cập nhật Task.
+  - **Nội dung:** Hook `scripts/office-post.ps1` tự động nạp Task từ file Plan/TODO vào `tasks.json` ngay khi lưu; `scripts/guard.ps1` chặn sửa code Cấp 3 nếu có Spec mới mà chưa có Plan/Task; và `Complete-SenTaskReview` / `Test-SenDeliveryGate` tự động đánh dấu `[x]` ngược lại vào `docs/TODO.md` và `docs/superpowers/plans/*.md`.
+
+- [ ] **TASK-14 (P0): Hệ thống Kiểm toán Tuân thủ Quy trình 3 Tầng (`process-manifest.json`, Dự án `(*)` & Giai đoạn `(**)`) Không Lặp Vô Hạn**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
+  - **Nội dung:** Danh mục chuẩn `scripts/process-manifest.json` tự động cập nhật khi Sen lên phiên bản mới; lọc danh sách việc `(*)` cho từng dự án và `(**)` cho từng giai đoạn (`Stage 1..4`); kiểm tra bằng chứng vật lý đơn điệu (`Test-SenStageGate` & `Test-SenProjectCompliance`) ở từng giai đoạn và cuối dự án mà không bao giờ rơi vào vòng lặp vô hạn.

@@ -303,6 +303,9 @@ function Complete-SenTaskReview {
         $target.updatedAt = $now
         [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks)
         [void](Get-SenTasks -Workspace $Workspace)
+        if (Get-Command Sync-SenTasksToMarkdown -ErrorAction SilentlyContinue) {
+            [void](Sync-SenTasksToMarkdown -Workspace $Workspace)
+        }
         return [pscustomobject]@{ Completed = $true; Status = "done"; Task = $target; Reason = $null }
     }
     else {
@@ -368,6 +371,14 @@ function Test-SenDeliveryGate {
             $reasons.Add("Vietnam Law code red flags ($codes)")
         }
     }
+    $complianceObj = $null
+    if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/process-audit.json")) -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) {
+        $complianceObj = Test-SenProjectCompliance -Workspace $Workspace
+        if (-not $complianceObj.Compliant) {
+            $allowed = $false
+            $reasons.Add("Process Compliance missing steps ($($complianceObj.MissingSteps -join ', '))")
+        }
+    }
     if ($allowed) {
         $reason = if ($active.Count -eq 0) { "No active tasks registered." } else { "All $($active.Count) active task(s) verified and done." }
     }
@@ -375,13 +386,14 @@ function Test-SenDeliveryGate {
         $reason = "Delivery blocked: " + ($reasons -join "; ") + "."
     }
     return [pscustomobject]@{
-        Allowed       = $allowed
-        TotalActive   = $active.Count
-        DoneCount     = $doneCount
-        IncompleteIds = @($incomplete.ToArray())
-        CodeHealth    = $codeHealthObj
-        VnLawScan     = $vnLawObj
-        Reason        = $reason
+        Allowed           = $allowed
+        TotalActive       = $active.Count
+        DoneCount         = $doneCount
+        IncompleteIds     = @($incomplete.ToArray())
+        CodeHealth        = $codeHealthObj
+        VnLawScan         = $vnLawObj
+        ProcessCompliance = $complianceObj
+        Reason            = $reason
     }
 }
 

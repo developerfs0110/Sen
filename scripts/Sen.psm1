@@ -541,4 +541,9 @@ if (Test-Path -LiteralPath $senPackagesModulePath) {
     Import-Module -Name $senPackagesModulePath -Global -Force
 }
 
+$senHarnessModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Harness.psm1"
+if (Test-Path -LiteralPath $senHarnessModulePath) {
+    Import-Module -Name $senHarnessModulePath -Global -Force
+}
+
 Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan

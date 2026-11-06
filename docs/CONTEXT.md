@@ -1,38 +1,36 @@
-# Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.3.1`)
+# Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.4.0`)
 
 - **Cập nhật lần cuối:** 2026-11-07
-- **Cột mốc hiện tại:** `v0.3.1` (**Legal-by-Design, Clean Code 6 Chiều & Gia Cố Bảo Mật Kỹ Thuật Phần Mềm** — Tích hợp bắt buộc `vn-law-check` + `Invoke-SenVnLawScan`, 6 tiêu chuẩn ISO/Sonar `Measure-SenCodeHealth`, và vá cứng 5 lỗ hổng bảo mật runtime) — **Đã hoàn tất & Kiểm chứng**
+- **Cột mốc hiện tại:** `v0.4.0` (**Multi-Harness & Multi-Model Edition + 2-Way 0-Token Plan/TODO Auto-Sync + Kiểm Toán Quy Trình 3 Tầng + Chuẩn Thẩm Định Chuyên Gia Khách Quan**) — **Đã hoàn tất & Kiểm chứng**
 - **Kho mã nguồn:** `https://github.com/developerfs0110/Sen.git` (nhánh `main`)
 - **Quy ước Git của dự án:** Tất cả nội dung bình luận khi commit/push Git (`git commit`) bắt buộc viết bằng **tiếng Việt** (xem [AGENTS.md](../AGENTS.md)).
 
 ---
 
 ## 1. Trạng thái hiện tại
-Cả 3 giai đoạn lớn (**`v0.1.0`/`v0.1.1` Sen Core & Gia cố bảo mật**, **`v0.2.0` Sen Office 3D Chibi**, và **`v0.3.0` Sen Orchestrator & AI Control Center**) đều đã hoàn tất 100%, vượt qua toàn bộ **211/211 bài kiểm thử tự động trên 11 bộ test** (`tests/run.ps1` `0` lỗi) và `Validate-Repo.ps1` (`0` lỗi).
+Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, 2-Way Auto-Sync & 3-Tier Process Compliance Engine**) đều đã hoàn tất 100%, vượt qua toàn bộ **226/226 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), và `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**.
 
-## 2. Các quyết định thiết kế đã chốt (`v0.1.0` → `v0.3.0`)
-- **Bộ máy Điều phối & Quản lý Trạng thái Task (`v0.3.0`):** Lưu trạng thái công việc có cấu trúc tại `.agents/office/tasks.json` (`New-SenTask`, `Get-SenTasks`, `Get-SenReadyTasks`, `Start-SenTask`, `Submit-SenTaskForReview`, `Complete-SenTaskReview`, `Test-SenDeliveryGate`, `Get-SenRecoveryState`, `Get-SenQualityMetrics`), tự động chặn xung đột file (`File Lock` theo `allowedPaths`) khi nhiều Developer chạy song song.
-- **Quy trình Backlog chuẩn hóa (`TASK-02`):** Mọi yêu cầu *"lưu vào task cần làm"* được ghi tự động vào [docs/TODO.md](./TODO.md) và `.agents/office/tasks.json` (`Add-SenBacklogItem`).
-- **Bộ chấm điểm rủi ro xác định (`Get-SenTaskRiskScore`):** Chấm điểm theo yếu tố rủi ro + độ lan tỏa file (`SharedComponent`, `PublicApi`, `FileCount`, `Database/Auth/Payment/DataDeletion`), vượt qua tự động `32/32` kịch bản trong [tests/tier-scenarios.md](../tests/tier-scenarios.md).
-- **An toàn Thực thi & Chuỗi cung ứng:** Ghim `pinnedCommit` trong [scripts/packages.json](../scripts/packages.json), tạo điểm khôi phục nhanh (`New-SenRestorePoint` / `Restore-SenRestorePoint`), chặn sửa `.git/config` và kiểm tra `allowedPaths` trong [scripts/guard.ps1](../scripts/guard.ps1).
-- **Trung tâm Điều hành 3D AI Office & Control Center:** Giao diện [office/index.html](../office/index.html) tích hợp 5 chế độ xem (`🏢 Sàn 3D`, `📋 2D Gọn`, `📊 Quản lý Task & DAG`, `🎯 Đầu ra 2 Giai đoạn`, `🔀 Chia đôi`) và **Bộ nhớ 3 Lớp** (`User · Project · Execution Lessons`).
-- **Tối ưu hóa & Làm sạch Mã nguồn (`Clean Code` & `sen-clean-code`):**
-  - Tách kiến trúc PowerShell của Sen thành 5 mô-đun chuyên biệt (`<= 800` dòng và `<= 45 KB` mỗi file, khớp giới hạn đọc 1 lần của `read_file`): `Sen.psm1`, `Sen.Packages.psm1`, `Sen.Runtime.psm1`, `Sen.Orchestrator.psm1`, và `Sen.Legal.psm1`.
-  - Bổ sung hàm kiểm tra sức khỏe mã nguồn tự động `0-token` `Measure-SenCodeHealth` trên 6 chiều chuẩn công nghiệp (`ISO/IEC 5055` + `SonarQube` + `PSScriptAnalyzer` + `AI-Native 800L/45KB`) và skill `sen-clean-code`.
-- **Tuân thủ Pháp lý Việt Nam từ Thiết kế đến Nghiệm thu (`Legal-by-Design` & `Invoke-SenVnLawScan`):**
-  - Nâng `vn-law-check` thành gói bắt buộc (`required: true`) trong `scripts/packages.json` và cài đặt trực tiếp vào `.agents/skills/vn-law-check`.
-  - Xây dựng mô-đun `scripts/Sen.Legal.psm1` (`Invoke-SenVnLawScan`) tương thích 100% với `vn-law-check/scripts/scan.sh` (quét 10 tín hiệu `FORM`, `TRACKING`, `TRACKING_PRELOAD`, `CONSENT_GATE`, `COMMERCE`, `AUTH`, `MARKETPLACE`, `AI`, `PERMISSIONS`, `SDK_TRACKING`, `ADS_SDK`, `FOREIGN_HOST`, `MOBILE_APP`, `ACCOUNT_DELETE` + phát hiện trích dẫn luật hết hiệu lực `NĐ 13/2023`, `NĐ 52/2013`, `NĐ 85/2021`) và tích hợp vào `Test-SenDeliveryGate -CheckCodeHealth -CheckVnLaw`.
-- **Gia cố Bảo mật Kỹ thuật Phần mềm (`v0.3.1`):**
-  - Xóa bỏ hoàn toàn `Invoke-Expression` trong `scripts/Sen.psm1` (`CWE-78` / `PSAvoidUsingInvokeExpression`).
-  - Bọc `escapeHtml()` chống DOM XSS trong `office/index.html` (`CWE-79`).
-  - Giới hạn `Content-Length <= 64KB` (`CWE-400`) và kiểm tra `Origin` localhost chống CSRF (`CWE-352`) trong `scripts/start-office.ps1`.
-  - Mở rộng bộ chặn lệnh xóa đệ quy (`.NET Directory::Delete`, `fs.rmSync`) trong `scripts/guard.ps1`.
+## 2. Các quyết định thiết kế đã chốt (`v0.1.0` → `v0.4.0`)
+- **Kiến trúc Đa Nền Tảng & Đa Mô Hình (`v0.4.0` — `scripts/Sen.Harness.psm1`):**
+  - Giữ `.agents/` làm **Nguồn Chân Lý Duy Nhất (Single Source of Truth)** và chiếu cầu nối mỏng (`Install-SenHarness`, `Uninstall-SenHarness`, `Test-SenHarnessStatus`) sang 6 nền tảng: **Antigravity** (`.agents/rules/AGENTS.md`), **Claude Code** (`CLAUDE.md` + `.claude/settings.json`), **Cursor** (`.cursor/rules/sen-method.mdc` + `.cursor/hooks.json`), **GitHub Copilot** (`.github/copilot-instructions.md`), **Windsurf** (`.windsurfrules`), và **Codex CLI / OpenCode** (`AGENTS.md` gốc).
+  - Bảo toàn 100% nội dung riêng của người dùng bằng khối quản lý `<!-- SEN-METHOD:START --> ... <!-- SEN-METHOD:END -->` và gộp JSON không phá hủy.
+  - Chuẩn hóa đa hình Hook (`ConvertFrom-SenHookPayload` trong [guard.ps1](../scripts/guard.ps1) và [office-post.ps1](../scripts/office-post.ps1)) cho phép mọi IDE/CLI dùng chung lá chắn bảo mật và điều khiển chung một **3D AI Office**.
+- **Đồng bộ 2 Chiều Tự động 0-Token chống quên (`v0.4.0` — `TASK-13`):**
+  - **Chiều xuôi (`Sync-SenPlanToTasks` trong `office-post.ps1`):** Ngay khi AI vừa lưu file `docs/superpowers/plans/*.md` hoặc `docs/TODO.md`, Hook tự động bóc tách các mục `### Task N:` và `- [ ] **TASK-xx...**` nạp thẳng vào `.agents/office/tasks.json` mà không cần AI gõ lệnh thủ công.
+  - **Chiều ngược (`Sync-SenTasksToMarkdown` trong `Complete-SenTaskReview`):** Ngay khi một Task vượt qua cổng nghiệm thu (`ExitCode = 0`), hệ thống tự động đánh dấu `- [x]` ngược lại vào `docs/TODO.md` và `docs/superpowers/plans/*.md`.
+- **Hệ thống Kiểm toán Tuân thủ Quy trình 3 Tầng Không Lặp Vô Hạn (`v0.4.0` — `TASK-14`):**
+  - **Tầng 0 ([process-manifest.json](../scripts/process-manifest.json)):** Danh mục tổng 12 bước quy trình chuẩn của Sen thuộc 4 giai đoạn (`Intake`, `Design & Plan`, `Execution & TDD`, `Handover & Final Gates`), tự động cập nhật khi Sen lên phiên bản mới (`Get-SenProcessCatalog`).
+  - **Tầng 1 `(*)` & Tầng 2 `(**)` (`.agents/office/process-audit.json`):** Khởi tạo danh sách việc được chọn cho từng dự án `(*)` theo `Tier` và `ProjectScope`, phân bổ vào 4 giai đoạn `(**)` (`Initialize-SenProcessAudit`).
+  - **Kiểm tra đơn điệu chống lặp vô hạn (`Test-SenStageGate` & `Test-SenProjectCompliance`):** Kiểm tra bằng chứng vật lý trên ổ đĩa ở từng giai đoạn và cuối dự án (`0 token`, `< 20ms`, `Read-Only Predicate` + `Monotonic Latch`), tích hợp trực tiếp vào `Test-SenDeliveryGate`.
+- **Quy chuẩn Thẩm định Chuyên gia Khách quan & Cột Tài nguyên Tiêu tốn (`v0.4.0` — `TASK-11`):**
+  - Tích hợp vào [rules/AGENTS.md](../rules/AGENTS.md): Trước khi đề xuất phương án (Tier 2–3), bắt buộc đóng vai chuyên gia độc lập phân tích khách quan chứng minh phương án chọn là *Best-of-the-Best*, kèm cột **Tài nguyên tiêu tốn (Resource Cost: Token, Thời gian, CPU/RAM/Ổ cứng, Bảo trì)**.
+- **Bộ máy Điều phối, Clean Code 6 Chiều & Pháp lý Việt Nam (`v0.3.0`–`v0.3.1`):**
+  - Quản lý DAG và khóa file `allowedPaths` tại `.agents/office/tasks.json`, kiểm định 6 chiều `Measure-SenCodeHealth`, và quét 10 tín hiệu pháp lý Việt Nam `Invoke-SenVnLawScan` ([Sen.Legal.psm1](../scripts/Sen.Legal.psm1)).
 
 ## 3. Các cổng chất lượng đã kiểm chứng
-- `scripts/Validate-Repo.ps1`: **ĐẠT (0 lỗi)** (`rules/AGENTS.md` <= 6.000 bytes & <= 99 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).
-- `tests/run.ps1`: **ĐẠT (211 / 211 bài kiểm thử trên 11 bộ test, bao gồm `TierScenarios.Tests.ps1` và `Orchestrator.Tests.ps1`)**.
-- `bash -n`: **ĐẠT** trên toàn bộ script `.sh`.
+- `scripts/Validate-Repo.ps1`: **ĐẠT (0 lỗi)** (`rules/AGENTS.md` = `5.966 bytes` <= 6.000 bytes & <= 99 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).
+- `Measure-SenCodeHealth`: **ĐẠT (`Healthy = True`, `Score = 100/100` trên 28 tệp mã nguồn)**.
+- `tests/run.ps1`: **ĐẠT (226 / 226 bài kiểm thử trên 12 bộ test, bao gồm `Harness.Tests.ps1`)**.
 
 ## 4. Bước tiếp theo & Danh sách Việc cần làm (`docs/TODO.md`)
-- Toàn bộ 10 hạng mục (`TASK-01` → `TASK-10`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
-- Sẵn sàng sử dụng thực tế hoặc mở `http://127.0.0.1:47890/` (bấm tab **📊 Quản lý Task & DAG**) để giám sát trực tiếp.
+- Toàn bộ 14 hạng mục (`TASK-01` → `TASK-14`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
