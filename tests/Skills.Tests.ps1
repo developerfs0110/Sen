@@ -12,7 +12,10 @@ $Expected = @(
     'sen-setup',
     'sen-environment',
     'sen-update',
-    'sen-onboarding'
+    'sen-onboarding',
+    'sen-delivery-report',
+    'sen-release-readiness',
+    'sen-skill-capture'
 )
 
 $RequiredStrings = @{
@@ -43,6 +46,22 @@ $RequiredStrings = @{
         'profile.md',
         'Tier 1',
         'sen-setup'
+    )
+    'sen-delivery-report' = @(
+        'verification-before-completion',
+        'report.template.md'
+    )
+    'sen-release-readiness' = @(
+        'security-audit',
+        'vn-law-check',
+        'dispatching-parallel-agents',
+        'PASS',
+        'WARN',
+        'BLOCK'
+    )
+    'sen-skill-capture' = @(
+        'writing-skills',
+        'sen-'
     )
 }
 
@@ -116,5 +135,41 @@ foreach ($s in $Expected) {
                 Assert-True ($text.Contains($needle)) "skills/$s/SKILL.md must contain '$needle'"
             }
         }
+    }
+}
+
+Test "Expected skills list contains all 7 skills and matches skills/ directories" {
+    Assert-Equal 7 $Expected.Count "Expected skills count must be 7"
+    $dirs = @(Get-ChildItem -LiteralPath $skillsRoot -Directory | Select-Object -ExpandProperty Name)
+    Assert-Equal 7 $dirs.Count "skills/ must contain exactly 7 directories (got $($dirs.Count))"
+    foreach ($d in $dirs) {
+        Assert-True ($Expected -contains $d) "Directory 'skills/$d' must be in Expected list"
+    }
+}
+
+Test "skills/sen-delivery-report/report.template.md exists and is non-empty" {
+    $tplPath = Join-Path -Path $skillsRoot -ChildPath "sen-delivery-report/report.template.md"
+    Assert-True (Test-Path -LiteralPath $tplPath) "skills/sen-delivery-report/report.template.md must exist"
+    $tplText = Get-Utf8Text -Path $tplPath
+    Assert-True (-not [string]::IsNullOrWhiteSpace($tplText)) "report.template.md must be non-empty"
+}
+
+$ChecklistFiles = @(
+    'app-store.md',
+    'licenses.md',
+    'accessibility.md',
+    'performance.md',
+    'seo.md',
+    'operations.md'
+)
+
+foreach ($cf in $ChecklistFiles) {
+    $cfPath = Join-Path -Path $skillsRoot -ChildPath "sen-release-readiness/checklists/$cf"
+    Test "skills/sen-release-readiness/checklists/$cf exists with 8 to 15 checklist items" {
+        Assert-True (Test-Path -LiteralPath $cfPath) "skills/sen-release-readiness/checklists/$cf must exist"
+        $cfText = Get-Utf8Text -Path $cfPath
+        $itemCount = ([regex]::Matches($cfText, '(?m)^\s*-\s*\[[ xX]\]\s+.+')).Count
+        Assert-True ($itemCount -ge 8 -and $itemCount -le 15) "Checklist $cf must have 8..15 items (got $itemCount)"
+        Assert-True ($cfText.Contains("BLOCK") -or $cfText.Contains("WARN")) "Checklist $cf must denote BLOCK or WARN severity"
     }
 }
