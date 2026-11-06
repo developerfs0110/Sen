@@ -65,10 +65,8 @@ flowchart LR
 
 ---
 
-### Step 3: Ask About Optional `vn-law-check`
-Ask the user whether they want to install the optional **`vn-law-check`** skill:
-- Explain in one sentence that `vn-law-check` adds a Vietnamese legal compliance gate for software/web projects targeting Vietnam.
-- Default to skipping it if the user does not need Vietnamese legal checks.
+### Step 3: Confirm Core Legal & Security Gates (`security-audit` & `vn-law-check`)
+Inform the user in one sentence that Sen installs **`superpowers`**, **`security-audit`**, and **`vn-law-check`** (Vietnamese Web & Mobile App legal compliance: Luật 91/2025, NĐ 356/2025, Luật TMĐT 122/2025, Luật AI 134/2025) by default so every web/app project is protected from design to release.
 
 ---
 

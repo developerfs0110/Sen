@@ -1085,7 +1085,8 @@ function draw() {
   Object.entries(bubbles).forEach(([k, txt]) => {
     const [a, b] = R[k].boss ? P(629, 150, 250) : P(R[k].x, R[k].y, 108);
     const t = txt.length > 36 ? txt.slice(0, 35) + '…' : txt, w = Math.min(240, t.length * 6.4 + 16);
-    s += `<g class="bub ${R[k].strong ? 'strong' : ''}" transform="translate(${a},${b})"><rect x="${-w/2}" y="-26" width="${w}" height="24" rx="7"/><path d="M-6,-2 L0,6 L6,-2 Z" fill="#f0f6fc"/><text x="0" y="-10" text-anchor="middle">${t}</text></g>`;
+    const safeT = String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    s += `<g class="bub ${R[k].strong ? 'strong' : ''}" transform="translate(${a},${b})"><rect x="${-w/2}" y="-26" width="${w}" height="24" rx="7"/><path d="M-6,-2 L0,6 L6,-2 Z" fill="#f0f6fc"/><text x="0" y="-10" text-anchor="middle">${safeT}</text></g>`;
   });
 
   document.getElementById('svg').innerHTML = s;
@@ -1341,6 +1342,8 @@ const DEMO_TASKS = [
   { id: 'TASK-08', title: 'Bảng điều khiển AI Control Center & Metrics', module: 'Sen Office', tier: 2, riskLevel: 'medium', assignee: 'fe', dependsOn: ['TASK-01'], allowedPaths: ['office/index.html'], status: 'done', evidence: { command: 'Validate-Repo.ps1', exitCode: 0, reviewer: 'sec' } }
 ];
 
+const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
 function renderTaskManager(tasks, metrics, lessons, scale) {
   const list = (Array.isArray(tasks) && tasks.length > 0) ? tasks : DEMO_TASKS;
   if (scale) {
@@ -1357,18 +1360,18 @@ function renderTaskManager(tasks, metrics, lessons, scale) {
     tb.innerHTML = list.map(t => {
       const roleKey = R[t.assignee] ? t.assignee : (t.assignee === 'dev_fe' ? 'fe' : t.assignee === 'dev_be' ? 'be' : 'pm');
       const rObj = R[roleKey] || R.pm;
-      const deps = Array.isArray(t.dependsOn) && t.dependsOn.length ? t.dependsOn.join(', ') : '—';
-      const paths = Array.isArray(t.allowedPaths) && t.allowedPaths.length ? t.allowedPaths.map(p => `<code>${p}</code>`).join(' ') : '<code>*</code>';
+      const deps = Array.isArray(t.dependsOn) && t.dependsOn.length ? escapeHtml(t.dependsOn.join(', ')) : '—';
+      const paths = Array.isArray(t.allowedPaths) && t.allowedPaths.length ? t.allowedPaths.map(p => `<code>${escapeHtml(p)}</code>`).join(' ') : '<code>*</code>';
       const stCol = t.status === 'done' ? '#3fb950' : t.status === 'in_progress' ? '#58a6ff' : t.status === 'reviewing' ? '#db61a2' : t.status === 'backlog' ? '#8b949e' : '#d29922';
-      const evTxt = (t.evidence && t.evidence.command) ? `<span style="color:#7ee787">✓ ${t.evidence.command} (Exit ${t.evidence.exitCode ?? 0})</span>` : '<span style="color:var(--muted)">Chờ kiểm thử</span>';
+      const evTxt = (t.evidence && t.evidence.command) ? `<span style="color:#7ee787">✓ ${escapeHtml(t.evidence.command)} (Exit ${escapeHtml(t.evidence.exitCode ?? 0)})</span>` : '<span style="color:var(--muted)">Chờ kiểm thử</span>';
       return `<tr>
-        <td><b>${t.id}</b></td>
-        <td><b>${t.title}</b><br><small style="color:var(--muted)">Module: ${t.module || 'Core'}</small></td>
-        <td>Cấp ${t.tier || 2} · <span style="color:#e3b341">${t.riskLevel || 'medium'}</span></td>
+        <td><b>${escapeHtml(t.id)}</b></td>
+        <td><b>${escapeHtml(t.title)}</b><br><small style="color:var(--muted)">Module: ${escapeHtml(t.module || 'Core')}</small></td>
+        <td>Cấp ${escapeHtml(t.tier || 2)} · <span style="color:#e3b341">${escapeHtml(t.riskLevel || 'medium')}</span></td>
         <td><span style="color:${rObj.c};font-weight:700">● ${rObj.n}</span></td>
         <td><code>${deps}</code></td>
         <td class="redactable">${paths}</td>
-        <td><b style="color:${stCol}">${(t.status || 'ready').toUpperCase()}</b></td>
+        <td><b style="color:${stCol}">${escapeHtml((t.status || 'ready').toUpperCase())}</b></td>
         <td class="redactable">${evTxt}</td>
       </tr>`;
     }).join('');
@@ -1376,7 +1379,7 @@ function renderTaskManager(tasks, metrics, lessons, scale) {
   if (Array.isArray(lessons) && lessons.length > 0) {
     const lb = document.getElementById('lessonsBox');
     if (lb) {
-      lb.innerHTML = lessons.map(l => `• <b>[${l.category}]</b> ${l.problem} ➔ <span style="color:#7ee787">${l.solution}</span>`).join('<br>');
+      lb.innerHTML = lessons.map(l => `• <b>[${escapeHtml(l.category)}]</b> ${escapeHtml(l.problem)} ➔ <span style="color:#7ee787">${escapeHtml(l.solution)}</span>`).join('<br>');
     }
   }
 }
@@ -1441,9 +1444,9 @@ async function pollLiveServer() {
         bubbles[f] = camMode === 'full' ? (ev.fullText || ev.ecoText) : ev.ecoText;
         const id = 'tm' + (++seq);
         if (ev.source === 'guard-denied') {
-          log.insertAdjacentHTML('afterbegin', `<div class="it denied-card" style="--c:#e5534b"><span class="ln">${ev.lane || 'Security'}</span><b>🛑 BẢO MẬT ➔ PM (LỆNH BỊ CHẶN)</b><div class="tx redactable">${ev.ecoText}</div><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
+          log.insertAdjacentHTML('afterbegin', `<div class="it denied-card" style="--c:#e5534b"><span class="ln">${escapeHtml(ev.lane || 'Security')}</span><b>🛑 BẢO MẬT ➔ PM (LỆNH BỊ CHẶN)</b><div class="tx redactable">${escapeHtml(ev.ecoText)}</div><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
         } else {
-          log.insertAdjacentHTML('afterbegin', `<div class="it" style="--c:${R[f].c}"><span class="ln">${ev.lane || 'Live'}</span><b>${R[f].n} ➔ ${R[t].n}</b><span class="tx redactable">${bubbles[f]}</span><span class="md ev-hook">✓ Hook thật</span><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
+          log.insertAdjacentHTML('afterbegin', `<div class="it" style="--c:${R[f].c}"><span class="ln">${escapeHtml(ev.lane || 'Live')}</span><b>${R[f].n} ➔ ${R[t].n}</b><span class="tx redactable">${escapeHtml(bubbles[f])}</span><span class="md ev-hook">✓ Hook thật</span><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
         }
       });
       document.getElementById('feedCount').textContent = `${lastEventCount} sự kiện thật`;

@@ -71,7 +71,7 @@ Test "packages.json lists the three packages with verified subPaths" {
     $pk = Get-Content -LiteralPath (Join-Path $repoRoot "scripts/packages.json") -Raw | ConvertFrom-Json
     Assert-Equal 3 @($pk).Count
     Assert-Equal "skills/security-audit" (@($pk | Where-Object id -eq "security-audit")[0].subPath)
-    Assert-Equal $false (@($pk | Where-Object id -eq "vn-law-check")[0].required)
+    Assert-Equal $true (@($pk | Where-Object id -eq "vn-law-check")[0].required)
     Assert-Equal ".agents/skills/vn-law-check" (@($pk | Where-Object id -eq "vn-law-check")[0].dest)
 }
 
@@ -146,7 +146,7 @@ Test "install.ps1 success writes lock with commits, safety.md and Sen payload" {
         $lock = Read-SenLock -Workspace $ws
         Assert-Equal "abc1234def" $lock.packages["superpowers"].commit
         Assert-Equal "abc1234def" $lock.packages["security-audit"].commit
-        Assert-True (-not $lock.packages.ContainsKey("vn-law-check")) "optional package skipped without switch"
+        Assert-Equal "abc1234def" $lock.packages["vn-law-check"].commit "vn-law-check installed by default"
         $senDir = Join-Path $ws ".agents/plugins/sen-method"
         Assert-True (Test-Path -LiteralPath (Join-Path $senDir "plugin.json")) "plugin.json copied"
         Assert-True (Test-Path -LiteralPath (Join-Path $senDir "scripts/Sen.psm1")) "scripts copied"
@@ -172,12 +172,12 @@ Test "install.ps1 with 404 on security-audit exits non-zero and writes no lock" 
     } finally { Remove-InstallTempDir (Split-Path $ws -Parent) }
 }
 
-Test "install.ps1 optional vn-law-check failure does not block the lock" {
+Test "install.ps1 required vn-law-check failure blocks the lock" {
     $ws = Join-Path (New-InstallTempDir) "ws"
     try {
-        $res = Invoke-InstallScript -Workspace $ws -Git (New-FakeGit -FailRepos @("vn-law-check")) -WithVnLawCheck
-        Assert-Equal 0 $res.ExitCode
-        Assert-Equal $true $res.Json.lockWritten
+        $res = Invoke-InstallScript -Workspace $ws -Git (New-FakeGit -FailRepos @("vn-law-check"))
+        Assert-True ($res.ExitCode -ne 0) "exit code must be non-zero when required vn-law-check fails"
+        Assert-Equal $false $res.Json.lockWritten
         Assert-Equal "failed" (@($res.Json.packages | Where-Object id -eq "vn-law-check")[0].status)
     } finally { Remove-InstallTempDir (Split-Path $ws -Parent) }
 }
@@ -287,6 +287,8 @@ Test "hooks.json and guard.ps1 are copied by Install-SenSelf and block destructi
             "gh repo delete owner/repo",
             "find /var/tmp -name '*.log' -delete",
             "python -c `"import shutil; shutil.rmtree('dist')`"",
+            "[System.IO.Directory]::Delete('C:\\temp\\build', `$true)",
+            "node -e `"fs.rmSync('dist', {recursive:true})`"",
             "psql -c 'DROP TABLE users;'",
             "TRUNCATE TABLE orders"
         )) {

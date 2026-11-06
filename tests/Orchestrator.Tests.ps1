@@ -262,3 +262,63 @@ function Invoke-UnusedDeadHelper {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "Invoke-SenVnLawScan triages web/mobile apps and catches code-level red flags" {
+    $ws = New-OrchTestWorkspace
+    try {
+        # 1. Level 0 static site
+        $staticDir = Join-Path $ws "static-site"
+        [System.IO.Directory]::CreateDirectory($staticDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $staticDir "index.html"), "<html><body><h1>Hello Portfolio</h1></body></html>")
+        $s0 = Invoke-SenVnLawScan -Path $staticDir
+        Assert-Equal 0 $s0.Level "Pure static site must be Level 0"
+        Assert-True $s0.CompliantCodeLevel "Level 0 static site has no code red flags"
+
+        # 2. Level 2 e-commerce + AI + static tracking without consent + expired ND 13/2023 citation
+        $shopDir = Join-Path $ws "shop-app"
+        [System.IO.Directory]::CreateDirectory($shopDir) | Out-Null
+        $shopHtml = @"
+<html>
+<head>
+  <script src="https://www.googletagmanager.com/gtag/js?id=G-12345"></script>
+</head>
+<body>
+  <form action="/checkout"><input type="email" name="email" /><button>Add to cart</button></form>
+  <footer>Tuan thu Nghi dinh 13/2023/ND-CP</footer>
+</body>
+</html>
+"@
+        [System.IO.File]::WriteAllText((Join-Path $shopDir "index.html"), $shopHtml)
+        [System.IO.File]::WriteAllText((Join-Path $shopDir "chat.ts"), "const url = 'https://api.openai.com/v1/chat';")
+        [System.IO.File]::WriteAllText((Join-Path $shopDir "pubspec.yaml"), "name: shop_mobile")
+        [System.IO.File]::WriteAllText((Join-Path $shopDir "auth.dart"), "void signIn() { final r = '/login'; }")
+
+        $s2 = Invoke-SenVnLawScan -Path $shopDir
+        Assert-Equal 2 $s2.Level "Shop with checkout must be Level 2"
+        Assert-True $s2.AI "AI signal must be detected"
+        Assert-True $s2.MobileApp "Flutter pubspec.yaml must flag MobileApp"
+        Assert-Equal "static" $s2.TrackingConsent "Static gtag script without consent gate must be flagged static"
+        Assert-True (-not $s2.CompliantCodeLevel) "Red flags must mark CompliantCodeLevel = false"
+        Assert-Equal 3 $s2.CodeRedFlags.Count "Must catch TRACKING_PRELOAD, MOBILE_AUTH_MISSING_ACCOUNT_DELETE, and EXPIRED_VIETNAM_LAW_CITATION"
+
+        # 3. Test-SenDeliveryGate -CheckVnLaw blocks when CodeRedFlags exist
+        $gate = Test-SenDeliveryGate -Workspace $ws -ProjectPath $shopDir -CheckVnLaw
+        Assert-True (-not $gate.Allowed) "Delivery gate with -CheckVnLaw must block on code red flags"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Security hardening invariants: no Invoke-Expression, DOM XSS escaped, and localhost CSRF protected" {
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+    $senPsm1 = [System.IO.File]::ReadAllText((Join-Path $repoRoot "scripts/Sen.psm1"))
+    Assert-True ($senPsm1 -notmatch '\bInvoke-Expression\b') "Sen.psm1 must not use Invoke-Expression"
+
+    $officeHtml = [System.IO.File]::ReadAllText((Join-Path $repoRoot "office/index.html"))
+    Assert-True ($officeHtml -match 'const\s+escapeHtml\s*=') "office/index.html must define escapeHtml for DOM XSS mitigation"
+
+    $startOffice = [System.IO.File]::ReadAllText((Join-Path $repoRoot "scripts/start-office.ps1"))
+    Assert-True ($startOffice -match '65536') "start-office.ps1 must enforce 64KB Content-Length cap"
+    Assert-True ($startOffice -match 'forbidden origin') "start-office.ps1 must reject non-localhost Origin on POST"
+}

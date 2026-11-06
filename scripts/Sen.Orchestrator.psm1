@@ -331,37 +331,56 @@ function Test-SenDeliveryGate {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Workspace
+        [string]$Workspace,
+        [string]$ProjectPath = "",
+        [switch]$CheckCodeHealth,
+        [switch]$CheckVnLaw
     )
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })
-    if ($active.Count -eq 0) {
-        return [pscustomobject]@{
-            Allowed       = $true
-            TotalActive   = 0
-            DoneCount     = 0
-            IncompleteIds = @()
-            Reason        = "No active tasks registered."
-        }
-    }
     $incomplete = [System.Collections.Generic.List[string]]::new()
     $doneCount = 0
     foreach ($t in $active) {
         $hasValidEvidence = ($null -ne $t.evidence) -and (-not [string]::IsNullOrWhiteSpace([string]$t.evidence.command)) -and ([int]$t.evidence.exitCode -eq 0)
-        if ([string]$t.status -eq "done" -and $hasValidEvidence) {
-            $doneCount++
-        }
-        else {
-            $incomplete.Add([string]$t.id)
+        if ([string]$t.status -eq "done" -and $hasValidEvidence) { $doneCount++ }
+        else { $incomplete.Add([string]$t.id) }
+    }
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $allowed = ($incomplete.Count -eq 0)
+    if (-not $allowed) {
+        $reasons.Add("Incomplete or unverified tasks ($($incomplete -join ', '))")
+    }
+    $codeHealthObj = $null
+    if ($CheckCodeHealth.IsPresent -and (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue)) {
+        $codeHealthObj = Measure-SenCodeHealth -Path $targetDir
+        if (-not $codeHealthObj.Healthy) {
+            $allowed = $false
+            $reasons.Add("Clean Code check failed (Score=$($codeHealthObj.Score))")
         }
     }
-    $allowed = ($incomplete.Count -eq 0)
-    $reason = if ($allowed) { "All $($active.Count) active task(s) verified and done." } else { "Delivery blocked: incomplete or unverified tasks ($($incomplete -join ', '))." }
+    $vnLawObj = $null
+    if ($CheckVnLaw.IsPresent -and (Get-Command Invoke-SenVnLawScan -ErrorAction SilentlyContinue)) {
+        $vnLawObj = Invoke-SenVnLawScan -Path $targetDir
+        if (-not $vnLawObj.CompliantCodeLevel) {
+            $allowed = $false
+            $codes = @($vnLawObj.CodeRedFlags | ForEach-Object { $_.Code }) -join ', '
+            $reasons.Add("Vietnam Law code red flags ($codes)")
+        }
+    }
+    if ($allowed) {
+        $reason = if ($active.Count -eq 0) { "No active tasks registered." } else { "All $($active.Count) active task(s) verified and done." }
+    }
+    else {
+        $reason = "Delivery blocked: " + ($reasons -join "; ") + "."
+    }
     return [pscustomobject]@{
         Allowed       = $allowed
         TotalActive   = $active.Count
         DoneCount     = $doneCount
         IncompleteIds = @($incomplete.ToArray())
+        CodeHealth    = $codeHealthObj
+        VnLawScan     = $vnLawObj
         Reason        = $reason
     }
 }

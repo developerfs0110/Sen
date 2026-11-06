@@ -346,42 +346,27 @@ function Get-SenAntigravityQuota {
 function Get-SenTaskRiskScore {
     [CmdletBinding()]
     param(
-        [AllowEmptyString()]
-        [string]$Request = "",
+        [AllowEmptyString()][string]$Request = "",
         [int]$FileCount = 1,
-        [switch]$TouchesDatabase,
-        [switch]$TouchesAuth,
-        [switch]$TouchesPayments,
-        [switch]$DeletesData,
-        [switch]$NewProjectOrArchitecture,
-        [switch]$SharedComponent,
-        [switch]$PublicApi,
-        [switch]$ConfigOrMigration,
-        [switch]$NewDependency,
-        [switch]$BusinessLogic,
-        [ValidateSet("mini", "standard", "enterprise")]
-        [string]$ProjectScale = "standard"
+        [switch]$TouchesDatabase, [switch]$TouchesAuth, [switch]$TouchesPayments,
+        [switch]$DeletesData, [switch]$NewProjectOrArchitecture, [switch]$SharedComponent,
+        [switch]$PublicApi, [switch]$ConfigOrMigration, [switch]$NewDependency,
+        [switch]$BusinessLogic, [switch]$TouchesPersonalDataOrLegal,
+        [ValidateSet("mini", "standard", "enterprise")][string]$ProjectScale = "standard"
     )
     $score = 0
     $reasons = [System.Collections.Generic.List[string]]::new()
     $hardFloorTier3 = $false
     $req = ([string]$Request).Trim().ToLowerInvariant()
 
-    $hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or ($FileCount -gt 1)
-    $isPureQuestion = (-not $hasExplicitSwitches) -and (
-        ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
-    )
+    $hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or $TouchesPersonalDataOrLegal.IsPresent -or ($FileCount -gt 1)
+    $isPureQuestion = (-not $hasExplicitSwitches) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
     if ($isPureQuestion) {
         return [pscustomobject]@{
-            Score                 = 0
-            Tier                  = 0
-            IsLookup              = $true
-            RiskLevel             = "none"
-            Reasons               = @("Pure lookup question (no tier label)")
-            HardFloorTier3        = $false
-            RequiresDesignAndPlan = $false
-            ProjectScale          = $ProjectScale
-            RecommendedExecution  = "direct-answer"
+            Score = 0; Tier = 0; IsLookup = $true; RiskLevel = "none"
+            Reasons = @("Pure lookup question (no tier label)"); HardFloorTier3 = $false
+            RequiresDesignAndPlan = $false; LegalCheckRequired = $false
+            ProjectScale = $ProjectScale; RecommendedExecution = "direct-answer"
         }
     }
 
@@ -390,10 +375,10 @@ function Get-SenTaskRiskScore {
     $isCosmeticUiOnly   = ($req -match '^(doi\s+mau\s+nut|..i\s+m.u\s+n.t|change\s+button\s+color|tang\s+co\s+chu|t.ng\s+c.\s+ch.|fix\s+the\s+typo|the\s+footer\s+overlaps)')
 
     $hasDb   = $TouchesDatabase.IsPresent -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
-    $hasAuth = $TouchesAuth.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
+    $hasAuth = $TouchesAuth.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
     $hasPay  = $TouchesPayments.IsPresent -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
     $hasDel  = $DeletesData.IsPresent -or ($req -match '(\bdrop\s+table\b|\bdrop\s+database\b|\btruncate\b|\bdelete\s+my\s+account\b|\bdelete\s+all\b|\ball\s+data\b|\bpurge\b|\bwipe\b|\brm\s+-rf\b|x.a\s+to.n\s+b.|xoa\s+toan\s+bo|x.a\s+d.\s+li.u|xoa\s+du\s+lieu|x.a\s+t.i\s+kho.n)')
-    $hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
+    $hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|\bkubernetes\b|\bterraform\b|\bproduction\s+deploy\b|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
 
     if ($hasDb)   { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Database/Schema (+5)") }
     if ($hasAuth) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Auth/OAuth/Security (+5)") }
@@ -401,10 +386,11 @@ function Get-SenTaskRiskScore {
     if ($hasDel)  { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Data Deletion/Migration (+5)") }
     if ($hasArch) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("New Project/Architecture (+5)") }
 
-    $hasApi    = $PublicApi.IsPresent -or ($req -match '(\bapi\b|\bendpoint\b|\brest\b|\bgraphql\b|\bwebhook\b|\bcontract\b|\bcontrollers,\s+services\s+and\s+routes\b)')
-    $hasShared = $SharedComponent.IsPresent -or ($req -match '(\bshared\s+component\b|\bcore\s+module\b|\bglobal\s+state\b|\bcommon\s+util\b|d.ng\s+chung|dung\s+chung)')
+    $hasApi    = $PublicApi.IsPresent -or ($req -match '(\bapi\b|\bendpoint\b|\brest\b|\bgraphql\b|\bwebhook\b|\bcontract\b|\bbreaking\s+change\b|\bcontrollers,\s+services\s+and\s+routes\b)')
+    $hasShared = $SharedComponent.IsPresent -or ($req -match '(\bshared\s+component\b|\bcore\s+module\b|\bglobal\s+state\b|\bcommon\s+util\b|\bconcurrency\b|\bmutex\b|\brace\s+condition\b|d.ng\s+chung|dung\s+chung)')
     $hasDep    = $NewDependency.IsPresent -or ($req -match '(\bnpm\s+install\b|\bpip\s+install\b|\bnew\s+library\b|\bnew\s+package\b|\badd\s+dependency\b|\bdayjs\b|\bzod\b|th.\s+vi.n|thu\s+vien)')
-    $hasCfg    = $ConfigOrMigration.IsPresent -or ($req -match '(\bwebpack\b|\bvite\.config\b|\btsconfig\b|\bdockerfile\b|\bdocker-compose\b|\bgithub\s+actions\b)')
+    $hasCfg    = $ConfigOrMigration.IsPresent -or ($req -match '(\bwebpack\b|\bvite\.config\b|\btsconfig\b|\bdockerfile\b|\bdocker-compose\b|\bgithub\s+actions\b|\bgitlab-ci\b)')
+    $hasLegal  = $TouchesPersonalDataOrLegal.IsPresent -or $hasPay -or $hasAuth -or $hasArch -or ($req -match '(\bprivacy\s+policy\b|\bcookie\s+banner\b|\bconsent\b|\bgtag\b|\bfbq\b|\btiktok\s+pixel\b|\bpersonal\s+data\b|\bpdpl\b|\bnd\s*356\b|\bluat\s*91\b|d.\s+li.u\s+c.\s+nh.n|du\s+lieu\s+ca\s+nhan|ch.nh\s+s.ch\s+b.o\s+m.t|chinh\s+sach\s+bao\s+mat)')
 
     if ($hasApi)         { $score += 3; $reasons.Add("API/Endpoint Change (+3)") }
     if ($hasShared)      { $score += 3; $reasons.Add("Shared Component/Blast Radius (+3)") }
@@ -414,15 +400,11 @@ function Get-SenTaskRiskScore {
 
     $hasLogic = $BusinessLogic.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bfeature\b|\bdark\s+mode\b|\bexport\b|\bimport\b|\bexcel\b|\bcsv\b|\bfilter\b|\bsearch\b|\bpagination\b|\bvalidation\b|\bworkflow\b|ch.c\s+n.ng\s+l.c|chuc\s+nang\s+loc|xu.t\s+danh\s+s.ch|xuat\s+danh\s+sach|ph.n\s+trang|phan\s+trang)'))
     if ($hasLogic) { $score += 2; $reasons.Add("Business Logic/Feature (+2)") }
-
-    if ($reasons.Count -eq 0) {
-        $reasons.Add("UI/CSS/Copy or localized 1-2 file fix (+0)")
-    }
+    if ($reasons.Count -eq 0) { $reasons.Add("UI/CSS/Copy or localized 1-2 file fix (+0)") }
 
     $tier = if ($hardFloorTier3 -or $forceTier3Override -or $score -ge 6) { 3 } elseif ($score -ge 2) { 2 } else { 1 }
     if ($forceTier1Override -and -not $hardFloorTier3 -and -not $forceTier3Override) {
-        $tier = 1
-        $reasons.Add("User override to Tier 1 (safe scope)")
+        $tier = 1; $reasons.Add("User override to Tier 1 (safe scope)")
     }
     elseif ($forceTier1Override -and $hardFloorTier3) {
         $reasons.Add("Risk overrides 'just do it': stays Tier 3 (design + plan required)")
@@ -439,6 +421,7 @@ function Get-SenTaskRiskScore {
         Reasons               = @($reasons.ToArray())
         HardFloorTier3        = [bool]$hardFloorTier3
         RequiresDesignAndPlan = [bool]($tier -eq 3)
+        LegalCheckRequired    = [bool]$hasLegal
         ProjectScale          = $ProjectScale
         RecommendedExecution  = $execMode
     }
@@ -625,6 +608,11 @@ function Measure-SenCodeHealth {
         Standards       = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
         Recommendation  = $rec
     }
+}
+
+$senLegalPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Legal.psm1"
+if (Test-Path -LiteralPath $senLegalPath) {
+    Import-Module -Name $senLegalPath -Global -Force
 }
 
 $senOrchestratorPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Orchestrator.psm1"

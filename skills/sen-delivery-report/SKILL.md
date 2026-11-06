@@ -29,6 +29,7 @@ Never claim a task is "done" or write a delivery report from memory or assumptio
    - If the project's `AGENTS.md` enables additional gates (such as `security-audit`, `vn-law-check`, or custom checks), run those gates before finalizing the report.
 3. If any test, build, or required gate fails, **stop**, fix the issue first, and re-run verification before generating the delivery report.
 4. Run `Measure-SenCodeHealth -Path "<PROJECT_ROOT>"` (zero-token static check). If `$health.Healthy -eq $false`, add a 1-line note in Section 5 of the report suggesting the `sen-clean-code` skill.
+5. For Web or Mobile App projects, run `Invoke-SenVnLawScan -Path "<PROJECT_ROOT>"` (or `Test-SenDeliveryGate -Workspace "<WORKSPACE>" -ProjectPath "<PROJECT_ROOT>" -CheckCodeHealth -CheckVnLaw`) and evaluate the applicable `vn-law-check` checklists (`00-triage.md` -> `01..09`) before handover.
 
 ---
 

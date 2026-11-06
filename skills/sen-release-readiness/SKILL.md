@@ -42,7 +42,7 @@ Following **`dispatching-parallel-agents`**, dispatch independent read-only chec
    - Any critical/high vulnerability or leaked secret is `BLOCK`; medium/low hardening suggestions are `WARN`; clean is `PASS`.
 2. **Domain 2 — Legal & Compliance (`vn-law-check`):**
    - Check whether **`vn-law-check`** is installed at `<WORKSPACE>/.agents/skills/vn-law-check/SKILL.md` (or `<WORKSPACE>/.agents/plugins/vn-law-check/`).
-   - **If installed:** Invoke `vn-law-check` to audit regulatory compliance (Decree 13/2023/ND-CP personal data protection, cybersecurity, e-commerce/content disclosures) and classify findings as `PASS`, `WARN`, or `BLOCK`.
+   - **If installed:** First run `Invoke-SenVnLawScan -Path "<PROJECT_ROOT>"` (PowerShell parity with `scripts/scan.sh`) to determine the Triage Level (`0..3`), applicable checklists (`01..09`), and code-level red flags (`CodeRedFlags`). Then invoke `vn-law-check` (`references/00-triage.md`) to audit compliance against current Vietnamese laws (**Luật Bảo vệ DLCN 91/2025/QH15 & Nghị định 356/2025/NĐ-CP** replacing expired NĐ 13/2023; **Luật TMĐT 122/2025/QH15 & NĐ 248/2026/NĐ-CP** replacing expired NĐ 52/2013 & 85/2021; **Luật An ninh mạng 116/2025/QH15**; **Luật Trí tuệ nhân tạo 134/2025/QH15 & NĐ 142/2026/NĐ-CP**). Any 🔴 code-level violation or expired law citation is `BLOCK`; 🟡 procedural/paperwork items are `WARN`; 🟢/⚪ is `PASS`.
    - **If NOT installed:** Do not guess legal compliance and do not fail silently. Record the exact status:
      `WARN: legal check not run, vn-law-check not installed`
      (and include a 1-line note showing how to install `vn-law-check` if the project needs Vietnamese regulatory compliance).

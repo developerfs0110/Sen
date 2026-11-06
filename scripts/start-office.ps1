@@ -68,12 +68,13 @@ if (-not $NoBrowser) {
     try { Start-Process $url } catch { <# Ignore headless environments without browser #> }
 }
 
-function Send-HttpResponse($stream, [int]$statusCode, [string]$statusText, [string]$contentType, [byte[]]$bodyBytes) {
+function Send-HttpResponse($stream, [int]$statusCode, [string]$statusText, [string]$contentType, [byte[]]$bodyBytes, [int]$allowedPort = 47890) {
     $header = "HTTP/1.1 $statusCode $statusText`r`n" +
               "Content-Type: $contentType`r`n" +
               "Content-Length: $($bodyBytes.Length)`r`n" +
               "Cache-Control: no-store`r`n" +
-              "Access-Control-Allow-Origin: *`r`n" +
+              "Access-Control-Allow-Origin: http://127.0.0.1:$allowedPort`r`n" +
+              "X-Content-Type-Options: nosniff`r`n" +
               "Connection: close`r`n`r`n"
     $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($header)
     $stream.Write($headerBytes, 0, $headerBytes.Length)
@@ -97,12 +98,28 @@ try {
             $path = ($parts[1] -split '\?')[0]
 
             $contentLen = 0
+            $originHdr = ""
             while ($true) {
                 $hLine = $reader.ReadLine()
                 if ([string]::IsNullOrEmpty($hLine)) { break }
                 if ($hLine -match '(?i)^Content-Length:\s*(\d+)') {
                     $contentLen = [int]$matches[1]
                 }
+                elseif ($hLine -match '(?i)^Origin:\s*(.+)$') {
+                    $originHdr = $matches[1].Trim()
+                }
+            }
+
+            if ($contentLen -gt 65536) {
+                $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"payload too large"}')
+                Send-HttpResponse $stream 413 "Payload Too Large" "application/json; charset=utf-8" $errBytes $usePort
+                continue
+            }
+
+            if ($method -eq "POST" -and (-not [string]::IsNullOrEmpty($originHdr)) -and ($originHdr -notmatch '^https?://(127\.0\.0\.1|localhost)(:\d+)?$')) {
+                $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"forbidden origin"}')
+                Send-HttpResponse $stream 403 "Forbidden" "application/json; charset=utf-8" $errBytes $usePort
+                continue
             }
 
             $bodyStr = ""
@@ -119,7 +136,7 @@ try {
 
             if ($method -eq "GET" -and ($path -eq "/" -or $path -eq "/index.html")) {
                 $bytes = [System.IO.File]::ReadAllBytes($htmlPath)
-                Send-HttpResponse $stream 200 "OK" "text/html; charset=utf-8" $bytes
+                Send-HttpResponse $stream 200 "OK" "text/html; charset=utf-8" $bytes $usePort
             }
             elseif ($method -eq "GET" -and $path -eq "/api/state") {
                 $c = Get-SenOfficeConfig -Workspace $resolvedWs
@@ -143,23 +160,23 @@ try {
                     lessons   = $les
                 }
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $st -Depth 8 -Compress))
-                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes
+                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
             }
             elseif ($method -eq "POST" -and $path -eq "/api/config") {
                 $reqObj = ConvertFrom-Json -InputObject $bodyStr
                 $newMode = if ($reqObj.mode -in @("off", "eco", "full")) { [string]$reqObj.mode } else { "eco" }
                 $updated = Set-SenOfficeConfig -Workspace $resolvedWs -Mode $newMode -Port $usePort
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $updated -Compress))
-                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes
+                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
             }
             elseif ($method -eq "POST" -and $path -eq "/api/clear") {
                 Clear-SenOfficeEvents -Workspace $resolvedWs
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes('{"cleared":true}')
-                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes
+                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
             }
             else {
                 $nf = [System.Text.Encoding]::UTF8.GetBytes('{"error":"not found"}')
-                Send-HttpResponse $stream 404 "Not Found" "application/json; charset=utf-8" $nf
+                Send-HttpResponse $stream 404 "Not Found" "application/json; charset=utf-8" $nf $usePort
             }
         }
         catch { <# Ignore disconnected HTTP client socket #> }

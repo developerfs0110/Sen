@@ -1,7 +1,7 @@
-# Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.3.0`)
+# Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.3.1`)
 
-- **Cập nhật lần cuối:** 2026-11-06
-- **Cột mốc hiện tại:** `v0.3.0` (**Sen Orchestrator & Control Center** — Bộ máy Điều phối Agent & Quản lý Trạng thái Task thực sự, Chấm điểm Rủi ro xác định `32/32`, Quy trình Backlog `docs/TODO.md`, Điểm khôi phục tự động, Ghim Commit Chuỗi cung ứng & Bộ nhớ 3 Lớp) — **Đã hoàn tất & Kiểm chứng**
+- **Cập nhật lần cuối:** 2026-11-07
+- **Cột mốc hiện tại:** `v0.3.1` (**Legal-by-Design, Clean Code 6 Chiều & Gia Cố Bảo Mật Kỹ Thuật Phần Mềm** — Tích hợp bắt buộc `vn-law-check` + `Invoke-SenVnLawScan`, 6 tiêu chuẩn ISO/Sonar `Measure-SenCodeHealth`, và vá cứng 5 lỗ hổng bảo mật runtime) — **Đã hoàn tất & Kiểm chứng**
 - **Kho mã nguồn:** `https://github.com/developerfs0110/Sen.git` (nhánh `main`)
 - **Quy ước Git của dự án:** Tất cả nội dung bình luận khi commit/push Git (`git commit`) bắt buộc viết bằng **tiếng Việt** (xem [AGENTS.md](../AGENTS.md)).
 
@@ -17,9 +17,16 @@ Cả 3 giai đoạn lớn (**`v0.1.0`/`v0.1.1` Sen Core & Gia cố bảo mật**
 - **An toàn Thực thi & Chuỗi cung ứng:** Ghim `pinnedCommit` trong [scripts/packages.json](../scripts/packages.json), tạo điểm khôi phục nhanh (`New-SenRestorePoint` / `Restore-SenRestorePoint`), chặn sửa `.git/config` và kiểm tra `allowedPaths` trong [scripts/guard.ps1](../scripts/guard.ps1).
 - **Trung tâm Điều hành 3D AI Office & Control Center:** Giao diện [office/index.html](../office/index.html) tích hợp 5 chế độ xem (`🏢 Sàn 3D`, `📋 2D Gọn`, `📊 Quản lý Task & DAG`, `🎯 Đầu ra 2 Giai đoạn`, `🔀 Chia đôi`) và **Bộ nhớ 3 Lớp** (`User · Project · Execution Lessons`).
 - **Tối ưu hóa & Làm sạch Mã nguồn (`Clean Code` & `sen-clean-code`):**
-  - Tách kiến trúc PowerShell của Sen thành 4 mô-đun chuyên biệt (`<= 800` dòng và `<= 45 KB` mỗi file, khớp giới hạn đọc 1 lần của `read_file`): [scripts/Sen.psm1](../scripts/Sen.psm1) (`578` dòng), [scripts/Sen.Packages.psm1](../scripts/Sen.Packages.psm1) (`789` dòng), [scripts/Sen.Runtime.psm1](../scripts/Sen.Runtime.psm1) (`452` dòng), và [scripts/Sen.Orchestrator.psm1](../scripts/Sen.Orchestrator.psm1) (`735` dòng).
-  - Bổ sung hàm kiểm tra sức khỏe mã nguồn tự động `0-token` [`Measure-SenCodeHealth`](../scripts/Sen.Orchestrator.psm1) (theo 3 ngưỡng: `Logic <= 800 dòng / 45 KB`, `UI <= 1500 dòng / 80 KB`, `Test <= 1000 dòng / 60 KB`) và skill [skills/sen-clean-code/SKILL.md](../skills/sen-clean-code/SKILL.md) để áp dụng cho cả chính Sen lẫn mọi dự án sau này.
-  - Tối ưu hóa nạp lười (`lazy-load`) cho [scripts/guard.ps1](../scripts/guard.ps1) và [scripts/office-post.ps1](../scripts/office-post.ps1).
+  - Tách kiến trúc PowerShell của Sen thành 5 mô-đun chuyên biệt (`<= 800` dòng và `<= 45 KB` mỗi file, khớp giới hạn đọc 1 lần của `read_file`): `Sen.psm1`, `Sen.Packages.psm1`, `Sen.Runtime.psm1`, `Sen.Orchestrator.psm1`, và `Sen.Legal.psm1`.
+  - Bổ sung hàm kiểm tra sức khỏe mã nguồn tự động `0-token` `Measure-SenCodeHealth` trên 6 chiều chuẩn công nghiệp (`ISO/IEC 5055` + `SonarQube` + `PSScriptAnalyzer` + `AI-Native 800L/45KB`) và skill `sen-clean-code`.
+- **Tuân thủ Pháp lý Việt Nam từ Thiết kế đến Nghiệm thu (`Legal-by-Design` & `Invoke-SenVnLawScan`):**
+  - Nâng `vn-law-check` thành gói bắt buộc (`required: true`) trong `scripts/packages.json` và cài đặt trực tiếp vào `.agents/skills/vn-law-check`.
+  - Xây dựng mô-đun `scripts/Sen.Legal.psm1` (`Invoke-SenVnLawScan`) tương thích 100% với `vn-law-check/scripts/scan.sh` (quét 10 tín hiệu `FORM`, `TRACKING`, `TRACKING_PRELOAD`, `CONSENT_GATE`, `COMMERCE`, `AUTH`, `MARKETPLACE`, `AI`, `PERMISSIONS`, `SDK_TRACKING`, `ADS_SDK`, `FOREIGN_HOST`, `MOBILE_APP`, `ACCOUNT_DELETE` + phát hiện trích dẫn luật hết hiệu lực `NĐ 13/2023`, `NĐ 52/2013`, `NĐ 85/2021`) và tích hợp vào `Test-SenDeliveryGate -CheckCodeHealth -CheckVnLaw`.
+- **Gia cố Bảo mật Kỹ thuật Phần mềm (`v0.3.1`):**
+  - Xóa bỏ hoàn toàn `Invoke-Expression` trong `scripts/Sen.psm1` (`CWE-78` / `PSAvoidUsingInvokeExpression`).
+  - Bọc `escapeHtml()` chống DOM XSS trong `office/index.html` (`CWE-79`).
+  - Giới hạn `Content-Length <= 64KB` (`CWE-400`) và kiểm tra `Origin` localhost chống CSRF (`CWE-352`) trong `scripts/start-office.ps1`.
+  - Mở rộng bộ chặn lệnh xóa đệ quy (`.NET Directory::Delete`, `fs.rmSync`) trong `scripts/guard.ps1`.
 
 ## 3. Các cổng chất lượng đã kiểm chứng
 - `scripts/Validate-Repo.ps1`: **ĐẠT (0 lỗi)** (`rules/AGENTS.md` <= 6.000 bytes & <= 99 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).

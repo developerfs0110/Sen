@@ -285,7 +285,15 @@ function Invoke-SenRunner {
     )
     if ($null -eq $Runner) {
         try {
-            $out = Invoke-Expression $CommandLine 2>$null
+            $cleanCmd = ($CommandLine -replace '\s*2>&1\s*$', '').Trim()
+            if ($cleanCmd.StartsWith('&')) { $cleanCmd = $cleanCmd.Substring(1).Trim() }
+            $parseErrors = $null
+            $tokens = @([System.Management.Automation.PSParser]::Tokenize($cleanCmd, [ref]$parseErrors))
+            $parts = @($tokens | Where-Object { $_.Type -in @('Command', 'CommandArgument', 'CommandParameter', 'String', 'Number') } | ForEach-Object { [string]$_.Content })
+            if ($parts.Count -eq 0) { return $null }
+            $exe = $parts[0]
+            $cmdArgs = if ($parts.Count -gt 1) { @($parts[1..($parts.Count - 1)]) } else { @() }
+            $out = & $exe @cmdArgs 2>$null
             if ($null -eq $out) { return $null }
             if ($out -is [System.Collections.IEnumerable] -and $out -isnot [string]) {
                 $joined = ($out -join "`n").Trim()

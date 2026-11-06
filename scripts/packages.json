@@ -21,6 +21,6 @@
     "subPath": "plugins/vn-law-check/skills/vn-law-check",
     "dest": ".agents/skills/vn-law-check",
     "pinnedCommit": "c6391e04702a79c692592e1dbcfc720dfe3bb909",
-    "required": false
+    "required": true
   }
 ]

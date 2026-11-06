@@ -141,8 +141,10 @@ if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (
 # 3. Case-insensitive destructive command patterns for run_command
 $rules = @(
     @{ re = '\brm\s+(-[a-z]*\s+)*-[a-z]*r'; why = 'Recursive delete (rm -r / rm -rf)' },
-    @{ re = '\b(remove-item|ri)\b[^|;&]*\s-r(ecurse)?\b'; why = 'Recursive delete (Remove-Item -Recurse)' },
+    @{ re = '\b(remove-item|ri|del|erase|rd|rmdir)\b[^|;&]*\s-r(ecurse)?\b'; why = 'Recursive delete (Remove-Item -Recurse)' },
     @{ re = '\b(rd|rmdir|del|erase)\b[^|;&]*\s/s\b'; why = 'Recursive delete (rd/del /s)' },
+    @{ re = '\b(system\.io\.)?directory\]::delete\s*\('; why = '.NET Directory::Delete call' },
+    @{ re = '\bfs\.(rm|rmdir)Sync\s*\('; why = 'Node.js fs.rmSync/rmdirSync delete' },
     @{ re = '\bfind\b[^|;&]*\s-delete\b'; why = 'Recursive find -delete' },
     @{ re = '\bshutil\.rmtree\s*\('; why = 'Python shutil.rmtree recursive delete' },
     @{ re = '\b(drop\s+(database|table|schema)|truncate\s+table)\b'; why = 'Destructive SQL (DROP / TRUNCATE)' },
