@@ -60,7 +60,11 @@ function New-UpdateFakeGit {
                 }
             }
             [System.IO.Directory]::CreateDirectory($target) | Out-Null
-            [System.IO.File]::WriteAllText((Join-Path $target "SKILL.md"), "content from $repo")
+            foreach ($rel in @("SKILL.md", "skills/security-audit/SKILL.md", "plugins/vn-law-check/skills/vn-law-check/SKILL.md")) {
+                $fp = Join-Path $target $rel
+                [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($fp)) | Out-Null
+                [System.IO.File]::WriteAllText($fp, "content from $repo")
+            }
             [System.IO.Directory]::CreateDirectory((Join-Path $target ".git")) | Out-Null
             return [pscustomobject]@{ ExitCode = 0; Output = "" }
         }
@@ -700,4 +704,267 @@ Test "check-updates.ps1 enforces 800-byte limit with 30 packages with long ids" 
     finally {
         Remove-UpdateTempDir $ws
     }
+}
+
+Test "Test A: Multi-id update where one id backup fails keeps that id untouched and updates other id" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest1 = Join-Path $ws ".agents/plugins/superpowers"
+        $dest2 = Join-Path $ws ".agents/skills/security-audit"
+        [System.IO.Directory]::CreateDirectory($dest1) | Out-Null
+        [System.IO.Directory]::CreateDirectory($dest2) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest1 "SKILL.md"), "orig superpowers")
+        [System.IO.File]::WriteAllText((Join-Path $dest1 ".sen-commit"), "sp-old`n")
+        [System.IO.File]::WriteAllText((Join-Path $dest2 "SKILL.md"), "orig security-audit")
+        [System.IO.File]::WriteAllText((Join-Path $dest2 ".sen-commit"), "sa-old`n")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers"    = @{ repo = "https://github.com/obra/superpowers.git"; subPath = ""; commit = "sp-old" }
+                "security-audit" = @{ repo = "https://github.com/cloudflare/security-audit-skill.git"; subPath = "skills/security-audit"; commit = "sa-old" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $lockedFile = [System.IO.File]::Open((Join-Path $dest1 "SKILL.md"), [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+        try {
+            $git = New-UpdateFakeGit -CloneCommit "newcommit"
+            $results = Update-SenPackages -Workspace $ws -Ids @("superpowers", "security-audit") -Git $git
+
+            Assert-Equal 2 @($results).Count
+            $spRes = @($results | Where-Object { $_.Id -eq "superpowers" })[0]
+            $saRes = @($results | Where-Object { $_.Id -eq "security-audit" })[0]
+
+            Assert-Equal "failed" $spRes.Status
+            Assert-Equal "updated" $saRes.Status
+        }
+        finally {
+            $lockedFile.Close()
+            $lockedFile.Dispose()
+        }
+
+        # Verify superpowers dest and lock are untouched
+        Assert-Equal "orig superpowers" ([System.IO.File]::ReadAllText((Join-Path $dest1 "SKILL.md")))
+        $lockAfter = Read-SenLock -Workspace $ws
+        Assert-Equal "sp-old" $lockAfter.packages["superpowers"].commit
+        Assert-Equal "newcommit" $lockAfter.packages["security-audit"].commit
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Test B: Move to .sen-old throws keeps dest and lock untouched without deleting dest" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "live superpowers")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "sp-orig`n")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{ repo = "https://github.com/obra/superpowers.git"; subPath = ""; commit = "sp-orig" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $fakeGit = New-UpdateFakeGit -CloneCommit "newcommit"
+        $script:lockedHandle = $null
+        $wrappedGit = {
+            param([string[]]$GitArgs)
+            if ($GitArgs[0] -eq "clone") {
+                # Lock the file right after clone finishes so Move throws
+                $script:lockedHandle = [System.IO.File]::Open((Join-Path $dest "SKILL.md"), [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+            }
+            return (& $fakeGit @GitArgs)
+        }
+
+        try {
+            $res = Update-SenPackages -Workspace $ws -Ids @("superpowers") -Git $wrappedGit
+            Assert-Equal "failed" $res[0].Status
+        }
+        finally {
+            if ($script:lockedHandle) {
+                $script:lockedHandle.Close()
+                $script:lockedHandle.Dispose()
+                $script:lockedHandle = $null
+            }
+        }
+
+        # CRITICAL check: dest must NOT be deleted!
+        Assert-True (Test-Path -LiteralPath (Join-Path $dest "SKILL.md")) "dest must remain present"
+        Assert-Equal "live superpowers" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+        $lockAfter = Read-SenLock -Workspace $ws
+        Assert-Equal "sp-orig" $lockAfter.packages["superpowers"].commit
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Test C: Install fails after rename restores .sen-old back to dest with original content" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "original content before update")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "sp-v1`n")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{ repo = "https://github.com/obra/superpowers.git"; subPath = ""; commit = "sp-v1" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $fakeGit = New-UpdateFakeGit -CloneCommit "newcommit"
+        $script:cloneFileLock = $null
+        $hookGit = {
+            param([string[]]$GitArgs)
+            $r = & $fakeGit @GitArgs
+            if ($GitArgs[0] -eq "clone") {
+                $target = $GitArgs[$GitArgs.Count - 1]
+                $badFile = Join-Path $target "bad.txt"
+                [System.IO.File]::WriteAllText($badFile, "locked")
+                $script:cloneFileLock = [System.IO.File]::Open($badFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+            }
+            return $r
+        }
+
+        try {
+            $res = Update-SenPackages -Workspace $ws -Ids @("superpowers") -Git $hookGit
+            Assert-Equal "failed" $res[0].Status
+        }
+        finally {
+            if ($script:cloneFileLock) {
+                $script:cloneFileLock.Close()
+                $script:cloneFileLock.Dispose()
+                $script:cloneFileLock = $null
+            }
+        }
+
+        # Verify dest was restored from .sen-old and contains original content
+        Assert-True (Test-Path -LiteralPath (Join-Path $dest "SKILL.md")) "dest exists"
+        Assert-Equal "original content before update" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/superpowers.sen-old"))) ".sen-old cleaned up after restore"
+        $lockAfter = Read-SenLock -Workspace $ws
+        Assert-Equal "sp-v1" $lockAfter.packages["superpowers"].commit
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Test D: Lock has no commit but dest has .sen-commit abc123 uses abc123 in backup and restore" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "superpowers abc123")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "abc123`n")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{ repo = "https://github.com/obra/superpowers.git"; subPath = ""; commit = "" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $bk = New-SenPackageBackup -Workspace $ws -Id "superpowers" -Dest $dest
+        Assert-True $bk.Success
+        Assert-Equal "abc123" $bk.Commit
+
+        $metaPath = Join-Path $bk.BackupDir ".sen-backup-meta.json"
+        $meta = ConvertFrom-Json (Get-Content -LiteralPath $metaPath -Raw)
+        Assert-Equal "abc123" $meta.commit
+
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "dirtied")
+        $res = Restore-SenPackage -Workspace $ws -Id "superpowers"
+        Assert-Equal "restored" $res.Status
+        Assert-Equal "abc123" $res.Commit
+        Assert-Equal "abc123" (Read-SenLock -Workspace $ws).packages["superpowers"].commit
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Test E: Restore failure returns failed result and leaves dest intact" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "intact superpowers")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "orig-c1`n")
+
+        $res = Restore-SenPackage -Workspace $ws -Id "superpowers"
+        Assert-Equal "failed" $res.Status
+        Assert-True ($res.Error -match "No backups found")
+
+        Assert-Equal "intact superpowers" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Test F: Stale .sen-old present aborts update and leaves both dirs untouched" {
+    $ws = New-UpdateTempDir
+    try {
+        $dest = Join-Path $ws ".agents/plugins/superpowers"
+        $oldDest = Join-Path $ws ".agents/plugins/superpowers.sen-old"
+        [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        [System.IO.Directory]::CreateDirectory($oldDest) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dest "SKILL.md"), "live content")
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), "live-commit`n")
+        [System.IO.File]::WriteAllText((Join-Path $oldDest "SKILL.md"), "stale content")
+
+        $lock = @{
+            lockVersion     = 1
+            lastUpdateCheck = $null
+            packages        = @{
+                "superpowers" = @{ repo = "https://github.com/obra/superpowers.git"; subPath = ""; commit = "live-commit" }
+            }
+        }
+        Write-SenLock -Workspace $ws -Lock $lock
+
+        $git = New-UpdateFakeGit -CloneCommit "newcommit"
+        $res = Update-SenPackages -Workspace $ws -Ids @("superpowers") -Git $git
+
+        Assert-Equal "failed" $res[0].Status
+        Assert-True ($res[0].Error -match "stale \.sen-old present")
+
+        Assert-Equal "live content" ([System.IO.File]::ReadAllText((Join-Path $dest "SKILL.md")))
+        Assert-Equal "stale content" ([System.IO.File]::ReadAllText((Join-Path $oldDest "SKILL.md")))
+        Assert-Equal "live-commit" (Read-SenLock -Workspace $ws).packages["superpowers"].commit
+    }
+    finally {
+        Remove-UpdateTempDir $ws
+    }
+}
+
+Test "Test G: check-updates.sh smoke tests via Git Bash" {
+    $bashExe = "C:\Program Files\Git\bin\bash.exe"
+    if (-not (Test-Path -LiteralPath $bashExe)) {
+        return
+    }
+
+    $smokeSh = (Resolve-Path -LiteralPath (Join-Path $repoRoot "tests/check-updates-smoke.sh")).Path
+    $runRes = & "$bashExe" "$smokeSh" 2>&1
+    $code = $LASTEXITCODE
+    $outStr = (@($runRes) -join "`n")
+
+    Assert-Equal 0 $code "check-updates-smoke.sh must exit 0: $outStr"
+    Assert-True ($outStr -match "PASS: Lock unedited when tools are missing") "verifies lock unedited without tools"
+    Assert-True ($outStr -match "PASS: 30 long packages notice length is <= 800 bytes") "verifies 800 byte limit"
+    Assert-True ($outStr -match "PASS: Contains \(\+N more\) with computed real N") "verifies computed real N"
 }

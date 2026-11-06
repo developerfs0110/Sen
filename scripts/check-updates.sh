@@ -111,21 +111,39 @@ fi
 
 if [[ $UPDATES_FOUND -eq 1 ]]; then
   mkdir -p "$(dirname "$NOTICE_FILE")"
+  # Stage 1: Full notice with commit summaries
   RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for the following package(s):"$'\n\n'"${NOTICE_BODY}"$'\n'"${INSTRUCTION}"$'\n'
   printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
 
-  # Enforce 800-byte limit
   BYTE_COUNT=$(wc -c < "$NOTICE_FILE" || echo 0)
   if [[ $BYTE_COUNT -gt 800 ]]; then
-    # Fallback to compact notice without summaries
-    COMPACT_BODY=$(grep '^- \*\*' "$NOTICE_FILE" || true)
-    RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for the following package(s):"$'\n\n'"${COMPACT_BODY}"$'\n\n'"${INSTRUCTION}"$'\n'
+    # Stage 2: Staged fallback without summaries
+    COMPACT_LINES=$(grep '^- \*\*' "$NOTICE_FILE" || true)
+    TOTAL_ITEMS=$(echo "$COMPACT_LINES" | grep -c '^- \*\*' || echo 0)
+    RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for the following package(s):"$'\n\n'"${COMPACT_LINES}"$'\n\n'"${INSTRUCTION}"$'\n'
     printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
+
+    BYTE_COUNT=$(wc -c < "$NOTICE_FILE" || echo 0)
+    if [[ $BYTE_COUNT -gt 800 && $TOTAL_ITEMS -gt 1 ]]; then
+      # Stage 3: Truncate package list and write (+N more) with real N
+      K=$((TOTAL_ITEMS - 1))
+      while [[ $K -ge 1 ]]; do
+        OMITTED=$((TOTAL_ITEMS - K))
+        SUB_LINES=$(echo "$COMPACT_LINES" | head -n "$K")
+        RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for the following package(s):"$'\n\n'"${SUB_LINES}"$'\n'"- *(+${OMITTED} more)*"$'\n\n'"${INSTRUCTION}"$'\n'
+        printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
+        BYTE_COUNT=$(wc -c < "$NOTICE_FILE" || echo 0)
+        if [[ $BYTE_COUNT -le 800 ]]; then
+          break
+        fi
+        K=$((K - 1))
+      done
+    fi
+
+    # Stage 4: Final fallback guaranteed <= 800 bytes
     BYTE_COUNT=$(wc -c < "$NOTICE_FILE" || echo 0)
     if [[ $BYTE_COUNT -gt 800 ]]; then
-      # Truncate to first 3 items with (+more)
-      FIRST_ITEMS=$(echo "$COMPACT_BODY" | head -n 3)
-      RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available for:"$'\n\n'"${FIRST_ITEMS}"$'\n'"- *(+more)*"$'\n\n'"${INSTRUCTION}"$'\n'
+      RAW_NOTICE="# Sen Update Notice"$'\n\n'"Updates are available (+${TOTAL_ITEMS} packages)"$'\n\n'"${INSTRUCTION}"$'\n'
       printf "%s" "$RAW_NOTICE" > "$NOTICE_FILE"
     fi
   fi
@@ -135,25 +153,41 @@ else
   fi
 fi
 
-# Update lastUpdateCheck in lock file safely using jq or python3 (no sed json injection)
+# Update lastUpdateCheck in lock file safely using jq or python3
 NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 if command -v jq >/dev/null 2>&1; then
   TMP_LOCK="${LOCK_FILE}.tmp.$$"
-  jq --arg now "$NOW_UTC" '.lastUpdateCheck = $now' "$LOCK_FILE" > "$TMP_LOCK" && mv "$TMP_LOCK" "$LOCK_FILE"
+  if jq --arg now "$NOW_UTC" '.lastUpdateCheck = $now' "$LOCK_FILE" > "$TMP_LOCK" 2>/dev/null; then
+    mv "$TMP_LOCK" "$LOCK_FILE"
+  else
+    rm -f "$TMP_LOCK"
+    echo "Warning: jq failed to update lock file" >&2
+  fi
 elif command -v python3 >/dev/null 2>&1; then
-  python3 -c "
-import json, sys
+  TMP_LOCK="${LOCK_FILE}.tmp.$$"
+  if python3 -c "
+import json, sys, os
 path = sys.argv[1]
-now_str = sys.argv[2]
+tmp = sys.argv[2]
+now_str = sys.argv[3]
 try:
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     data['lastUpdateCheck'] = now_str
-    with open(path, 'w', encoding='utf-8') as f:
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
-except Exception:
-    pass
-" "$LOCK_FILE" "$NOW_UTC"
+    os.replace(tmp, path)
+except Exception as e:
+    sys.stderr.write(f'Warning: python3 lock update failed: {e}\n')
+    if os.path.exists(tmp):
+        try: os.remove(tmp)
+        except Exception: pass
+    sys.exit(1)
+" "$LOCK_FILE" "$TMP_LOCK" "$NOW_UTC"; then
+    :
+  else
+    echo "Warning: python3 failed to update lock file" >&2
+  fi
 else
   echo "Warning: neither jq nor python3 is available; sen.lock.json lastUpdateCheck was not updated." >&2
 fi

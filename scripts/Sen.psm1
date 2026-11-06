@@ -1204,16 +1204,18 @@ function Update-SenPackages {
             # 3. Replace dest via sibling rename
             $oldDest = $dest + ".sen-old"
             $destRenamed = $false
+            $newDestCreated = $false
             try {
+                if (Test-Path -LiteralPath $oldDest) {
+                    throw "stale .sen-old present; resolve manually"
+                }
                 if (Test-Path -LiteralPath $dest) {
-                    if (Test-Path -LiteralPath $oldDest) {
-                        Remove-Item -LiteralPath $oldDest -Recurse -Force -ErrorAction SilentlyContinue
-                    }
                     [System.IO.Directory]::Move($dest, $oldDest)
                     $destRenamed = $true
                 }
 
                 [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+                $newDestCreated = $true
                 Copy-SenTree -Source $src -Destination $dest
                 [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $newCommit + "`n", [System.Text.UTF8Encoding]::new($false))
 
@@ -1241,8 +1243,8 @@ function Update-SenPackages {
                 })
             }
             catch {
-                # Failure: remove partial dest and restore .sen-old back
-                if (Test-Path -LiteralPath $dest) {
+                # Failure: only delete dest if newDestCreated is true (never delete live dest if move failed)
+                if ($newDestCreated -and (Test-Path -LiteralPath $dest)) {
                     Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
                 }
                 if ($destRenamed -and (Test-Path -LiteralPath $oldDest)) {
@@ -1353,16 +1355,18 @@ function Restore-SenPackage {
         # Sibling rename for dest
         $oldDest = $dest + ".sen-old"
         $destRenamed = $false
+        $newDestCreated = $false
         try {
+            if (Test-Path -LiteralPath $oldDest) {
+                throw "stale .sen-old present; resolve manually"
+            }
             if (Test-Path -LiteralPath $dest) {
-                if (Test-Path -LiteralPath $oldDest) {
-                    Remove-Item -LiteralPath $oldDest -Recurse -Force -ErrorAction SilentlyContinue
-                }
                 [System.IO.Directory]::Move($dest, $oldDest)
                 $destRenamed = $true
             }
 
             [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+            $newDestCreated = $true
             Copy-SenTree -Source $targetBackup.Directory.FullName -Destination $dest -Exclude @(".git", ".sen-backup-meta.json")
             [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $restoredCommit + "`n", [System.Text.UTF8Encoding]::new($false))
 
@@ -1394,7 +1398,8 @@ function Restore-SenPackage {
             }
         }
         catch {
-            if (Test-Path -LiteralPath $dest) {
+            # Failure: only delete dest if newDestCreated is true (never delete live dest if move failed)
+            if ($newDestCreated -and (Test-Path -LiteralPath $dest)) {
                 Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
             }
             if ($destRenamed -and (Test-Path -LiteralPath $oldDest)) {
