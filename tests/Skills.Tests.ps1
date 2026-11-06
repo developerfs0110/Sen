@@ -9,7 +9,10 @@ $installMdPath = Join-Path -Path $repoRoot -ChildPath "INSTALL.md"
 
 # Ruling R3: Task 7 checks sen-setup; Tasks 8 and 9 extend this list.
 $Expected = @(
-    'sen-setup'
+    'sen-setup',
+    'sen-environment',
+    'sen-update',
+    'sen-onboarding'
 )
 
 $RequiredStrings = @{
@@ -19,6 +22,27 @@ $RequiredStrings = @{
         'profile.md',
         ("File " + [char]0x2192 + " Open Folder"),
         'register-schedule.ps1'
+    )
+    'sen-environment' = @(
+        'Get-SenInstallPlan',
+        'Required',
+        'ask_question',
+        'is_multi_select',
+        '(Recommended) Install all',
+        'winget',
+        'brew',
+        '-v'
+    )
+    'sen-update' = @(
+        'Get-SenUpdateStatus',
+        'Update-SenPackages',
+        'Restore-SenPackage',
+        'sen-update-notice.md'
+    )
+    'sen-onboarding' = @(
+        'profile.md',
+        'Tier 1',
+        'sen-setup'
     )
 }
 
