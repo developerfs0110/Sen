@@ -25,7 +25,7 @@ Before starting the tour, verify that the current workspace `<WORKSPACE>` is pro
    Import-Module -Name "<WORKSPACE>/.agents/plugins/sen-method/scripts/Sen.psm1" -Force
    $lock = Read-SenLock -Workspace "<WORKSPACE>"
    ```
-   Verify that `sen-method`, `superpowers`, and `security-audit` exist in `$lock.packages` and on disk (`.agents/plugins/sen-method`, `.agents/plugins/superpowers`, `.agents/skills/security-audit`).
+   Verify that `superpowers` and `security-audit` exist in `$lock.packages`, and that `.agents/plugins/sen-method`, `.agents/plugins/superpowers`, and `.agents/skills/security-audit` exist on disk.
    - **If the lock file or required packages are missing:** Explain that Sen setup is incomplete in this folder and immediately invoke **`sen-setup`** to complete the installation.
 2. **Check `.agents/rules/profile.md` (or `.agents/memory/profile.md`):**
    - If `profile.md` is missing or still contains unfilled template placeholders (`{{NAME}}`, `{{LANGUAGE}}`, `{{STACK}}`, `{{STYLE}}`), ask the 4 profile questions (Name/Role, Preferred language, Primary tech stack/level, Working style) and generate `.agents/rules/profile.md` via `New-SenFileFromTemplate` (see `sen-setup` Step 6) before continuing.
