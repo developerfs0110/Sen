@@ -45,6 +45,8 @@ flowchart LR
 
 <!-- office screenshot: added with sen-office -->
 
+🏢 **3D Chibi AI Office (`sen-office` `v0.2.0` built-in):** Say `"open office"` anytime to launch the 3D isometric command center featuring 9 Chibi AI roles + Boss on the red velvet sofa, zero-token hook telemetry (`Eco mode`), 6-counter Inspector Drawer, Replay Scrubber, and **Dual-Phase Output Visualizer** (Design Blueprint vs. Verified Delivery). Open [`office/index.html`](office/index.html) directly to preview.
+
 ## Quick Start
 
 1. **Install Antigravity IDE:** Download and open Antigravity IDE on your computer.
@@ -63,6 +65,7 @@ During installation, Sen automatically fetches these open-source packages direct
 - **[superpowers](https://github.com/obra/superpowers)** — Author: **Jesse Vincent** · License: **MIT License** (required).
 - **[security-audit](https://github.com/cloudflare/security-audit-skill)** (`skills/security-audit`) — Author: **Cloudflare** · License: **MIT License** (required).
 - **[vn-law-check](https://github.com/mhfed/vn-law-check)** (`plugins/vn-law-check/skills/vn-law-check`) — Author: **Contributors to vn-web-compliance-audit** (`mhfed`) · License: **MIT License** (optional, for the Vietnamese legal compliance gate).
+- **3D Office UI & Governance Inspiration (`sen-office`):** **[my-office](https://github.com/khanh020905/my-office)** — Author: **khanh020905** · License: **MIT License** (inspiration for the 6-counter inspector drawer, `3x` stuck-loop circuit breaker, automatic secret redaction, and denied command copy cards).
 
 ## Author & Support
 

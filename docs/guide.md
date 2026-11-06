@@ -120,6 +120,7 @@ You never need special syntax to change how the AI works. Just say what you want
 | **Switch Tier 3 execution mode (save quota vs. speed)** | `"do it yourself"` (switch to Native) or `"use subagents"` (switch to Subagent-driven) | Switches between single-agent execution (saves token quota) and parallel specialist subagents. |
 | **Check for Sen updates anytime** | `"check Sen updates"` | Runs `sen-update` to check `sen-method`, `superpowers`, `security-audit`, and `vn-law-check`, shows a changelog summary, and waits for your approval before updating. |
 | **Run pre-release checks before shipping** | `"check release readiness"` | Runs parallel checks across security, legal, licenses, accessibility, performance, SEO, and operations (`sen-release-readiness`), producing a `PASS / WARN / BLOCK` report. |
+| **Open the 3D AI Office & Dual-Phase Visualizer** | `"open office"` (or `"eco mode"`, `"full mode"`, `"turn off office"`) | Opens the `sen-office` 3D Chibi command center (`office/index.html`) showing 9 AI roles + Boss on the red sofa, zero-token hook telemetry, 6-counter Inspector Drawer, Replay Scrubber, and Design vs. Delivery visualizer. |
 
 ---
 

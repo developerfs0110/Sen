@@ -75,7 +75,7 @@ else
       [ -z "$SEN_COMMIT" ] && SEN_COMMIT="unknown"
     fi
     mkdir -p "$SEN_DEST"
-    for item in plugin.json hooks.json rules skills templates scripts INSTALL.md LICENSE CHANGELOG.md "$SRC"/README*; do
+    for item in plugin.json hooks.json rules skills templates scripts office INSTALL.md LICENSE CHANGELOG.md "$SRC"/README*; do
       name="$(basename "$item")"
       if [ -e "$SRC/$name" ]; then
         if ! out="$(cp -R "$SRC/$name" "$SEN_DEST/$name" 2>&1)"; then
@@ -88,7 +88,9 @@ else
       rm -rf "$SEN_DEST"
     else
       if [ -f "$SEN_DEST/hooks.json" ]; then
-        sed 's|powershell\.exe -NoProfile -ExecutionPolicy Bypass -File scripts/guard\.ps1|bash scripts/guard.sh|g' \
+        sed -e 's|powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guard\.ps1|bash scripts/guard.sh|g' \
+            -e 's|powershell\.exe -NoProfile -ExecutionPolicy Bypass -File scripts/guard\.ps1|bash scripts/guard.sh|g' \
+            -e 's|powershell -NoProfile -ExecutionPolicy Bypass -File scripts/office-post\.ps1|bash scripts/office-post.sh|g' \
           "$SEN_DEST/hooks.json" > "$SEN_DEST/hooks.json.tmp" && mv -f "$SEN_DEST/hooks.json.tmp" "$SEN_DEST/hooks.json"
       fi
       chmod +x "$SEN_DEST/scripts/"*.sh 2>/dev/null || true

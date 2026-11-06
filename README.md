@@ -45,6 +45,8 @@ flowchart LR
 
 <!-- office screenshot: added with sen-office -->
 
+🏢 **Văn phòng 3D Chibi (`sen-office` `v0.2.0` tích hợp sẵn):** Gõ `"mở văn phòng"` bất kỳ lúc nào để mở sàn 3D trực quan theo dõi 9 nhân vật Chibi AI + Boss trên ghế sofa đỏ, bộ đàm bằng chứng thực thi (`0 token` ở chế độ Tiết kiệm), ngăn kéo 6 ô đếm, thanh tua lại lịch sử và khung **Đầu ra 2 Giai đoạn** (Đối chiếu Thiết kế vs. Nghiệm thu). Xem trực tiếp tại [`office/index.html`](office/index.html).
+
 ## Bắt đầu nhanh
 
 1. **Cài Antigravity IDE:** Tải và mở Antigravity IDE trên máy của bạn.
@@ -63,6 +65,7 @@ Khi cài đặt, Sen tự động tải các gói kỹ năng mã nguồn mở uy
 - **[superpowers](https://github.com/obra/superpowers)** — Tác giả: **Jesse Vincent** · Giấy phép: **MIT License** (bắt buộc).
 - **[security-audit](https://github.com/cloudflare/security-audit-skill)** (`skills/security-audit`) — Tác giả: **Cloudflare** · Giấy phép: **MIT License** (bắt buộc).
 - **[vn-law-check](https://github.com/mhfed/vn-law-check)** (`plugins/vn-law-check/skills/vn-law-check`) — Tác giả: **Contributors to vn-web-compliance-audit** (`mhfed`) · Giấy phép: **MIT License** (tùy chọn, dùng cho cổng kiểm duyệt pháp lý Việt Nam).
+- **Cảm hứng giao diện & quản trị Văn phòng 3D (`sen-office`):** **[my-office](https://github.com/khanh020905/my-office)** — Tác giả: **khanh020905** · Giấy phép: **MIT License** (cảm hứng cho ngăn kéo 6 ô đếm, cầu chì ngắt vòng lặp `3x`, tự động che mật khẩu/token và thẻ lệnh bị chặn).
 
 ## Tác giả & Ủng hộ
 

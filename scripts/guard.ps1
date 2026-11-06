@@ -1,11 +1,26 @@
 # scripts/guard.ps1
-# Antigravity PreToolUse guard (ASCII only): hard-blocks destructive shell/git commands
-# and out-of-workspace file writes.
+# Antigravity PreToolUse guard (ASCII only): hard-blocks destructive shell/git commands,
+# out-of-workspace file writes, and 3x stuck loops; records denied command cards to sen-office.
 # Input: JSON payload on stdin. Output: JSON {"decision": "...", "reason": "..."} on stdout.
 
 $ErrorActionPreference = "Stop"
 
-function Out-Decision([string]$decision, [string]$reason) {
+$senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
+if (Test-Path -LiteralPath $senModule) {
+    try { Import-Module $senModule -Force -ErrorAction SilentlyContinue } catch { }
+}
+
+function Out-Decision([string]$decision, [string]$reason, [string]$ws = "", [string]$tool = "", [string]$target = "", [string]$cmdText = "") {
+    if ($decision -eq "deny" -and -not [string]::IsNullOrWhiteSpace($ws)) {
+        try {
+            if (Get-Command Write-SenOfficeEvent -ErrorAction SilentlyContinue) {
+                Write-SenOfficeEvent -Workspace $ws -From "sec" -To "pm" -Lane "Security Gate" `
+                    -EcoText ("BLOCKED: " + $reason) -FullText $reason -Kind "alert" -Hold 2 `
+                    -Source "guard-denied" -Tool $tool -Target $target -Command $cmdText -Model "pro" | Out-Null
+            }
+        }
+        catch { }
+    }
     $obj = [ordered]@{ decision = $decision }
     if ($reason) { $obj.reason = $reason }
     [Console]::Out.Write(($obj | ConvertTo-Json -Compress))
@@ -18,7 +33,10 @@ try {
         Out-Decision "ask" $null
     }
     $payload = $raw | ConvertFrom-Json
-    $toolName = [string]$payload.toolCall.name
+    $toolName = if ($payload.toolCall -and $payload.toolCall.name) { [string]$payload.toolCall.name } elseif ($payload.tool_name) { [string]$payload.tool_name } else { "" }
+    $toolArgs = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } else { $null }
+    $wsList = @($payload.workspacePaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $primaryWs = if ($wsList.Count -gt 0) { [string]$wsList[0] } else { "" }
 }
 catch {
     Out-Decision "ask" "guard: failed to parse payload, falling back to user confirmation"
@@ -26,8 +44,7 @@ catch {
 
 # 1. Enforce workspace boundary on write_file / edit_file when workspacePaths is provided
 if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
-    $targetPath = [string]$payload.toolCall.args.Path
-    $wsList = @($payload.workspacePaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $targetPath = if ($toolArgs -and $toolArgs.Path) { [string]$toolArgs.Path } else { "" }
     if (-not [string]::IsNullOrWhiteSpace($targetPath) -and $wsList.Count -gt 0) {
         try {
             $fullTarget = [System.IO.Path]::GetFullPath($targetPath).TrimEnd('\', '/')
@@ -50,7 +67,7 @@ if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
                 }
             }
             if (-not $inside) {
-                Out-Decision "deny" "[SEN GUARD] Blocked: file write outside active workspace ($fullTarget)."
+                Out-Decision "deny" "[SEN GUARD] Blocked: file write outside active workspace ($fullTarget)." $primaryWs $toolName $fullTarget $fullTarget
             }
         }
         catch { }
@@ -58,12 +75,23 @@ if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
     Out-Decision "ask" $null
 }
 
-$cmd = [string]$payload.toolCall.args.CommandLine
+$cmd = if ($toolArgs -and $toolArgs.CommandLine) { [string]$toolArgs.CommandLine } else { "" }
 if ([string]::IsNullOrWhiteSpace($cmd)) {
     Out-Decision "ask" $null
 }
 
-# 2. Case-insensitive destructive command patterns for run_command
+# 2. Check Stuck Loop Breaker (3 consecutive identical failures on this command)
+if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Get-Command Test-SenStuckLoop -ErrorAction SilentlyContinue)) {
+    try {
+        $loopCheck = Test-SenStuckLoop -Workspace $primaryWs -ToolName $toolName -Target $cmd
+        if ($loopCheck.IsStuck) {
+            Out-Decision "deny" ("[SEN GUARD] " + $loopCheck.Reason) $primaryWs $toolName $cmd $cmd
+        }
+    }
+    catch { }
+}
+
+# 3. Case-insensitive destructive command patterns for run_command
 $rules = @(
     @{ re = '\brm\s+(-[a-z]*\s+)*-[a-z]*r';                                                                                                  why = 'Recursive delete (rm -r / rm -rf)' },
     @{ re = '\b(remove-item|ri)\b[^|;&]*\s-r(ecurse)?\b';                                                                                    why = 'Recursive delete (Remove-Item -Recurse)' },
@@ -84,13 +112,13 @@ $rules = @(
 
 foreach ($r in $rules) {
     if ($cmd -match $r.re) {
-        Out-Decision "deny" ("[SEN GUARD] Blocked: " + $r.why + ". If you truly need this command, run it manually in your terminal.")
+        Out-Decision "deny" ("[SEN GUARD] Blocked: " + $r.why + ". If you truly need this command, run it manually in your terminal.") $primaryWs $toolName $cmd $cmd
     }
 }
 
 # Case-sensitive pattern: git branch -D (force-deletes unmerged branch)
 if ($cmd -cmatch '\bgit\b[^|;&]*\bbranch\b[^|;&]*(\s-D\b|--delete\s+--force|--force\s+--delete)') {
-    Out-Decision "deny" "[SEN GUARD] Blocked: git branch -D (force-deletes unmerged branch). If you truly need this command, run it manually."
+    Out-Decision "deny" "[SEN GUARD] Blocked: git branch -D (force-deletes unmerged branch). If you truly need this command, run it manually." $primaryWs $toolName $cmd $cmd
 }
 
 Out-Decision "ask" $null

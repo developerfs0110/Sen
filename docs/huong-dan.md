@@ -120,6 +120,7 @@ Bạn không cần nhớ lệnh kỹ thuật. Chỉ cần nói tự nhiên trong
 | **Đổi cách chạy kế hoạch Cấp 3 để tiết kiệm token** | `"tự làm"` (chuyển sang Native) hoặc `"giao agent phụ"` (chuyển sang Subagent-driven) | Đổi ngay giữa chế độ một mình AI chính làm (tiết kiệm hạn mức) và chế độ gọi đội agent phụ chạy song song. |
 | **Kiểm tra cập nhật Sen bất cứ lúc nào** | `"kiểm tra cập nhật Sen"` | AI gọi skill `sen-update`, kiểm tra phiên bản mới của `sen-method`, `superpowers`, `security-audit`, `vn-law-check`, tóm tắt thay đổi và chờ bạn bấm đồng ý mới cập nhật. |
 | **Kiểm tra dự án trước khi phát hành thật** | `"kiểm tra sẵn sàng phát hành"` | AI chạy song song các bài kiểm tra bảo mật, pháp lý, giấy phép, hiệu năng, SEO, vận hành (`sen-release-readiness`) và tổng hợp thành báo cáo `PASS / WARN / BLOCK`. |
+| **Mở Văn phòng 3D theo dõi đội AI & Đầu ra 2 Giai đoạn** | `"mở văn phòng"` (hoặc `"chế độ tiết kiệm"`, `"chế độ chi tiết"`, `"tắt văn phòng"`) | Mở giao diện `sen-office` 3D Chibi (`office/index.html`) hiển thị 9 vai trò AI + Boss trên sofa đỏ, bộ đàm bằng chứng Hook (`0 token`), ngăn kéo 6 ô đếm, thanh tua lại lịch sử và khung đối chiếu Thiết kế vs. Nghiệm thu. |
 
 ---
 

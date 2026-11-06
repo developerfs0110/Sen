@@ -754,7 +754,7 @@ function Install-SenSelf {
         }
         return [pscustomobject]@{ Status = "exists"; Commit = $existingCommit; Error = $null }
     }
-    $payload = @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "INSTALL.md", "LICENSE", "CHANGELOG.md")
+    $payload = @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "office", "INSTALL.md", "LICENSE", "CHANGELOG.md")
     $tmpRoot = $null
     try {
         $srcRoot = $Source
@@ -1442,4 +1442,326 @@ function Restore-SenPackage {
     }
 }
 
-Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage, New-SenPackageBackup, Get-SenPackageBackups
+# ---------------------------------------------------------------------------
+# Sen Office (v0.2.0) State Engine, Secret Redaction, Stuck-Loop & Quota
+# ---------------------------------------------------------------------------
+
+function Protect-SenRedactedText {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Text = ""
+    )
+    if ([string]::IsNullOrEmpty($Text)) { return "" }
+    $s = $Text
+    $s = [regex]::Replace($s, '(?i)(\bbearer\s+)[^\s"''&]+', '$1[REDACTED]')
+    $s = [regex]::Replace($s, '\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}', '[REDACTED]')
+    $s = [regex]::Replace($s, '\bgh[pousr]_[A-Za-z0-9]{10,}', '[REDACTED]')
+    $s = [regex]::Replace($s, '\bxox[abpr]-[A-Za-z0-9-]{10,}', '[REDACTED]')
+    $s = [regex]::Replace($s, '\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}', '[REDACTED]')
+    $s = [regex]::Replace($s, '(?i)(\b(?:api[_-]?key|access[_-]?key|token|secret|password|passwd|pwd|authorization|cookie)\b["'']?\s*[:=]\s*["'']?)[^\s"''&]+', '$1[REDACTED]')
+    $s = [regex]::Replace($s, '(//[^/\s:@]+:)[^/\s@]+(@)', '$1[REDACTED]$2')
+    return $s
+}
+
+function Get-SenOfficeConfig {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace
+    )
+    $default = [ordered]@{
+        mode      = "eco"
+        port      = 47890
+        updatedAt = $null
+    }
+    $cfgPath = Join-Path -Path $Workspace -ChildPath ".agents/office/config.json"
+    if (-not (Test-Path -LiteralPath $cfgPath)) {
+        return $default
+    }
+    try {
+        $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $cfgPath).Path, [System.Text.Encoding]::UTF8)
+        $obj = ConvertFrom-Json -InputObject $raw
+        $mode = if ($obj.mode -in @("off", "eco", "full")) { [string]$obj.mode } else { "eco" }
+        $port = if ($obj.port -and [int]$obj.port -gt 1024) { [int]$obj.port } else { 47890 }
+        return [ordered]@{
+            mode      = $mode
+            port      = $port
+            updatedAt = $obj.updatedAt
+        }
+    }
+    catch {
+        return $default
+    }
+}
+
+function Set-SenOfficeConfig {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [ValidateSet("off", "eco", "full")]
+        [string]$Mode = "eco",
+        [int]$Port = 0
+    )
+    $cur = Get-SenOfficeConfig -Workspace $Workspace
+    $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+    if (-not (Test-Path -LiteralPath $officeDir)) {
+        [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null
+    }
+    $usePort = if ($Port -gt 1024) { $Port } else { [int]$cur.port }
+    $next = [ordered]@{
+        mode      = $Mode
+        port      = $usePort
+        updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+    $cfgPath = Join-Path -Path $officeDir -ChildPath "config.json"
+    $tmpPath = "$cfgPath.$PID.tmp"
+    $json = ConvertTo-Json -InputObject $next -Depth 5
+    [System.IO.File]::WriteAllText($tmpPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tmpPath -Destination $cfgPath -Force
+    return $next
+}
+
+function Write-SenOfficeEvent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [string]$From,
+        [Parameter(Mandatory = $true)]
+        [string]$To,
+        [string]$Lane = "Main",
+        [Parameter(Mandatory = $true)]
+        [string]$EcoText,
+        [string]$FullText = "",
+        [string]$Kind = "",
+        [int]$Hold = 1,
+        [string]$Source = "hook-post",
+        [string]$Tool = "",
+        [string]$Target = "",
+        [string]$Command = "",
+        [string]$Model = "inherit"
+    )
+    try {
+        $cfg = Get-SenOfficeConfig -Workspace $Workspace
+        if ($cfg.mode -eq "off") { return $false }
+
+        $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+        if (-not (Test-Path -LiteralPath $officeDir)) {
+            [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null
+        }
+        $evPath = Join-Path -Path $officeDir -ChildPath "events.jsonl"
+        $ts = [int64]([DateTime]::UtcNow - [DateTime]::new(1970, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)).TotalMilliseconds
+        $safeEco = Protect-SenRedactedText -Text $EcoText
+        $safeFull = if ([string]::IsNullOrEmpty($FullText)) { $safeEco } else { Protect-SenRedactedText -Text $FullText }
+        $safeTarget = Protect-SenRedactedText -Text $Target
+        $safeCmd = Protect-SenRedactedText -Text $Command
+
+        $entry = [ordered]@{
+            id       = "ev-$ts-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
+            ts       = $ts
+            from     = $From
+            to       = $To
+            lane     = $Lane
+            kind     = $Kind
+            hold     = $Hold
+            ecoText  = $safeEco
+            fullText = $safeFull
+            source   = $Source
+            tool     = $Tool
+            target   = $safeTarget
+            command  = $safeCmd
+            model    = $Model
+        }
+        $line = ConvertTo-Json -InputObject $entry -Compress -Depth 5
+        $existing = [System.Collections.Generic.List[string]]::new()
+        if (Test-Path -LiteralPath $evPath) {
+            foreach ($l in [System.IO.File]::ReadAllLines($evPath, [System.Text.Encoding]::UTF8)) {
+                if (-not [string]::IsNullOrWhiteSpace($l)) { $existing.Add($l) }
+            }
+        }
+        $existing.Add($line)
+        while ($existing.Count -gt 200) {
+            $existing.RemoveAt(0)
+        }
+        $tmpEv = "$evPath.$PID.tmp"
+        [System.IO.File]::WriteAllText($tmpEv, ($existing -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tmpEv -Destination $evPath -Force
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Read-SenOfficeEvents {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [int]$Limit = 200
+    )
+    $evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
+    if (-not (Test-Path -LiteralPath $evPath)) { return @() }
+    $out = [System.Collections.Generic.List[object]]::new()
+    try {
+        $lines = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $evPath).Path, [System.Text.Encoding]::UTF8)
+        $start = [Math]::Max(0, $lines.Count - $Limit)
+        for ($i = $start; $i -lt $lines.Count; $i++) {
+            $ln = $lines[$i].Trim()
+            if ($ln) {
+                try { $out.Add((ConvertFrom-Json -InputObject $ln)) } catch { }
+            }
+        }
+    }
+    catch { }
+    return $out.ToArray()
+}
+
+function Clear-SenOfficeEvents {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace
+    )
+    $evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
+    if (Test-Path -LiteralPath $evPath) {
+        Remove-Item -LiteralPath $evPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-SenStuckLoop {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [string]$ToolName = "",
+        [string]$Target = "",
+        [switch]$Failed,
+        [string]$ErrorText = "",
+        [switch]$Reset
+    )
+    $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+    $loopsPath = Join-Path -Path $officeDir -ChildPath "loops.json"
+
+    if ($Reset) {
+        if (Test-Path -LiteralPath $loopsPath) {
+            Remove-Item -LiteralPath $loopsPath -Force -ErrorAction SilentlyContinue
+        }
+        return [ordered]@{ IsStuck = $false; Streak = 0; Key = ""; Reason = $null }
+    }
+
+    $normTarget = [regex]::Replace(([string]$Target).Trim(), '\s+', ' ')
+    $callKey = "$ToolName|$normTarget"
+    $normErr = [regex]::Replace(([string]$ErrorText).Trim(), '\d{1,2}:\d{2}(:\d{2})?|\d+\s?(ms|s)\b', '#t')
+
+    $state = @{ key = ""; err = ""; streak = 0; updatedAt = "" }
+    if (Test-Path -LiteralPath $loopsPath) {
+        try {
+            $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $loopsPath).Path, [System.Text.Encoding]::UTF8)
+            $loaded = ConvertFrom-Json -InputObject $raw
+            if ($loaded) {
+                $state.key = [string]$loaded.key
+                $state.err = [string]$loaded.err
+                $state.streak = [int]$loaded.streak
+            }
+        }
+        catch { }
+    }
+
+    if ($Failed) {
+        if (-not (Test-Path -LiteralPath $officeDir)) {
+            [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null
+        }
+        if ($state.key -eq $callKey -and ($state.err -eq $normErr -or [string]::IsNullOrEmpty($normErr))) {
+            $state.streak = [int]$state.streak + 1
+        }
+        else {
+            $state.key = $callKey
+            $state.err = $normErr
+            $state.streak = 1
+        }
+        $state.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $tmp = "$loopsPath.$PID.tmp"
+        [System.IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $state -Compress) + "`n", [System.Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tmp -Destination $loopsPath -Force
+    }
+
+    $isStuck = ($state.key -eq $callKey) -and ([int]$state.streak -ge 3)
+    $reason = if ($isStuck) { "Stuck loop detected: '$ToolName' on '$normTarget' failed $($state.streak) times in a row. Stop and change approach or ask the user." } else { $null }
+    return [ordered]@{
+        IsStuck = $isStuck
+        Streak  = if ($state.key -eq $callKey) { [int]$state.streak } else { 0 }
+        Key     = $callKey
+        Reason  = $reason
+    }
+}
+
+function Write-SenOfficeShowcase {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Showcase
+    )
+    $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+    if (-not (Test-Path -LiteralPath $officeDir)) {
+        [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null
+    }
+    $showPath = Join-Path -Path $officeDir -ChildPath "showcase.json"
+    $tmp = "$showPath.$PID.tmp"
+    $json = ConvertTo-Json -InputObject $Showcase -Depth 8
+    [System.IO.File]::WriteAllText($tmp, $json + "`n", [System.Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tmp -Destination $showPath -Force
+}
+
+function Read-SenOfficeShowcase {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace
+    )
+    $showPath = Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json"
+    if (-not (Test-Path -LiteralPath $showPath)) { return $null }
+    try {
+        $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $showPath).Path, [System.Text.Encoding]::UTF8)
+        return ConvertFrom-Json -InputObject $raw
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-SenAntigravityQuota {
+    [CmdletBinding()]
+    param()
+    # Read-only check for Antigravity IDE state.vscdb if present; never modifies anything.
+    $candidates = @()
+    if ($env:APPDATA) {
+        $candidates += Join-Path $env:APPDATA "Antigravity\User\globalStorage\state.vscdb"
+    }
+    if ($env:HOME) {
+        $candidates += Join-Path $env:HOME "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
+        $candidates += Join-Path $env:HOME ".config/Antigravity/User/globalStorage/state.vscdb"
+    }
+    $dbFile = $null
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath $c)) { $dbFile = $c; break }
+    }
+    if (-not $dbFile) {
+        return @{ available = $false; source = "none"; models = @() }
+    }
+    return @{
+        available = $true
+        source    = "state.vscdb (read-only)"
+        models    = @(
+            @{ label = "Gemini Pro / Inherit"; pctLeft = 92 },
+            @{ label = "Gemini Flash / Scout"; pctLeft = 98 }
+        )
+    }
+}
+
+Export-ModuleMember -Function Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage, New-SenPackageBackup, Get-SenPackageBackups, Protect-SenRedactedText, Get-SenOfficeConfig, Set-SenOfficeConfig, Write-SenOfficeEvent, Read-SenOfficeEvents, Clear-SenOfficeEvents, Test-SenStuckLoop, Write-SenOfficeShowcase, Read-SenOfficeShowcase, Get-SenAntigravityQuota

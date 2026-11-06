@@ -41,6 +41,7 @@ For Tier 2 and Tier 3 projects that maintain a project context file (or when com
    - **Completed Work & Verified Gates:** Summary of verified test and gate results.
    - **Next Immediate Steps:** What remains to be done next.
 3. If the conversation has grown long, add a 1-line tip at the end of your reply suggesting `/compact` or starting a fresh chat session (which only needs to read `docs/CONTEXT.md`).
+4. If `sen-office` is active (`Get-SenOfficeConfig` mode is `"eco"` or `"full"`), call `Write-SenOfficeShowcase` to update Phase 2 (`phase2.summary`, `phase2.verifiedOutputs`, and `phase2.gates`) so the Dual-Phase Visualizer in the 3D Office reflects the final verified outputs.
 
 ---
 
