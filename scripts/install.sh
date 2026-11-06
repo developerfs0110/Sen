@@ -62,7 +62,7 @@ else
   fi
   if [ -z "$SEN_ERROR" ]; then
     mkdir -p "$SEN_DEST"
-    for item in plugin.json rules skills templates scripts INSTALL.md LICENSE CHANGELOG.md "$SRC"/README*; do
+    for item in plugin.json hooks.json rules skills templates scripts INSTALL.md LICENSE CHANGELOG.md "$SRC"/README*; do
       name="$(basename "$item")"
       if [ -e "$SRC/$name" ]; then
         if ! out="$(cp -R "$SRC/$name" "$SEN_DEST/$name" 2>&1)"; then

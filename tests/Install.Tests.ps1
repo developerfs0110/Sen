@@ -246,3 +246,67 @@ Test "install.ps1 with a Sen source lacking plugin.json fails without lock" {
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method"))) "no partial Sen dest"
     } finally { Remove-InstallTempDir $root }
 }
+
+function Invoke-SenGuardPs1 {
+    param([string]$InputJson)
+    $guardPath = (Resolve-Path -LiteralPath (Join-Path $repoRoot "scripts/guard.ps1")).Path
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$guardPath`""
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $p.StandardInput.Write($InputJson)
+    $p.StandardInput.Close()
+    $out = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit()
+    return ConvertFrom-Json -InputObject $out
+}
+
+Test "hooks.json and guard.ps1 are copied by Install-SenSelf and block destructive commands" {
+    $ws = Join-Path (New-InstallTempDir) "ws"
+    try {
+        $res = Invoke-InstallScript -Workspace $ws -Git (New-FakeGit)
+        Assert-Equal 0 $res.ExitCode
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method/hooks.json")) "hooks.json copied"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method/scripts/guard.ps1")) "guard.ps1 copied"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method/scripts/guard.sh")) "guard.sh copied"
+
+        # Destructive commands must be hard-blocked with decision = deny
+        foreach ($badCmd in @(
+            "git push origin main --force",
+            "git push -f origin main",
+            "git reset --hard HEAD~1",
+            "rm -rf /tmp/something",
+            "Remove-Item -Path .\foo -Recurse -Force",
+            "rmdir /s /q build",
+            "git clean -fd",
+            "git branch -D feature-x",
+            "gh repo delete owner/repo"
+        )) {
+            $payload = @{ toolCall = @{ name = "run_command"; args = @{ CommandLine = $badCmd } } } | ConvertTo-Json -Compress
+            $dec = Invoke-SenGuardPs1 -InputJson $payload
+            Assert-Equal "deny" $dec.decision "must deny destructive command: $badCmd"
+        }
+
+        # Safe commands must return decision = ask
+        foreach ($goodCmd in @(
+            "git status",
+            "git push origin main",
+            "git branch -d merged-branch",
+            "npm test",
+            "Remove-Item -LiteralPath .\temp.txt"
+        )) {
+            $payload = @{ toolCall = @{ name = "run_command"; args = @{ CommandLine = $goodCmd } } } | ConvertTo-Json -Compress
+            $dec = Invoke-SenGuardPs1 -InputJson $payload
+            Assert-Equal "ask" $dec.decision "must allow/ask safe command: $goodCmd"
+        }
+
+        # Malformed JSON falls back to ask safely
+        $badJsonDec = Invoke-SenGuardPs1 -InputJson "{not valid json"
+        Assert-Equal "ask" $badJsonDec.decision "malformed json falls back to ask"
+    } finally { Remove-InstallTempDir (Split-Path $ws -Parent) }
+}
+

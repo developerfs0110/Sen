@@ -750,7 +750,7 @@ function Install-SenSelf {
     if (Test-Path -LiteralPath $dest) {
         return [pscustomobject]@{ Status = "exists"; Error = $null }
     }
-    $payload = @("plugin.json", "rules", "skills", "templates", "scripts", "INSTALL.md", "LICENSE", "CHANGELOG.md")
+    $payload = @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "INSTALL.md", "LICENSE", "CHANGELOG.md")
     $tmpRoot = $null
     try {
         $srcRoot = $Source
