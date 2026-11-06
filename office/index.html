@@ -1092,10 +1092,17 @@ function draw() {
   render2dTable();
 }
 
+const STATE_META = {
+  alert: ['Cảnh báo', '🚨 Cảnh báo', '#ff7b72'],
+  done:  ['Hoàn tất', '✅ Hoàn tất', '#3fb950'],
+  busy:  ['Đang làm', '⚡ Đang làm', '#58a6ff'],
+  idle:  ['Sẵn sàng', '☕ Sẵn sàng', '#58a6ff']
+};
+
 function selectActor(k) {
   selectedKey = k;
   const r = R[k] || R.pm;
-  const st = state[k] || '';
+  const [stLabel, , stColor] = STATE_META[state[k]] || STATE_META.idle;
   document.getElementById('insDot').style.background = r.c;
   document.getElementById('insName').textContent = r.n;
   document.getElementById('insSub').textContent = r.role;
@@ -1104,8 +1111,8 @@ function selectActor(k) {
   document.getElementById('insCmd').textContent = r.cmd;
   document.getElementById('insTime').textContent = r.time;
   document.getElementById('insModel').textContent = r.model;
-  document.getElementById('insState').textContent = st === 'alert' ? 'Cảnh báo' : st === 'done' ? 'Hoàn tất' : st === 'busy' ? 'Đang làm' : 'Sẵn sàng';
-  document.getElementById('insState').style.color = st === 'alert' ? '#ff7b72' : st === 'done' ? '#3fb950' : '#58a6ff';
+  document.getElementById('insState').textContent = stLabel;
+  document.getElementById('insState').style.color = stColor;
   document.getElementById('insTask').textContent = r.task;
   document.getElementById('insFiles').innerHTML = (r.files || []).map(f => `<div style="margin-bottom:4px">• <code>${f}</code></div>`).join('');
   draw();
@@ -1115,8 +1122,7 @@ function render2dTable() {
   const tb = document.getElementById('tbody2d');
   if (!tb) return;
   tb.innerHTML = Object.entries(R).map(([k, r]) => {
-    const st = state[k] || 'idle';
-    const stTxt = st === 'alert' ? '🚨 Cảnh báo' : st === 'done' ? '✅ Hoàn tất' : st === 'busy' ? '⚡ Đang làm' : '☕ Sẵn sàng';
+    const [, stTxt] = STATE_META[state[k]] || STATE_META.idle;
     return `<tr onclick="selectActor('${k}')" style="cursor:pointer">
       <td><b style="color:${r.c}">${r.n}</b></td>
       <td>${r.role}</td>
@@ -1290,7 +1296,7 @@ function triggerDeniedDemo() {
   selectActor('sec');
 }
 
-function scrubReplay(targetStep) {
+function resetSimulationState() {
   clearInterval(timer);
   timer = null;
   links.clear();
@@ -1300,6 +1306,10 @@ function scrubReplay(targetStep) {
   log.innerHTML = '';
   seq = 0;
   idx = 0;
+}
+
+function scrubReplay(targetStep) {
+  resetSimulationState();
   while (idx < targetStep && idx < S[mode].length) {
     step();
   }
@@ -1397,15 +1407,8 @@ function toggleNight() {
 function sayEco(f, t, txt) { return t === 'sys' ? txt : (R[f].strong ? txt : 'Gửi tin cho ' + R[t].n); }
 function run(m) {
   if (camMode === 'off') return;
-  clearInterval(timer);
-  links.clear();
-  state = {};
-  for (const k in bubbles) delete bubbles[k];
-  for (const k in laneT) delete laneT[k];
+  resetSimulationState();
   mode = m;
-  idx = 0;
-  seq = 0;
-  log.innerHTML = '';
   draw();
   step();
   timer = setInterval(step, 2600);

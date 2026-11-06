@@ -5,14 +5,26 @@
 
 $ErrorActionPreference = "Stop"
 
-$senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
-if (Test-Path -LiteralPath $senModule) {
-    try { Import-Module $senModule -Force -ErrorAction SilentlyContinue } catch { }
+$script:senRuntimeLoaded = $false
+function Import-SenRuntimeModule {
+    if ($script:senRuntimeLoaded) { return }
+    $runtimeMod = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Runtime.psm1"
+    if (-not (Test-Path -LiteralPath $runtimeMod)) {
+        $runtimeMod = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
+    }
+    if (Test-Path -LiteralPath $runtimeMod) {
+        try {
+            Import-Module $runtimeMod -Force -ErrorAction SilentlyContinue
+            $script:senRuntimeLoaded = $true
+        }
+        catch { }
+    }
 }
 
 function Out-Decision([string]$decision, [string]$reason, [string]$ws = "", [string]$tool = "", [string]$target = "", [string]$cmdText = "") {
     if ($decision -eq "deny" -and -not [string]::IsNullOrWhiteSpace($ws)) {
         try {
+            Import-SenRuntimeModule
             if (Get-Command Write-SenOfficeEvent -ErrorAction SilentlyContinue) {
                 Write-SenOfficeEvent -Workspace $ws -From "sec" -To "pm" -Lane "Security Gate" `
                     -EcoText ("BLOCKED: " + $reason) -FullText $reason -Kind "alert" -Hold 2 `
@@ -76,6 +88,9 @@ if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
             }
             # Optional Execution Contract allowedPaths enforcement when enforceTaskPaths is enabled
             $enforceContract = ($payload.PSObject.Properties.Name -contains "enforceTaskPaths" -and [bool]$payload.enforceTaskPaths) -or ($env:SEN_ENFORCE_ALLOWED_PATHS -eq "1")
+            if ($enforceContract -and $primaryWs) {
+                Import-SenRuntimeModule
+            }
             if ($enforceContract -and $primaryWs -and (Get-Command Get-SenTasks -ErrorAction SilentlyContinue)) {
                 $activeTasks = @(Get-SenTasks -Workspace $primaryWs | Where-Object { [string]$_.status -eq "in_progress" -and @($_.allowedPaths).Count -gt 0 })
                 if ($activeTasks.Count -gt 0) {
@@ -110,14 +125,17 @@ if ([string]::IsNullOrWhiteSpace($cmd)) {
 }
 
 # 2. Check Stuck Loop Breaker (3 consecutive identical failures on this command)
-if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Get-Command Test-SenStuckLoop -ErrorAction SilentlyContinue)) {
-    try {
-        $loopCheck = Test-SenStuckLoop -Workspace $primaryWs -ToolName $toolName -Target $cmd
-        if ($loopCheck.IsStuck) {
-            Out-Decision "deny" ("[SEN GUARD] " + $loopCheck.Reason) $primaryWs $toolName $cmd $cmd
+if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Test-Path -LiteralPath (Join-Path $primaryWs ".agents/office/loops.json"))) {
+    Import-SenRuntimeModule
+    if (Get-Command Test-SenStuckLoop -ErrorAction SilentlyContinue) {
+        try {
+            $loopCheck = Test-SenStuckLoop -Workspace $primaryWs -ToolName $toolName -Target $cmd
+            if ($loopCheck.IsStuck) {
+                Out-Decision "deny" ("[SEN GUARD] " + $loopCheck.Reason) $primaryWs $toolName $cmd $cmd
+            }
         }
+        catch { }
     }
-    catch { }
 }
 
 # 3. Case-insensitive destructive command patterns for run_command

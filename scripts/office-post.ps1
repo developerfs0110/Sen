@@ -13,7 +13,10 @@ try {
     if ($wsList.Count -eq 0) { exit 0 }
     $ws = [string]$wsList[0]
 
-    $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
+    $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Runtime.psm1"
+    if (-not (Test-Path -LiteralPath $senModule)) {
+        $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
+    }
     if (-not (Test-Path -LiteralPath $senModule)) { exit 0 }
     Import-Module $senModule -Force -ErrorAction SilentlyContinue
 
