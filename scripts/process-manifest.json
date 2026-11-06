@@ -19,7 +19,7 @@
     { "id": "S3-TWOWAY-SYNC",   "stage": 3, "minTier": 2, "scope": "all",        "title": "Two-way sync [x] checkboxes in plans/*.md and docs/TODO.md" },
     { "id": "S4-CLEAN-CODE",    "stage": 4, "minTier": 2, "scope": "all",        "title": "Pass 6-dimension Clean Code gate (Measure-SenCodeHealth)" },
     { "id": "S4-VN-LAW",        "stage": 4, "minTier": 2, "scope": "web_mobile", "title": "Pass Vietnam Legal-by-Design compliance scan (Invoke-SenVnLawScan)" },
-    { "id": "S4-CONTEXT-REPORT","stage": 4, "minTier": 2, "scope": "all",        "title": "Update docs/CONTEXT.md checkpoint & generate delivery report" }
+    { "id": "S4-CONTEXT-REPORT","stage": 4, "minTier": 2, "scope": "all",        "title": "Update docs/CONTEXT.md, generate delivery report & verify CI loop (Invoke-SenCiPushLoop)" }
   ]
 }
 

@@ -250,19 +250,9 @@ Test "install.ps1 with a Sen source lacking plugin.json fails without lock" {
 function Invoke-SenGuardPs1 {
     param([string]$InputJson)
     $guardPath = (Resolve-Path -LiteralPath (Join-Path $repoRoot "scripts/guard.ps1")).Path
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "powershell.exe"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$guardPath`""
-    $psi.RedirectStandardInput = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $p = [System.Diagnostics.Process]::Start($psi)
-    $p.StandardInput.Write($InputJson)
-    $p.StandardInput.Close()
-    $out = $p.StandardOutput.ReadToEnd()
-    $p.WaitForExit()
-    return ConvertFrom-Json -InputObject $out
+    $out = $InputJson | & powershell -NoProfile -ExecutionPolicy Bypass -File $guardPath
+    $joined = (@($out) -join "`n").Trim()
+    return ConvertFrom-Json -InputObject $joined
 }
 
 Test "hooks.json and guard.ps1 are copied by Install-SenSelf and block destructive commands" {

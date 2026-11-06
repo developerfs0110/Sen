@@ -41,6 +41,9 @@ function Out-Decision([string]$decision, [string]$reason, [string]$ws = "", [str
 
 try {
     $raw = [Console]::In.ReadToEnd()
+    if ([string]::IsNullOrWhiteSpace($raw) -and $input) {
+        $raw = (@($input) -join "`n")
+    }
     if ([string]::IsNullOrWhiteSpace($raw)) {
         Out-Decision "ask" $null
     }

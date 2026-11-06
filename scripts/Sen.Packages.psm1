@@ -84,7 +84,11 @@ function Copy-SenTree {
     [System.IO.Directory]::CreateDirectory($Destination) | Out-Null
     foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
         if ($Exclude -contains $item.Name) { continue }
-        Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $Destination $item.Name) -Recurse -Force
+        $destTarget = Join-Path $Destination $item.Name
+        if (Test-Path -LiteralPath $destTarget) {
+            Remove-Item -LiteralPath $destTarget -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Copy-Item -LiteralPath $item.FullName -Destination $destTarget -Recurse -Force
     }
 }
 
@@ -175,11 +179,12 @@ function Install-SenSelf {
         [string]$Workspace,
         [Parameter(Mandatory = $true)]
         [string]$Source,
-        [scriptblock]$Git = $null
+        [scriptblock]$Git = $null,
+        [switch]$Force
     )
     if ($null -eq $Git) { $Git = Get-SenDefaultGit }
     $dest = Join-Path -Path $Workspace -ChildPath ".agents/plugins/sen-method"
-    if (Test-Path -LiteralPath $dest) {
+    if ((Test-Path -LiteralPath $dest) -and (-not $Force.IsPresent)) {
         $existingCommit = Get-SenGitCommit -Path $dest -Git $Git
         if ($existingCommit -eq "unknown" -and (Test-Path -LiteralPath $Source)) {
             $existingCommit = Get-SenGitCommit -Path $Source -Git $Git
@@ -205,7 +210,11 @@ function Install-SenSelf {
         [System.IO.Directory]::CreateDirectory($dest) | Out-Null
         foreach ($item in Get-ChildItem -LiteralPath $srcRoot -Force) {
             if (($payload -contains $item.Name) -or ($item.Name -like "README*")) {
-                Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $dest $item.Name) -Recurse -Force
+                $targetItem = Join-Path $dest $item.Name
+                if (Test-Path -LiteralPath $targetItem) {
+                    Remove-Item -LiteralPath $targetItem -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                Copy-Item -LiteralPath $item.FullName -Destination $targetItem -Recurse -Force
             }
         }
         [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", [System.Text.UTF8Encoding]::new($false))
@@ -213,7 +222,7 @@ function Install-SenSelf {
     }
     catch {
         $err = $_.Exception.Message
-        if (Test-Path -LiteralPath $dest) {
+        if ((Test-Path -LiteralPath $dest) -and (-not $Force.IsPresent)) {
             Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
         }
         return [pscustomobject]@{ Status = "failed"; Commit = $null; Error = $err }

@@ -138,7 +138,7 @@ foreach ($f in $scanFiles) {
 
 # 5. Validate broken relative markdown links
 $mdFiles = Get-ChildItem -LiteralPath $resolvedRoot -Filter "*.md" -File -Recurse | Where-Object {
-    $_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini)[\\/]'
+    $_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini|\.agents|\.sen-restore|\.sen-backup)[\\/]'
 }
 foreach ($md in $mdFiles) {
     $rawMd = Get-Content -LiteralPath $md.FullName -Raw -Encoding UTF8
@@ -191,7 +191,7 @@ foreach ($md in $mdFiles) {
 # 6. Validate ASCII-only encoding in .ps1 and .psm1 files
 $psFiles = Get-ChildItem -LiteralPath $resolvedRoot -File -Recurse | Where-Object {
     ($_.Extension -eq ".ps1" -or $_.Extension -eq ".psm1") -and
-    ($_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini)[\\/]')
+    ($_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini|\.agents|\.sen-restore|\.sen-backup)[\\/]')
 }
 foreach ($psf in $psFiles) {
     $bytes = [System.IO.File]::ReadAllBytes($psf.FullName)

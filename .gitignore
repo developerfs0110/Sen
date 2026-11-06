@@ -1,4 +1,6 @@
 .superpowers/
 .sen-backup/
+.sen-restore/
+.agents/
 clone/
 *.tmp

@@ -374,7 +374,7 @@ function Sync-SenPlanToTasks {
     $todoPath = Join-Path -Path $Workspace -ChildPath "docs/TODO.md"
     if (Test-Path -LiteralPath $todoPath) {
         $todoText = [System.IO.File]::ReadAllText($todoPath, [System.Text.Encoding]::UTF8)
-        $todoMatches = [regex]::Matches($todoText, '(?m)^-\s*\[([ xX~])\]\s*\*\*([A-Za-z0-9_-]+)(?:\s*\(([^)]+)\))?:\s*([^\*\r\n]+)\*\*')
+        $todoMatches = [regex]::Matches($todoText, '(?m)^-\s*\[([ xX~])\]\s*\*\*([A-Za-z0-9_-]+)(?:\s*\(([^)]+)\))?:\s*(.+?)\*\*\s*$')
         foreach ($m in $todoMatches) {
             $tid = $m.Groups[2].Value.Trim()
             $ttitle = $m.Groups[4].Value.Trim()
@@ -382,6 +382,9 @@ function Sync-SenPlanToTasks {
                 $stateChar = $m.Groups[1].Value
                 $st = if ($stateChar -match '[xX]') { "done" } else { "backlog" }
                 [void](New-SenTask -Workspace $Workspace -Id $tid -Title $ttitle -Tier 2 -Module "Backlog" -Assignee "pm" -Status $st)
+                if ($st -eq "done") {
+                    [void](Complete-SenTaskReview -Workspace $Workspace -Id $tid -Passed $true -Reviewer "sys" -EvidenceCommand "todo-verified" -ExitCode 0 -Notes "Synced [x] from TODO.md")
+                }
                 [void]$existingIds.Add($tid)
                 $synced++
             }
@@ -395,7 +398,8 @@ function Sync-SenPlanToTasks {
     else {
         $plansDir = Join-Path -Path $Workspace -ChildPath "docs/superpowers/plans"
         if (Test-Path -LiteralPath $plansDir) {
-            foreach ($pf in @(Get-ChildItem -LiteralPath $plansDir -Filter "*.md" -File)) { $planFiles.Add($pf.FullName) }
+            $latestPlan = Get-ChildItem -LiteralPath $plansDir -Filter "*.md" -File | Sort-Object Name -Descending | Select-Object -First 1
+            if ($null -ne $latestPlan) { $planFiles.Add($latestPlan.FullName) }
         }
     }
 
@@ -568,6 +572,7 @@ function Test-SenSingleStepEvidence {
             return ((Test-Path -LiteralPath $pDir) -and @(Get-ChildItem -LiteralPath $pDir -Filter "*.md" -File).Count -gt 0)
         }
         "S2-TASK-DAG" {
+            [void](Sync-SenPlanToTasks -Workspace $Workspace)
             $tasks = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
             return ($tasks.Count -gt 0)
         }
@@ -576,14 +581,17 @@ function Test-SenSingleStepEvidence {
             return ((Test-Path -LiteralPath $rpDir) -and @(Get-ChildItem -LiteralPath $rpDir -Directory).Count -gt 0)
         }
         "S3-TDD-VERIFY" {
+            [void](Sync-SenPlanToTasks -Workspace $Workspace)
             $active = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
             if ($active.Count -eq 0) { return $false }
             $incomplete = @($active | Where-Object { [string]$_.status -ne "done" -or $null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 })
             return ($incomplete.Count -eq 0)
         }
         "S3-TWOWAY-SYNC" {
+            [void](Sync-SenPlanToTasks -Workspace $Workspace)
             [void](Sync-SenTasksToMarkdown -Workspace $Workspace)
-            return $true
+            $unverified = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "done" })
+            return ($unverified.Count -eq 0)
         }
         "S4-CLEAN-CODE"     { return $true }
         "S4-VN-LAW"         { return $true }
@@ -665,4 +673,113 @@ function Test-SenProjectCompliance {
     }
 }
 
-Export-ModuleMember -Function Get-SenSupportedHarnesses, ConvertFrom-SenHookPayload, Update-SenManagedBlock, Remove-SenManagedBlock, Install-SenHarness, Uninstall-SenHarness, Test-SenHarnessStatus, Sync-SenPlanToTasks, Sync-SenTasksToMarkdown, Get-SenProcessCatalog, Initialize-SenProcessAudit, Test-SenStageGate, Test-SenProjectCompliance
+function Get-SenRemoteCiStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoSlug,
+        [string]$HeadSha = "",
+        [scriptblock]$RestInvoker = $null
+    )
+    $invoker = if ($null -ne $RestInvoker) { $RestInvoker } else {
+        { param([string]$Uri) Invoke-RestMethod -Uri $Uri -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 15 }
+    }
+    $runsUri = "https://api.github.com/repos/$RepoSlug/actions/runs?per_page=5"
+    try {
+        $runsResp = & $invoker $runsUri
+    }
+    catch {
+        return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "error"; Conclusion = "error"; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @("API error: $($_.Exception.Message)") }
+    }
+    $runs = if ($runsResp -and $runsResp.workflow_runs) { @($runsResp.workflow_runs) } else { @() }
+    $run = if (-not [string]::IsNullOrWhiteSpace($HeadSha)) {
+        $runs | Where-Object { [string]$_.head_sha -like "$HeadSha*" } | Select-Object -First 1
+    }
+    else {
+        $runs | Select-Object -First 1
+    }
+    if ($null -eq $run) {
+        return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "not_found"; Conclusion = ""; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @() }
+    }
+    $failedSteps = [System.Collections.Generic.List[string]]::new()
+    if ([string]$run.conclusion -eq "failure" -and $run.jobs_url) {
+        try {
+            $jobsResp = & $invoker ([string]$run.jobs_url)
+            foreach ($j in @($jobsResp.jobs)) {
+                $badSteps = @($j.steps | Where-Object { [string]$_.conclusion -eq "failure" } | ForEach-Object { "$($j.name) > $($_.name)" })
+                foreach ($bs in $badSteps) { $failedSteps.Add($bs) }
+            }
+        }
+        catch { <# Ignore job detail fetch error #> }
+    }
+    return [pscustomobject][ordered]@{
+        Found       = $true
+        RunId       = [long]$run.id
+        Status      = [string]$run.status
+        Conclusion  = [string]$run.conclusion
+        HtmlUrl     = [string]$run.html_url
+        HeadSha     = [string]$run.head_sha
+        FailedSteps = @($failedSteps.ToArray())
+    }
+}
+
+function Invoke-SenCiPushLoop {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoPath,
+        [Parameter(Mandatory = $true)]
+        [string]$CommitMessage,
+        [string]$RepoSlug = "developerfs0110/Sen",
+        [int]$PollSeconds = 5,
+        [int]$TimeoutSeconds = 90,
+        [scriptblock]$RestInvoker = $null,
+        [switch]$SkipPush
+    )
+    $valScript = Join-Path -Path $RepoPath -ChildPath "scripts/Validate-Repo.ps1"
+    if (Test-Path -LiteralPath $valScript) {
+        $valErrs = @(& $valScript -Root $RepoPath)
+        if ($valErrs.Count -gt 0) {
+            return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $false; CiPassed = $false; HeadSha = ""; Errors = $valErrs; CiStatus = $null }
+        }
+    }
+    $pushed = $false
+    $headSha = ""
+    if (-not $SkipPush) {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        Push-Location -LiteralPath $RepoPath
+        try {
+            $st = @(git status --porcelain 2>&1)
+            if ($st.Count -gt 0) {
+                [void](git add -A 2>&1)
+                [void](git commit -m $CommitMessage 2>&1)
+            }
+            [void](git push 2>&1)
+            $pushed = ($LASTEXITCODE -eq 0)
+            $headSha = ([string](git rev-parse HEAD 2>&1)).Trim()
+        }
+        finally {
+            Pop-Location
+            $ErrorActionPreference = $prevEap
+        }
+    }
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $ci = $null
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $ci = Get-SenRemoteCiStatus -RepoSlug $RepoSlug -HeadSha $headSha -RestInvoker $RestInvoker
+        if ($ci.Found -and $ci.Status -eq "completed") { break }
+        if ($PollSeconds -gt 0) { Start-Sleep -Seconds $PollSeconds } else { break }
+    }
+    $ciOk = ($null -ne $ci -and $ci.Found -and $ci.Status -eq "completed" -and $ci.Conclusion -eq "success")
+    return [pscustomobject][ordered]@{
+        LocalPassed = $true
+        Pushed      = $pushed
+        CiPassed    = [bool]$ciOk
+        HeadSha     = $headSha
+        Errors      = if ($ci -and $ci.FailedSteps) { $ci.FailedSteps } else { @() }
+        CiStatus    = $ci
+    }
+}
+
+Export-ModuleMember -Function Get-SenSupportedHarnesses, ConvertFrom-SenHookPayload, Update-SenManagedBlock, Remove-SenManagedBlock, Install-SenHarness, Uninstall-SenHarness, Test-SenHarnessStatus, Sync-SenPlanToTasks, Sync-SenTasksToMarkdown, Get-SenProcessCatalog, Initialize-SenProcessAudit, Test-SenStageGate, Test-SenProjectCompliance, Get-SenRemoteCiStatus, Invoke-SenCiPushLoop

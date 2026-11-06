@@ -7,6 +7,9 @@ $ErrorActionPreference = "SilentlyContinue"
 
 try {
     $raw = [Console]::In.ReadToEnd()
+    if ([string]::IsNullOrWhiteSpace($raw) -and $input) {
+        $raw = (@($input) -join "`n")
+    }
     if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
     $payload = $raw | ConvertFrom-Json
     $wsCandidates = [System.Collections.Generic.List[string]]::new()

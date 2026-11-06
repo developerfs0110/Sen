@@ -21,19 +21,8 @@ function New-HarnessTestWorkspace {
 
 function Invoke-HarnessHookJson([string]$ScriptPath, [hashtable]$PayloadObj) {
     $json = $PayloadObj | ConvertTo-Json -Depth 8 -Compress
-    $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = "powershell"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
-    $psi.RedirectStandardInput = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $proc.StandardInput.Write($json)
-    $proc.StandardInput.Close()
-    $stdout = $proc.StandardOutput.ReadToEnd()
-    $proc.WaitForExit()
+    $out = $json | & powershell -NoProfile -ExecutionPolicy Bypass -File $ScriptPath
+    $stdout = (@($out) -join "`n").Trim()
     if ([string]::IsNullOrWhiteSpace($stdout)) { return $null }
     return ($stdout | ConvertFrom-Json)
 }
@@ -289,6 +278,68 @@ Test "Process Compliance 3-Tier Engine filters (*) and (**), enforces Stage Gate
         $finalComp = Test-SenProjectCompliance -Workspace $ws
         Assert-True $finalComp.Compliant "End-of-project compliance must verify all (**) and (*) are 100% done"
         Assert-Equal 11 $finalComp.CompletedCount "All 11 selected steps (*) completed and latched"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Get-SenRemoteCiStatus and Invoke-SenCiPushLoop inspect remote CI runs and extract failed steps" {
+    $mockRestFail = {
+        param([string]$Uri)
+        if ($Uri -like "*/jobs*") {
+            return [pscustomobject]@{
+                jobs = @(
+                    [pscustomobject]@{
+                        name  = "Validate & Test"
+                        steps = @(
+                            [pscustomobject]@{ name = "Checkout"; conclusion = "success" },
+                            [pscustomobject]@{ name = "Run tests"; conclusion = "failure" }
+                        )
+                    }
+                )
+            }
+        }
+        return [pscustomobject]@{
+            workflow_runs = @(
+                [pscustomobject]@{
+                    id         = 99001
+                    status     = "completed"
+                    conclusion = "failure"
+                    html_url   = "https://github.com/developerfs0110/Sen/actions/runs/99001"
+                    head_sha   = "abc111"
+                    jobs_url   = "https://api.github.com/repos/developerfs0110/Sen/actions/runs/99001/jobs"
+                }
+            )
+        }
+    }
+
+    $ciFail = Get-SenRemoteCiStatus -RepoSlug "developerfs0110/Sen" -HeadSha "abc111" -RestInvoker $mockRestFail
+    Assert-True $ciFail.Found "Should find matching SHA run"
+    Assert-Equal "failure" $ciFail.Conclusion "Should report failure conclusion"
+    Assert-Equal 1 $ciFail.FailedSteps.Count "Should extract 1 failed step"
+    Assert-Equal "Validate & Test > Run tests" $ciFail.FailedSteps[0] "Should format Job > Step name"
+
+    $mockRestPass = {
+        param([string]$Uri)
+        return [pscustomobject]@{
+            workflow_runs = @(
+                [pscustomobject]@{
+                    id         = 99002
+                    status     = "completed"
+                    conclusion = "success"
+                    html_url   = "https://github.com/developerfs0110/Sen/actions/runs/99002"
+                    head_sha   = "def222"
+                    jobs_url   = ""
+                }
+            )
+        }
+    }
+    $ws = New-HarnessTestWorkspace
+    try {
+        $loopRes = Invoke-SenCiPushLoop -RepoPath $ws -CommitMessage "test" -RestInvoker $mockRestPass -SkipPush -PollSeconds 0
+        Assert-True $loopRes.LocalPassed "Local check should pass"
+        Assert-True $loopRes.CiPassed "CI check should pass when conclusion is success"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

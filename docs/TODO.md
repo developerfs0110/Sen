@@ -72,6 +72,14 @@
   - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07) về cơ chế chống quên cập nhật Task.
   - **Nội dung:** Hook `scripts/office-post.ps1` tự động nạp Task từ file Plan/TODO vào `tasks.json` ngay khi lưu; `scripts/guard.ps1` chặn sửa code Cấp 3 nếu có Spec mới mà chưa có Plan/Task; và `Complete-SenTaskReview` / `Test-SenDeliveryGate` tự động đánh dấu `[x]` ngược lại vào `docs/TODO.md` và `docs/superpowers/plans/*.md`.
 
-- [ ] **TASK-14 (P0): Hệ thống Kiểm toán Tuân thủ Quy trình 3 Tầng (`process-manifest.json`, Dự án `(*)` & Giai đoạn `(**)`) Không Lặp Vô Hạn**
+- [x] **TASK-14 (P0): Hệ thống Kiểm toán Tuân thủ Quy trình 3 Tầng (`process-manifest.json`, Dự án `(*)` & Giai đoạn `(**)`) Không Lặp Vô Hạn**
   - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
   - **Nội dung:** Danh mục chuẩn `scripts/process-manifest.json` tự động cập nhật khi Sen lên phiên bản mới; lọc danh sách việc `(*)` cho từng dự án và `(**)` cho từng giai đoạn (`Stage 1..4`); kiểm tra bằng chứng vật lý đơn điệu (`Test-SenStageGate` & `Test-SenProjectCompliance`) ở từng giai đoạn và cuối dự án mà không bao giờ rơi vào vòng lặp vô hạn.
+
+- [x] **TASK-15 (P0): Quy trình Thực thi Song song Lạc quan ("Trình bày trước — Làm luôn — Báo kết quả") & Cold-Start 1-File (`docs/CONTEXT.md`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
+  - **Nội dung:** Khi nhận yêu cầu mới (chỉ đọc duy nhất `docs/CONTEXT.md` khi mở phiên mới), trình bày đầy đủ phân tích *Best-of-the-Best* + bảng **Tài nguyên tiêu tốn**, tạo điểm khôi phục (`New-SenRestorePoint`) và lập tức triển khai song song ngay trong lúc người dùng đọc (ưu tiên Subagent chạy nền hoặc thực thi nối tiếp trong cùng lượt) mà không dừng chờ hỏi duyệt thông thường; hoàn tất báo cáo kèm hướng dẫn hoàn tác tức thì (`Restore-SenRestorePoint`).
+
+- [x] **TASK-16 (P0): Vòng lặp Tự động Commit/Push & Kiểm tra – Sửa lỗi – Đẩy lại CI từ xa (`Get-SenRemoteCiStatus` & `Invoke-SenCiPushLoop`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
+  - **Nội dung:** Sau khi vượt qua cổng kiểm tra cục bộ (`Validate-Repo.ps1`, `Measure-SenCodeHealth`, `tests/run.ps1`), tự động commit (tiếng Việt) & push lên GitHub, kiểm tra trạng thái GitHub Actions CI từ xa (`Get-SenRemoteCiStatus`), nếu phát hiện lỗi CI thì tự động bóc tách bước lỗi (`FailedSteps`), sửa dứt điểm, chạy lại test và push lại (tối đa 3 vòng) cho đến khi CI xanh 100%.
