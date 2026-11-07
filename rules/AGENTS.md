@@ -15,9 +15,9 @@ Work replies start with a tier label (`Get-SenTaskRiskScore`).
 | Tier 2 - Confirming the approach | New feature; 3+ files; shared component/API change; new library | Turn 1: *Best-of-the-Best* + **Resource Cost** table, restore point, subagent, end turn. Turn 2: report. |
 | Tier 3 - Design & plan | New project; architecture/DB/auth/payments; data-loss risk | Turn 1: design (`brainstorming`) + plan (`writing-plans`), restore point, subagent, end turn. Turn 2: report. |
 
-- **Instant-Ack & Cold-Start:** Before ANY tool call, emit a 1-sentence waiting notice with the user's name (e.g., *"Chào <Name>, chờ mình chút nhé, mình đang phân tích <X>..."*); for heavy research (>2 calls), emit notice + spawn `research`/`self` subagent in Turn 1 + end Turn 1. On new/resumed chat, read ONLY `docs/CONTEXT.md` first. Lookup questions: answer directly (`0 file edits`).
-- **Dialectical Proof, Critique & Cost (Tier 2–3):** (1) **Thesis:** prove options + pick are *Best-of-the-Best* with a **Resource Cost** column (tokens, time, CPU/RAM/disk, maintenance); (2) **Antithesis:** attack via counterexamples, boundaries, concurrency, STRIDE; (3) **Synthesis:** optimal solution (`Invoke-SenDialecticalAudit`).
-- **2-Turn Handshake:** Tier 2–3 **Turn 1** outputs tier label + Dialectical Proof/Cost + `New-SenRestorePoint` + subagent (`invoke_subagent`), and **ends Turn 1 immediately** (no sync file-edit chains in Turn 1; pause only for external/data-loss ops). **Turn 2** reports verified results & undo (`Restore-SenRestorePoint`).
+- **Instant-Ack & Cold-Start:** Before ANY tool call, emit a 1-sentence waiting notice with the user's name; for heavy research (>2 calls), emit notice + spawn `research`/`self` subagent in Turn 1 + end Turn 1. On new/resumed chat, read ONLY `docs/CONTEXT.md` first. Lookup: answer directly (`0 file edits`).
+- **Dialectical Proof, Critique & Cost (Tier 2–3):** (1) **Thesis:** prove options + pick are *Best-of-the-Best* with a **Resource Cost** column (tokens, time, CPU/RAM/disk, maintenance); (2) **Antithesis:** attack via counterexamples, boundaries, STRIDE; (3) **Synthesis:** optimal pick (`Invoke-SenDialecticalAudit`).
+- **2-Turn Handshake:** Tier 2–3 **Turn 1** outputs tier label + Dialectical Proof/Cost + `New-SenRestorePoint` + subagent (`invoke_subagent`), and **ends Turn 1 immediately** (no sync file edits in Turn 1; pause only for data-loss ops). **Turn 2** reports verified results & undo (`Restore-SenRestorePoint`).
 - Overrides: "làm luôn đi" / "just do it" → Tier 1; "đây là Cấp 3" / "this is Tier 3" → Tier 3. Risk overrides file count (DB, auth, payments, deletion = Tier 3).
 
 ## 3. Priority over superpowers
@@ -29,7 +29,7 @@ Work replies start with a tier label (`Get-SenTaskRiskScore`).
 ## 5. Roles, models & task state
 - Tier 1: execute directly. Tier 2: spawn 1 Dev subagent (`invoke_subagent`) in Turn 1.
 - Tier 3: act as PM/Tech Lead, track state/DAG/locks in `.agents/office/tasks.json`, coordinate subagents: BA/Architect (`inherit`), Scout (`flash_lite`/`flash`), Dev (`inherit`/`pro`), Tester (`inherit`), Reviewers (`inherit`/`pro`). Parallelize independent tasks (`dispatching-parallel-agents`).
-- **Anti-Hang & Teardown:** Pass `-Workspace` explicitly; before ending ANY turn or reporting done, kill leftover tasks/subagents (`manage_task`/`manage_subagents`) and run `Test-SenHungTasks` (`Clear-SenHungTasks` if stale).
+- **Anti-Hang & Selective Teardown:** Pass `-Workspace` explicitly; never kill active long-running tasks/subagents with live progress/heartbeat (`ActiveLongRunningIds`); before ending a turn, clean only `idle` subagents, stdin-deadlocked, or zero-progress stalled tasks (`manage_task`/`manage_subagents`, `Test-SenHungTasks`, `Clear-SenHungTasks`).
 
 ## 6. Tier 3 execution choice
 After writing the plan, announce in one line:

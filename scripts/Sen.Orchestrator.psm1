@@ -185,11 +185,11 @@ function Get-SenReadyTasks {
             }
         }
         $results.Add([pscustomobject]@{
-            Task             = $t
-            Id               = [string]$t.id
-            IsReady          = ($null -eq $conflictId)
-            FileConflictWith = $conflictId
-        })
+                Task             = $t
+                Id               = [string]$t.id
+                IsReady          = ($null -eq $conflictId)
+                FileConflictWith = $conflictId
+            })
     }
     return @($results.ToArray())
 }
@@ -379,50 +379,73 @@ function Complete-SenTaskReview {
 
 function Test-SenHungTasks {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15)
-    $cutoff = [DateTime]::UtcNow.AddMinutes(-1 * [Math]::Max(1, $StaleMinutes))
-    $staleTasks = [System.Collections.Generic.List[string]]::new()
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15, [string]$LogContent = "")
+    $cutoff = (Get-Date).ToUniversalTime().AddMinutes(-1 * [Math]::Max(1, $StaleMinutes))
+    $staleTasks = [System.Collections.Generic.List[string]]::new(); $activeLongRunning = [System.Collections.Generic.List[string]]::new()
+    $staleSubs = [System.Collections.Generic.List[string]]::new(); $idleSubs = [System.Collections.Generic.List[string]]::new()
+    $deadlocked = [System.Collections.Generic.List[string]]::new()
+    $probeLog = Join-Path -Path $Workspace -ChildPath ".agents/office/hung-probes.log"
+    $rawLog = $LogContent + "`n" + $(if (Test-Path -LiteralPath $probeLog) { [System.IO.File]::ReadAllText($probeLog) } else { "" })
+    foreach ($m in [regex]::Matches($rawLog, '(?i)(Supply values for the following parameters:|\[Y/n\]|Press any key to continue|Overwrite\s*\?)')) { $deadlocked.Add($m.Value.Trim()) }
+    $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
+    $subObj = if (Test-Path -LiteralPath $subFile) { Read-SenSafeJson -Path $subFile } else { $null }
+    $subList = if ($null -eq $subObj) { @() } elseif ($subObj.PSObject.Properties.Name -contains "subagents") { @($subObj.subagents) } else { @($subObj) }
     foreach ($t in @(Get-SenTasks -Workspace $Workspace)) {
         if (-not $t -or [string]$t.status -ne "in_progress") { continue }
         $rawTs = if ($t.PSObject.Properties['updatedAt'] -and $t.updatedAt) { [string]$t.updatedAt } elseif ($t.PSObject.Properties['createdAt'] -and $t.createdAt) { [string]$t.createdAt } else { "" }
         $parsed = [DateTime]::MinValue
-        $isStale = [string]::IsNullOrWhiteSpace($rawTs) -or (-not [DateTime]::TryParse($rawTs, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$parsed)) -or ($parsed -le $cutoff)
-        if ($isStale) { $staleTasks.Add([string]$t.id) }
-    }
-    $staleSubs = [System.Collections.Generic.List[string]]::new()
-    $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
-    if (Test-Path -LiteralPath $subFile) {
-        $subObj = Read-SenSafeJson -Path $subFile
-        $subList = if ($null -eq $subObj) { @() } elseif ($subObj.PSObject.Properties.Name -contains "subagents") { @($subObj.subagents) } else { @($subObj) }
-        foreach ($s in $subList) {
-            if (-not $s -or [string]$s.status -notin @("running", "active", "in_progress")) { continue }
-            $sTs = if ($s.PSObject.Properties['updatedAt'] -and $s.updatedAt) { [string]$s.updatedAt } elseif ($s.PSObject.Properties['startedAt'] -and $s.startedAt) { [string]$s.startedAt } else { "" }
-            $sParsed = [DateTime]::MinValue
-            if ([string]::IsNullOrWhiteSpace($sTs) -or (-not [DateTime]::TryParse($sTs, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$sParsed)) -or ($sParsed -le $cutoff)) {
-                $sid = if ($s.PSObject.Properties['id'] -and $s.id) { [string]$s.id } elseif ($s.PSObject.Properties['conversationId']) { [string]$s.conversationId } else { "unknown-subagent" }
-                $staleSubs.Add($sid)
-            }
+        $isOld = [string]::IsNullOrWhiteSpace($rawTs) -or (-not [DateTime]::TryParse($rawTs, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$parsed)) -or ($parsed -lt $cutoff)
+        if (-not $isOld) { continue }
+        $hbRaw = if ($t.PSObject.Properties['heartbeatAt'] -and $t.heartbeatAt) { [string]$t.heartbeatAt } else { "" }
+        $hbDt = [DateTime]::MinValue
+        $hasHb = (-not [string]::IsNullOrWhiteSpace($hbRaw)) -and [DateTime]::TryParse($hbRaw, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$hbDt) -and ($hbDt -ge $cutoff)
+        $hasFileMod = $false
+        foreach ($ap in @($t.allowedPaths)) {
+            $apFull = if ([string]::IsNullOrWhiteSpace([string]$ap)) { "" } else { Join-Path -Path $Workspace -ChildPath ([string]$ap) }
+            if ($apFull -and (Test-Path -LiteralPath $apFull) -and @(@(Get-ChildItem -LiteralPath $apFull -File -Recurse -ErrorAction SilentlyContinue) | Where-Object { $_.LastWriteTimeUtc -ge $cutoff }).Count -gt 0) { $hasFileMod = $true; break }
         }
+        $hasSubProg = $false
+        foreach ($s in $subList) {
+            $sState = if ($s.PSObject.Properties['state'] -and $s.state) { [string]$s.state } else { [string]$s.status }
+            $sStepRaw = if ($s.PSObject.Properties['lastStepTime'] -and $s.lastStepTime) { [string]$s.lastStepTime } elseif ($s.PSObject.Properties['heartbeatAt'] -and $s.heartbeatAt) { [string]$s.heartbeatAt } else { "" }
+            $sStepDt = [DateTime]::MinValue
+            $sMatch = ($s.PSObject.Properties['taskId'] -and [string]$s.taskId -eq [string]$t.id) -or ($s.PSObject.Properties['role'] -and [string]$s.role -eq [string]$t.assignee)
+            if ($sState -eq "running" -and $sMatch -and (-not [string]::IsNullOrWhiteSpace($sStepRaw)) -and [DateTime]::TryParse($sStepRaw, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$sStepDt) -and ($sStepDt -ge $cutoff)) { $hasSubProg = $true; break }
+        }
+        if ($hasHb -or $hasFileMod -or $hasSubProg) { $activeLongRunning.Add([string]$t.id) } else { $staleTasks.Add([string]$t.id) }
+    }
+    foreach ($s in $subList) {
+        if (-not $s) { continue }
+        $sid = if ($s.PSObject.Properties['id'] -and $s.id) { [string]$s.id } elseif ($s.PSObject.Properties['conversationId']) { [string]$s.conversationId } else { "unknown-subagent" }
+        $sState = if ($s.PSObject.Properties['state'] -and $s.state) { [string]$s.state } else { [string]$s.status }
+        if ($sState -in @("idle", "completed")) { $idleSubs.Add($sid); continue }
+        if ($sState -notin @("running", "active", "in_progress")) { continue }
+        $sTs = if ($s.PSObject.Properties['lastStepTime'] -and $s.lastStepTime) { [string]$s.lastStepTime } elseif ($s.PSObject.Properties['heartbeatAt'] -and $s.heartbeatAt) { [string]$s.heartbeatAt } elseif ($s.PSObject.Properties['updatedAt'] -and $s.updatedAt) { [string]$s.updatedAt } elseif ($s.PSObject.Properties['startedAt'] -and $s.startedAt) { [string]$s.startedAt } else { "" }
+        $sParsed = [DateTime]::MinValue
+        $sOld = [string]::IsNullOrWhiteSpace($sTs) -or (-not [DateTime]::TryParse($sTs, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$sParsed)) -or ($sParsed -lt $cutoff)
+        $ownsActive = ($s.PSObject.Properties['taskId'] -and ($activeLongRunning -contains [string]$s.taskId))
+        if ($sOld -and (-not $ownsActive)) { $staleSubs.Add($sid) }
     }
     return [pscustomobject][ordered]@{
-        Healthy = ($staleTasks.Count -eq 0 -and $staleSubs.Count -eq 0); StaleMinutes = $StaleMinutes
-        StaleTaskIds = @($staleTasks.ToArray()); StaleSubagents = @($staleSubs.ToArray())
-        CheckedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        Healthy = ($staleTasks.Count -eq 0 -and $staleSubs.Count -eq 0 -and $deadlocked.Count -eq 0); StaleMinutes = $StaleMinutes
+        StaleTaskIds = @($staleTasks.ToArray()); StaleSubagents = @($staleSubs.ToArray()); ActiveLongRunningIds = @($activeLongRunning.ToArray())
+        IdleSubagents = @($idleSubs.ToArray()); DeadlockedItems = @($deadlocked.ToArray()); CheckedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
 }
 
 function Clear-SenHungTasks {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15, [ValidateSet("reset_to_todo", "mark_blocked", "ready", "blocked")][string]$Resolution = "reset_to_todo")
-    $check = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15, [ValidateSet("reset_to_todo", "mark_blocked", "ready", "blocked")][string]$Resolution = "reset_to_todo", [string]$LogContent = "")
+    $check = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes -LogContent $LogContent
     $newStatus = if ($Resolution -in @("mark_blocked", "blocked")) { "blocked" } elseif ($Resolution -eq "ready") { "ready" } else { "todo" }
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     $clearedTasks = [System.Collections.Generic.List[string]]::new()
+    $protectedSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@($check.ActiveLongRunningIds), [System.StringComparer]::OrdinalIgnoreCase)
     if ($check.StaleTaskIds.Count -gt 0) {
         $tasks = @(Get-SenTasks -Workspace $Workspace)
-        $staleSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$check.StaleTaskIds, [System.StringComparer]::OrdinalIgnoreCase)
+        $staleSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@($check.StaleTaskIds), [System.StringComparer]::OrdinalIgnoreCase)
         foreach ($t in $tasks) {
-            if ($t -and $staleSet.Contains([string]$t.id)) {
+            if ($t -and $staleSet.Contains([string]$t.id) -and (-not $protectedSet.Contains([string]$t.id))) {
                 $t.status = $newStatus; $t.updatedAt = $now
                 $noteMsg = "Cleared hung task (> ${StaleMinutes}m) -> $newStatus"
                 if ($t.evidence) { $t.evidence.notes = $noteMsg }
@@ -434,19 +457,27 @@ function Clear-SenHungTasks {
         }
         [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
     }
-    $clearedSubs = [System.Collections.Generic.List[string]]::new()
+    $clearedSubs = [System.Collections.Generic.List[string]]::new(); $closedIdle = [System.Collections.Generic.List[string]]::new()
     $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
-    if ($check.StaleSubagents.Count -gt 0 -and (Test-Path -LiteralPath $subFile)) {
+    if (($check.StaleSubagents.Count -gt 0 -or $check.IdleSubagents.Count -gt 0) -and (Test-Path -LiteralPath $subFile)) {
         $subObj = Read-SenSafeJson -Path $subFile
         $isWrapped = ($null -ne $subObj -and $subObj.PSObject.Properties.Name -contains "subagents")
         $subList = if ($null -eq $subObj) { @() } elseif ($isWrapped) { @($subObj.subagents) } else { @($subObj) }
-        $subSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$check.StaleSubagents, [System.StringComparer]::OrdinalIgnoreCase)
+        $subSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@($check.StaleSubagents), [System.StringComparer]::OrdinalIgnoreCase)
+        $idleSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@($check.IdleSubagents), [System.StringComparer]::OrdinalIgnoreCase)
         foreach ($s in $subList) {
             $sid = if ($s.PSObject.Properties['id'] -and $s.id) { [string]$s.id } elseif ($s.PSObject.Properties['conversationId']) { [string]$s.conversationId } else { "" }
             if ($sid -and $subSet.Contains($sid)) {
-                $s | Add-Member -NotePropertyName "status" -NotePropertyValue "terminated" -Force
+                $s | Add-Member -NotePropertyName "status" -NotePropertyValue "terminated_hung" -Force
+                $s | Add-Member -NotePropertyName "state" -NotePropertyValue "terminated_hung" -Force
                 $s | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue $now -Force
                 $clearedSubs.Add($sid)
+            }
+            elseif ($sid -and $idleSet.Contains($sid)) {
+                $s | Add-Member -NotePropertyName "status" -NotePropertyValue "closed_idle" -Force
+                $s | Add-Member -NotePropertyName "state" -NotePropertyValue "closed_idle" -Force
+                $s | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue $now -Force
+                $closedIdle.Add($sid)
             }
         }
         $outPayload = if ($isWrapped) { $subObj.subagents = $subList; $subObj } else { $subList }
@@ -454,7 +485,8 @@ function Clear-SenHungTasks {
     }
     return [pscustomobject][ordered]@{
         ClearedCount = ($clearedTasks.Count + $clearedSubs.Count); ClearedTaskIds = @($clearedTasks.ToArray())
-        ClearedSubagents = @($clearedSubs.ToArray()); Resolution = $Resolution; NewStatus = $newStatus
+        ClearedSubagents = @($clearedSubs.ToArray()); ClosedIdleSubagents = @($closedIdle.ToArray())
+        ProtectedLongRunningIds = @($check.ActiveLongRunningIds); Resolution = $Resolution; NewStatus = $newStatus
     }
 }
 
@@ -524,12 +556,12 @@ function Get-SenRecoveryState {
     )
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $inProgress = @($tasks | Where-Object { [string]$_.status -eq "in_progress" } | ForEach-Object { [string]$_.id })
-    $reviewing  = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
-    $ready      = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
-    $pending    = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
-    $done       = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
-    $backlog    = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
-    $failed     = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
+    $reviewing = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
+    $ready = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
+    $pending = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
+    $done = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
+    $backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
+    $failed = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
 
     return [pscustomobject][ordered]@{
         needsRecovery = [bool](($inProgress.Count + $reviewing.Count + $failed.Count) -gt 0)

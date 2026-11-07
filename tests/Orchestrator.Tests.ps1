@@ -437,3 +437,76 @@ Test "TASK-21 Test-SenHungTasks and Clear-SenHungTasks detect and teardown hung 
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "TASK-22 3-Signal Liveness Probe protects active long-running tasks and catches stdin deadlocks and idle zombies" {
+    $ws = New-OrchTestWorkspace
+    try {
+        $oldIso = [DateTime]::UtcNow.AddMinutes(-45).ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $recentIso = [DateTime]::UtcNow.AddMinutes(-2).ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+        [void](New-SenTask -Workspace $ws -Id "LONG-HB" -Title "Long task with heartbeat" -AllowedPaths @("docs/"))
+        [void](New-SenTask -Workspace $ws -Id "LONG-FILE" -Title "Long task with file progress" -AllowedPaths @("src/feature/"))
+        [void](New-SenTask -Workspace $ws -Id "STALLED-01" -Title "Truly stalled task" -AllowedPaths @("lib/"))
+        [void](Start-SenTask -Workspace $ws -Id "LONG-HB")
+        [void](Start-SenTask -Workspace $ws -Id "LONG-FILE")
+        [void](Start-SenTask -Workspace $ws -Id "STALLED-01")
+
+        $featDir = Join-Path $ws "src/feature"
+        [System.IO.Directory]::CreateDirectory($featDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $featDir "active.js"), "console.log('alive');")
+
+        $tasks = @(Get-SenTasks -Workspace $ws)
+        foreach ($t in $tasks) {
+            $t.createdAt = $oldIso
+            $t.updatedAt = $oldIso
+            if ($t.id -eq "LONG-HB") {
+                $t | Add-Member -NotePropertyName "heartbeatAt" -NotePropertyValue $recentIso -Force
+            }
+        }
+        [void](Save-SenTasks -Workspace $ws -Tasks $tasks -Internal)
+
+        # Signal 1: Remove stalled task temporarily to verify active long-running tasks alone report Healthy = true
+        $activeOnly = @($tasks | Where-Object { $_.id -ne "STALLED-01" })
+        [void](Save-SenTasks -Workspace $ws -Tasks $activeOnly -Internal)
+        $liveCheck = Test-SenHungTasks -Workspace $ws -StaleMinutes 15
+        Assert-True $liveCheck.Healthy "Long-running tasks with active heartbeat or recent file writes must be Healthy"
+        Assert-Equal 2 $liveCheck.ActiveLongRunningIds.Count "Both LONG-HB and LONG-FILE must be in ActiveLongRunningIds"
+        Assert-Equal 0 $liveCheck.StaleTaskIds.Count "No active long-running task should be classified as StaleTaskIds"
+
+        # Signal 2: Interactive stdin prompt detected immediately within 1 second
+        $stdinCheck = Test-SenHungTasks -Workspace $ws -StaleMinutes 15 -LogContent "cmdlet New-SenRestorePoint at command pipeline position 1`nSupply values for the following parameters:`nWorkspace:"
+        Assert-True (-not $stdinCheck.Healthy) "Interactive stdin prompt must immediately mark workspace unhealthy"
+        Assert-True ($stdinCheck.DeadlockedItems.Count -ge 1) "DeadlockedItems must capture stdin prompt"
+
+        # Signal 3 & Selective Teardown: Restore STALLED-01 + add idle and stale subagents
+        [void](Save-SenTasks -Workspace $ws -Tasks $tasks -Internal)
+        $subFile = Join-Path $ws ".agents/office/subagents.json"
+        Write-SenAtomicJson -Path $subFile -InputObject @{
+            subagents = @(
+                @{ id = "sub-idle-01"; state = "idle"; updatedAt = $recentIso },
+                @{ id = "sub-stalled-01"; state = "running"; startedAt = $oldIso; updatedAt = $oldIso }
+            )
+        }
+        $mixedCheck = Test-SenHungTasks -Workspace $ws -StaleMinutes 15
+        Assert-True (-not $mixedCheck.Healthy) "Stalled task and stalled subagent must be flagged"
+        Assert-Equal 1 $mixedCheck.StaleTaskIds.Count "Only STALLED-01 is stale"
+        Assert-Equal "STALLED-01" $mixedCheck.StaleTaskIds[0] "Stale task is STALLED-01"
+        Assert-Equal 2 $mixedCheck.ActiveLongRunningIds.Count "LONG-HB and LONG-FILE remain protected"
+        Assert-Equal 1 $mixedCheck.IdleSubagents.Count "sub-idle-01 detected as IdleSubagents"
+
+        $selectiveClear = Clear-SenHungTasks -Workspace $ws -StaleMinutes 15 -Resolution "reset_to_todo"
+        Assert-Equal 2 $selectiveClear.ProtectedLongRunningIds.Count "Clear-SenHungTasks must protect both active long-running tasks"
+        Assert-Equal 1 $selectiveClear.ClearedTaskIds.Count "Only STALLED-01 is reset"
+        Assert-Equal "STALLED-01" $selectiveClear.ClearedTaskIds[0] "Cleared task is STALLED-01"
+        Assert-Equal 1 $selectiveClear.ClosedIdleSubagents.Count "Idle zombie subagent is closed"
+
+        $postTasks = @(Get-SenTasks -Workspace $ws)
+        $hbTask = $postTasks | Where-Object { $_.id -eq "LONG-HB" } | Select-Object -First 1
+        $fileTask = $postTasks | Where-Object { $_.id -eq "LONG-FILE" } | Select-Object -First 1
+        Assert-Equal "in_progress" $hbTask.status "LONG-HB must remain in_progress untouched"
+        Assert-Equal "in_progress" $fileTask.status "LONG-FILE must remain in_progress untouched"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

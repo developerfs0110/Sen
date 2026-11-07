@@ -2,24 +2,107 @@
   "manifestVersion": "0.4.0",
   "updatedAt": "2026-11-07T00:00:00Z",
   "stages": [
-    { "stage": 1, "name": "Intake & Triage" },
-    { "stage": 2, "name": "Design & Plan" },
-    { "stage": 3, "name": "Execution & TDD" },
-    { "stage": 4, "name": "Handover & Final Gates" }
+    {
+      "stage": 1,
+      "name": "Intake & Triage"
+    },
+    {
+      "stage": 2,
+      "name": "Design & Plan"
+    },
+    {
+      "stage": 3,
+      "name": "Execution & TDD"
+    },
+    {
+      "stage": 4,
+      "name": "Handover & Final Gates"
+    }
   ],
   "steps": [
-    { "id": "S1-RISK",          "stage": 1, "minTier": 1, "scope": "all",        "title": "Instant-Ack waiting notice, tier classification & deterministic risk score (Get-SenTaskRiskScore)" },
-    { "id": "S1-AUDIT-INIT",    "stage": 1, "minTier": 1, "scope": "all",        "title": "Initialize project (*) and stage (**) checklist (process-audit.json)" },
-    { "id": "S2-EXPERT-COST",   "stage": 2, "minTier": 2, "scope": "all",        "title": "Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best)" },
-    { "id": "S2-DESIGN-SPEC",   "stage": 2, "minTier": 3, "scope": "all",        "title": "Write technical Design Spec (docs/superpowers/specs/*.md) & Phase 1 Output Simulation (Write-SenOfficeShowcase)" },
-    { "id": "S2-IMPL-PLAN",     "stage": 2, "minTier": 3, "scope": "all",        "title": "Write step-by-step Implementation Plan (docs/superpowers/plans/*.md)" },
-    { "id": "S2-TASK-DAG",      "stage": 2, "minTier": 2, "scope": "all",        "title": "Register Task DAG & allowedPaths contract (.agents/office/tasks.json)" },
-    { "id": "S3-RESTORE-POINT", "stage": 3, "minTier": 2, "scope": "all",        "title": "Create pre-edit restore point (New-SenRestorePoint)" },
-    { "id": "S3-TDD-VERIFY",    "stage": 3, "minTier": 1, "scope": "all",        "title": "Execute tasks with verified test evidence (ExitCode = 0) & zero hung tasks (Test-SenHungTasks)" },
-    { "id": "S3-TWOWAY-SYNC",   "stage": 3, "minTier": 2, "scope": "all",        "title": "Two-way sync [x] checkboxes in plans/*.md and docs/TODO.md" },
-    { "id": "S4-CLEAN-CODE",    "stage": 4, "minTier": 2, "scope": "all",        "title": "Pass 6-dimension Clean Code gate (Measure-SenCodeHealth)" },
-    { "id": "S4-VN-LAW",        "stage": 4, "minTier": 1, "scope": "web_mobile", "title": "Pass Vietnam Legal-by-Design compliance scan (Invoke-SenVnLawScan)" },
-    { "id": "S4-CONTEXT-REPORT","stage": 4, "minTier": 2, "scope": "all",        "title": "Sync docs/CONTEXT.md & TODO.md/README/CHANGELOG (Test-SenCapabilityParity), Phase 2 Output Simulation (Write-SenOfficeShowcase), delivery report & CI push loop (Invoke-SenCiPushLoop)" }
+    {
+      "id": "S1-RISK",
+      "stage": 1,
+      "minTier": 1,
+      "scope": "all",
+      "title": "Instant-Ack waiting notice, tier classification & deterministic risk score (Get-SenTaskRiskScore)"
+    },
+    {
+      "id": "S1-AUDIT-INIT",
+      "stage": 1,
+      "minTier": 1,
+      "scope": "all",
+      "title": "Initialize project (*) and stage (**) checklist (process-audit.json)"
+    },
+    {
+      "id": "S2-EXPERT-COST",
+      "stage": 2,
+      "minTier": 2,
+      "scope": "all",
+      "title": "Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best)"
+    },
+    {
+      "id": "S2-DESIGN-SPEC",
+      "stage": 2,
+      "minTier": 3,
+      "scope": "all",
+      "title": "Write technical Design Spec (docs/superpowers/specs/*.md) & Phase 1 Output Simulation (Write-SenOfficeShowcase)"
+    },
+    {
+      "id": "S2-IMPL-PLAN",
+      "stage": 2,
+      "minTier": 3,
+      "scope": "all",
+      "title": "Write step-by-step Implementation Plan (docs/superpowers/plans/*.md)"
+    },
+    {
+      "id": "S2-TASK-DAG",
+      "stage": 2,
+      "minTier": 2,
+      "scope": "all",
+      "title": "Register Task DAG & allowedPaths contract (.agents/office/tasks.json)"
+    },
+    {
+      "id": "S3-RESTORE-POINT",
+      "stage": 3,
+      "minTier": 2,
+      "scope": "all",
+      "title": "Create pre-edit restore point (New-SenRestorePoint)"
+    },
+    {
+      "id": "S3-TDD-VERIFY",
+      "stage": 3,
+      "minTier": 1,
+      "scope": "all",
+      "title": "Execute tasks with verified test evidence (ExitCode = 0) & zero hung tasks (Test-SenHungTasks)"
+    },
+    {
+      "id": "S3-TWOWAY-SYNC",
+      "stage": 3,
+      "minTier": 2,
+      "scope": "all",
+      "title": "Two-way sync [x] checkboxes in plans/*.md and docs/TODO.md"
+    },
+    {
+      "id": "S4-CLEAN-CODE",
+      "stage": 4,
+      "minTier": 2,
+      "scope": "all",
+      "title": "Pass 6-dimension Clean Code gate (Measure-SenCodeHealth)"
+    },
+    {
+      "id": "S4-VN-LAW",
+      "stage": 4,
+      "minTier": 1,
+      "scope": "web_mobile",
+      "title": "Pass Vietnam Legal-by-Design compliance scan (Invoke-SenVnLawScan)"
+    },
+    {
+      "id": "S4-CONTEXT-REPORT",
+      "stage": 4,
+      "minTier": 2,
+      "scope": "all",
+      "title": "Sync docs/CONTEXT.md & TODO.md/README/CHANGELOG (Test-SenCapabilityParity), Phase 2 Output Simulation (Write-SenOfficeShowcase), delivery report & CI push loop (Invoke-SenCiPushLoop)"
+    }
   ]
 }
-
