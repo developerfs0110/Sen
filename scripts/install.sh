@@ -176,7 +176,7 @@ while IFS= read -r block; do
   [ -z "$id" ] && continue
   repo="$(field "$block" repo)"; sub="$(field "$block" subPath)"
   dst="$(field "$block" dest)"; req="$(field "$block" required)"
-  if [ "$req" != "true" ] && [ "$WITH_VN" -ne 1 ]; then continue; fi
+  if [ "$req" != "true" ] && { [ "$id" != "vn-law-check" ] || [ "$WITH_VN" -ne 1 ]; }; then continue; fi
   install_pkg "$id" "$repo" "$sub" "$dst"
   e_json="null"; [ -n "$err" ] && e_json="\"$(json_escape "$err")\""
   c_json="null"; [ -n "$commit" ] && c_json="\"$(json_escape "$commit")\""

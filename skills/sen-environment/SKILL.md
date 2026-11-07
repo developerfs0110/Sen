@@ -18,9 +18,13 @@ Run `sen-environment` right after the technology stack for a project is decided 
 ## Step-by-Step Workflow
 
 ### Step 1: Identify Tools for the Stack
-1. Determine the list of tool IDs needed for the project (supported catalog IDs in `scripts/tools.json`: `git`, `node`, `python`, `flutter`, `android-sdk`).
-2. At Tier 3, read the project's design document section **"Required Tools"** / **"Công cụ cần có"**.
-3. Classify each tool as **`Required`** (mandatory for the project to build/run) or **`Optional`** (helpful extras, with a brief reason).
+1. Determine the list of tool IDs needed for the project (supported catalog IDs in `scripts/tools.json`: `git`, `node`, `python`, `flutter`, `android-sdk`, plus optional creative domain tools `ffmpeg`, `imagemagick`, and `blender`).
+2. When the user installs or uses **Sen Creative Domain Packs** via `Install-SenCreativePack`:
+   - `media-image` (`store-screenshots`) pairs with `imagemagick` (`ImageMagick.ImageMagick` on winget / `imagemagick` on brew, min `7.1.0`).
+   - `media-video` (`ffmpeg-skill`) pairs with `ffmpeg` (`Gyan.FFmpeg` on winget / `ffmpeg` on brew, min `6.0.0`) and `node`.
+   - `media-3d` (`blender-director`) pairs with `blender` (`BlenderFoundation.Blender` on winget / `--cask blender` on brew, min `4.0.0`).
+3. At Tier 3, read the project's design document section **"Required Tools"** / **"Công cụ cần có"**.
+4. Classify each tool as **`Required`** (mandatory for the project to build/run) or **`Optional`** (helpful extras, with a brief reason).
 
 ---
 

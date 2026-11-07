@@ -167,5 +167,8 @@ fi
 if printf '%s' "$CMD" | grep -Eq '\bgit\b[^|;&]*\bbranch\b[^|;&]*([[:space:]]-D\b|--delete[[:space:]]+--force|--force[[:space:]]+--delete)'; then
   deny "git branch -D (force-deletes unmerged branch)"
 fi
+if printf '%s' "$CMD" | grep -Eiq '\bffmpeg(\.exe)?\b[^|;&]*[[:space:]]-i[[:space:]]+["'\'']?(\./)?([^"'\''[:space:]]+)["'\'']?([[:space:]]+[^|;&]*)*[[:space:]]+["'\'']?(\./)?\3["'\'']?([[:space:]]+-(y|n))*[[:space:]]*($|[|;&])'; then
+  deny "Non-destructive media guard: ffmpeg in-place overwrite of input file is prohibited. Write output to a separate file or output/ folder"
+fi
 
 out_decision "ask" ""

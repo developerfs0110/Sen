@@ -95,5 +95,55 @@
     ],
     "managers": [],
     "manualUrl": null
+  },
+  {
+    "id": "ffmpeg",
+    "displayName": "FFmpeg",
+    "versionCommand": "ffmpeg -version",
+    "minVersion": "6.0.0",
+    "winget": "Gyan.FFmpeg",
+    "brew": "ffmpeg",
+    "required": false,
+    "approxSizeMB": 140,
+    "extraPaths": [
+      "C:\\ffmpeg\\bin\\ffmpeg.exe",
+      "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
+      "%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\ffmpeg.exe"
+    ],
+    "managers": [],
+    "manualUrl": "https://ffmpeg.org/download.html"
+  },
+  {
+    "id": "imagemagick",
+    "displayName": "ImageMagick",
+    "versionCommand": "magick -version",
+    "minVersion": "7.1.0",
+    "winget": "ImageMagick.ImageMagick",
+    "brew": "imagemagick",
+    "required": false,
+    "approxSizeMB": 120,
+    "extraPaths": [
+      "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe",
+      "C:\\Program Files\\ImageMagick\\magick.exe"
+    ],
+    "managers": [],
+    "manualUrl": "https://imagemagick.org/script/download.php"
+  },
+  {
+    "id": "blender",
+    "displayName": "Blender",
+    "versionCommand": "blender --version",
+    "minVersion": "4.0.0",
+    "winget": "BlenderFoundation.Blender",
+    "brew": "--cask blender",
+    "required": false,
+    "approxSizeMB": 850,
+    "extraPaths": [
+      "C:\\Program Files\\Blender Foundation\\Blender 4.2\\blender.exe",
+      "C:\\Program Files\\Blender Foundation\\Blender 4.1\\blender.exe",
+      "C:\\Program Files\\Blender Foundation\\Blender 4.0\\blender.exe"
+    ],
+    "managers": [],
+    "manualUrl": "https://www.blender.org/download/"
   }
 ]

@@ -22,5 +22,38 @@
     "dest": ".agents/skills/vn-law-check",
     "pinnedCommit": "c6391e04702a79c692592e1dbcfc720dfe3bb909",
     "required": true
+  },
+  {
+    "id": "creative-image",
+    "pack": "media-image",
+    "repo": "https://github.com/huytran1120/vie-agentic-skills.git",
+    "subPath": "skills/store-screenshots",
+    "dest": ".agents/skills/store-screenshots",
+    "pinnedCommit": "4b8e219c73f73a45da580eaa59e83268805730a2",
+    "required": false,
+    "sparse": true,
+    "requiredTools": ["imagemagick"]
+  },
+  {
+    "id": "creative-video",
+    "pack": "media-video",
+    "repo": "https://github.com/huytran1120/vie-agentic-skills.git",
+    "subPath": "skills/ffmpeg-skill",
+    "dest": ".agents/skills/ffmpeg-skill",
+    "pinnedCommit": "4b8e219c73f73a45da580eaa59e83268805730a2",
+    "required": false,
+    "sparse": true,
+    "requiredTools": ["ffmpeg", "node"]
+  },
+  {
+    "id": "creative-3d",
+    "pack": "media-3d",
+    "repo": "https://github.com/huytran1120/vie-agentic-skills.git",
+    "subPath": "skills/blender-skills/blender-director",
+    "dest": ".agents/skills/blender-director",
+    "pinnedCommit": "4b8e219c73f73a45da580eaa59e83268805730a2",
+    "required": false,
+    "sparse": true,
+    "requiredTools": ["blender"]
   }
 ]

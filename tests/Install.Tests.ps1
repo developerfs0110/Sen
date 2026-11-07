@@ -42,12 +42,22 @@ function New-FakeGit {
                     return [pscustomobject]@{ ExitCode = 128; Output = "fatal: repository '$repo' not found (404)" }
                 }
             }
-            foreach ($rel in @("SKILL.md", "skills/security-audit/SKILL.md", "plugins/vn-law-check/skills/vn-law-check/SKILL.md")) {
+            foreach ($rel in @(
+                "SKILL.md",
+                "skills/security-audit/SKILL.md",
+                "plugins/vn-law-check/skills/vn-law-check/SKILL.md",
+                "skills/store-screenshots/SKILL.md",
+                "skills/ffmpeg-skill/SKILL.md",
+                "skills/blender-skills/blender-director/SKILL.md"
+            )) {
                 $fp = Join-Path $target $rel
                 [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($fp)) | Out-Null
                 [System.IO.File]::WriteAllText($fp, "fake from $repo")
             }
             [System.IO.Directory]::CreateDirectory((Join-Path $target ".git")) | Out-Null
+            return [pscustomobject]@{ ExitCode = 0; Output = "" }
+        }
+        if ($GitArgs -contains "sparse-checkout" -or $GitArgs -contains "checkout" -or $GitArgs -contains "fetch") {
             return [pscustomobject]@{ ExitCode = 0; Output = "" }
         }
         if ($GitArgs -contains "rev-parse") {
@@ -67,12 +77,17 @@ function Invoke-InstallScript {
 
 $saPackage = [pscustomobject]@{ id = "security-audit"; repo = "https://github.com/cloudflare/security-audit-skill.git"; subPath = "skills/security-audit"; dest = ".agents/skills/security-audit"; required = $true }
 
-Test "packages.json lists the three packages with verified subPaths" {
+Test "packages.json lists the three required core packages and three optional creative packs with verified subPaths" {
     $pk = Get-Content -LiteralPath (Join-Path $repoRoot "scripts/packages.json") -Raw | ConvertFrom-Json
-    Assert-Equal 3 @($pk).Count
+    Assert-Equal 6 @($pk).Count
+    Assert-Equal 3 @($pk | Where-Object { $_.required }).Count
+    Assert-Equal 3 @($pk | Where-Object { -not $_.required -and $_.sparse }).Count
     Assert-Equal "skills/security-audit" (@($pk | Where-Object id -eq "security-audit")[0].subPath)
     Assert-Equal $true (@($pk | Where-Object id -eq "vn-law-check")[0].required)
     Assert-Equal ".agents/skills/vn-law-check" (@($pk | Where-Object id -eq "vn-law-check")[0].dest)
+    Assert-Equal "media-image" (@($pk | Where-Object id -eq "creative-image")[0].pack)
+    Assert-Equal "media-video" (@($pk | Where-Object id -eq "creative-video")[0].pack)
+    Assert-Equal "media-3d" (@($pk | Where-Object id -eq "creative-3d")[0].pack)
 }
 
 Test "Read-SenLock returns default when no lock exists" {
@@ -330,5 +345,79 @@ Test "hooks.json and guard.ps1 are copied by Install-SenSelf and block destructi
         Assert-True ($lock.packages.ContainsKey("sen-method")) "sen-method recorded in sen.lock.json"
         Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/plugins/sen-method/.sen-commit")) "sen-method .sen-commit written"
     } finally { Remove-InstallTempDir (Split-Path $ws -Parent) }
+}
+
+Test "Install-SenCreativePack installs selected creative packs via sparse-checkout, updates sen.lock.json and reports MissingTools" {
+    $ws = New-InstallTempDir
+    try {
+        $gitCalls = [System.Collections.Generic.List[string]]::new()
+        $fGit = New-FakeGit -Commit "4b8e219c73f73a45da580eaa59e83268805730a2"
+        $sparseGit = {
+            param([string[]]$GitArgs)
+            $gitCalls.Add(($GitArgs -join " "))
+            return (& $fGit $GitArgs)
+        }.GetNewClosure()
+        $mockRunner = {
+            param($cmd)
+            if ($cmd -match "ffmpeg") { return "ffmpeg version 6.1.1-full_build" }
+            if ($cmd -match "node") { return "v20.11.0" }
+            return $null
+        }
+
+        $resVideo = Install-SenCreativePack -Workspace $ws -Pack @("media-video") -Git $sparseGit -ToolRunner $mockRunner
+        Assert-Equal $true $resVideo.LockWritten "lockWritten must be true for media-video"
+        Assert-Equal 1 $resVideo.Packages.Count "1 package installed for media-video"
+        Assert-Equal "installed" $resVideo.Packages[0].Status
+        Assert-Equal 0 $resVideo.MissingTools.Count "ffmpeg and node are present in mockRunner"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/skills/ffmpeg-skill/SKILL.md")) "ffmpeg-skill SKILL.md copied"
+        Assert-True (@($gitCalls | Where-Object { $_ -match "--filter=blob:none" }).Count -gt 0) "sparse clone flag used"
+        Assert-True (@($gitCalls | Where-Object { $_ -match "sparse-checkout set skills/ffmpeg-skill" }).Count -gt 0) "sparse-checkout subPath set"
+
+        $resAll = Install-SenCreativePack -Workspace $ws -Pack @("all") -Git $sparseGit -ToolRunner $mockRunner
+        Assert-Equal $true $resAll.LockWritten "lockWritten must be true for all creative packs"
+        Assert-Equal 3 $resAll.Packages.Count "3 packages processed for all creative packs"
+        Assert-True ($resAll.MissingTools -contains "imagemagick") "imagemagick reported missing when not in runner"
+        Assert-True ($resAll.MissingTools -contains "blender") "blender reported missing when not in runner"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/skills/store-screenshots/SKILL.md")) "store-screenshots SKILL.md copied"
+        Assert-True (Test-Path -LiteralPath (Join-Path $ws ".agents/skills/blender-director/SKILL.md")) "blender-director SKILL.md copied"
+
+        $lock = Read-SenLock -Workspace $ws
+        Assert-True ($lock.packages.ContainsKey("creative-image")) "creative-image in lock"
+        Assert-True ($lock.packages.ContainsKey("creative-video")) "creative-video in lock"
+        Assert-True ($lock.packages.ContainsKey("creative-3d")) "creative-3d in lock"
+
+        $threw = $false
+        try {
+            Install-SenCreativePack -Workspace $ws -Pack @("invalid-pack-xyz") -Git $sparseGit | Out-Null
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True $threw "Install-SenCreativePack must throw on unknown pack name"
+    } finally { Remove-InstallTempDir $ws }
+}
+
+Test "guard.ps1 non-destructive media guard blocks ffmpeg in-place overwrite while allowing output/ and probe commands" {
+    foreach ($badFfmpeg in @(
+        "ffmpeg -i video.mp4 -vf scale=1280:720 video.mp4",
+        "ffmpeg -y -i `"input/clip.mp4`" -c:v libx264 `"input/clip.mp4`"",
+        "ffmpeg -i ./assets/hero.mov -c copy assets/hero.mov -y"
+    )) {
+        $payload = @{ toolCall = @{ name = "run_command"; args = @{ CommandLine = $badFfmpeg } } } | ConvertTo-Json -Compress
+        $dec = Invoke-SenGuardPs1 -InputJson $payload
+        Assert-Equal "deny" $dec.decision "must deny in-place ffmpeg overwrite: $badFfmpeg"
+        Assert-True ($dec.reason -match "output/") "deny reason must advise writing to output/ folder"
+    }
+
+    foreach ($goodFfmpeg in @(
+        "ffmpeg -i video.mp4 output/video.mp4",
+        "ffmpeg -i input/clip.mp4 output/clip.mp4",
+        "ffmpeg -i video.mp4",
+        "ffmpeg -version"
+    )) {
+        $payload = @{ toolCall = @{ name = "run_command"; args = @{ CommandLine = $goodFfmpeg } } } | ConvertTo-Json -Compress
+        $dec = Invoke-SenGuardPs1 -InputJson $payload
+        Assert-Equal "ask" $dec.decision "must allow safe ffmpeg command: $goodFfmpeg"
+    }
 }
 

@@ -216,3 +216,47 @@ Test "Get-SenInstallPlan includes both missing and outdated tools with Required 
     Assert-Equal "missing" $pythonItem.Status "python should have Status=missing"
     Assert-Equal $null $pythonItem.CurrentVersion "python CurrentVersion should be null"
 }
+
+Test "Get-SenToolCatalog and Get-SenToolStatus detect creative tools ffmpeg, imagemagick and blender" {
+    $cat = Get-SenToolCatalog -CatalogPath $catalogPath
+    foreach ($tid in @("ffmpeg", "imagemagick", "blender")) {
+        $entry = @($cat | Where-Object { $_.id -eq $tid })[0]
+        Assert-True ($null -ne $entry) "$tid must exist in tools.json"
+        Assert-Equal $false ([bool]$entry.required) "$tid must be optional (required=false)"
+    }
+
+    $runner = {
+        param($cmd)
+        if ($cmd -match "ffmpeg") { return "ffmpeg version n6.1.1-full_build-www.gyan.dev Copyright (c) 2000-2024" }
+        if ($cmd -match "magick") { return "Version: ImageMagick 7.1.1-38 Q16-HDRI x64" }
+        if ($cmd -match "blender") { return "Blender 4.2.1" }
+        return $null
+    }
+
+    $ff = Get-SenToolStatus -Id "ffmpeg" -Catalog $catalogPath -Runner $runner
+    Assert-Equal "ok" $ff.Status "ffmpeg status must be ok"
+    Assert-Equal "6.1.1" $ff.Version "ffmpeg version parsed cleanly"
+
+    $im = Get-SenToolStatus -Id "imagemagick" -Catalog $catalogPath -Runner $runner
+    Assert-Equal "ok" $im.Status "imagemagick status must be ok"
+    Assert-Equal "7.1.1" $im.Version "imagemagick version parsed cleanly"
+
+    $bl = Get-SenToolStatus -Id "blender" -Catalog $catalogPath -Runner $runner
+    Assert-Equal "ok" $bl.Status "blender status must be ok"
+    Assert-Equal "4.2.1" $bl.Version "blender version parsed cleanly"
+}
+
+Test "Get-SenInstallPlan builds winget and brew commands for creative tools ffmpeg, imagemagick and blender" {
+    $missingRunner = { param($cmd) return $null }
+    $planWin = Get-SenInstallPlan -Ids @("ffmpeg", "imagemagick", "blender") -Catalog $catalogPath -Platform "Windows" -Runner $missingRunner
+    Assert-Equal 3 $planWin.Count "All 3 creative tools in Windows install plan"
+    Assert-True ((@($planWin | Where-Object Id -eq "ffmpeg")[0].Command) -like "*Gyan.FFmpeg*") "ffmpeg winget id"
+    Assert-True ((@($planWin | Where-Object Id -eq "imagemagick")[0].Command) -like "*ImageMagick.ImageMagick*") "imagemagick winget id"
+    Assert-True ((@($planWin | Where-Object Id -eq "blender")[0].Command) -like "*BlenderFoundation.Blender*") "blender winget id"
+
+    $planMac = Get-SenInstallPlan -Ids @("ffmpeg", "imagemagick", "blender") -Catalog $catalogPath -Platform "macOS" -Runner $missingRunner
+    Assert-Equal 3 $planMac.Count "All 3 creative tools in macOS install plan"
+    Assert-Equal "brew install ffmpeg" (@($planMac | Where-Object Id -eq "ffmpeg")[0].Command)
+    Assert-Equal "brew install imagemagick" (@($planMac | Where-Object Id -eq "imagemagick")[0].Command)
+    Assert-Equal "brew install --cask blender" (@($planMac | Where-Object Id -eq "blender")[0].Command)
+}

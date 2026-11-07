@@ -8,7 +8,7 @@
 ---
 
 ## 1. Trạng thái hiện tại
-Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi & Dual-Phase Output Simulation**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, 2-Turn Optimistic Parallel Execution, Dialectical Proof-Critique Loop, Zero-Amnesia 5-Layer Parity Gate, CI Auto-Heal Loop, 2-Way Auto-Sync & 3-Tier Process Compliance Engine**) đều đã hoàn tất 100%, vượt qua toàn bộ **229/229 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), `Test-SenCapabilityParity` (`5/5` tầng, `69/69` hàm phủ Unit Test `100%`), `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**, và GitHub Actions CI từ xa đạt trạng thái **`success` (100% xanh)**.
+Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi & Dual-Phase Output Simulation**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, 2-Turn Optimistic Parallel Execution, Dialectical Proof-Critique Loop, Zero-Amnesia 5-Layer Parity Gate, CI Auto-Heal Loop, 2-Way Auto-Sync, 3-Tier Process Compliance Engine & Creative Domain Packs**) đều đã hoàn tất 100%, vượt qua toàn bộ **233/233 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), `Test-SenCapabilityParity` (`5/5` tầng, `71/71` hàm phủ Unit Test `100%`), `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**, và GitHub Actions CI từ xa đạt trạng thái **`success` (100% xanh)**.
 
 ## 2. Các quyết định thiết kế đã chốt (`v0.1.0` → `v0.4.0`)
 - **Giao thức Thực thi Song song 2 Nhịp (`2-Turn Handshake` — "Trình bày trước — Làm luôn — Báo kết quả"), Cổng Chặn `Pre-Edit Restore Point` & Cold-Start 1-File (`TASK-15`, `TASK-17` — [rules/AGENTS.md](../rules/AGENTS.md)):**
@@ -25,11 +25,13 @@ Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.
   - **Chiều ngược (`Sync-SenTasksToMarkdown` trong `Complete-SenTaskReview`):** Tự động đánh dấu `- [x]` ngược lại vào `docs/TODO.md` và `docs/superpowers/plans/*.md` ngay khi Task hoàn thành.
 - **Hệ thống Kiểm toán Tuân thủ Quy trình 3 Tầng Không Lặp Vô Hạn (`v0.4.0` — `TASK-14`):**
   - Danh mục chuẩn 12 bước tại [process-manifest.json](../scripts/process-manifest.json) (`Get-SenProcessCatalog`), lọc danh sách việc `(*)` và `(**)` tại `.agents/office/process-audit.json` (`Initialize-SenProcessAudit`), và kiểm tra bằng chứng vật lý đơn điệu (`Test-SenStageGate` & `Test-SenProjectCompliance`).
+- **Gói Kỹ năng Chuyên ngành Sáng tạo (`Sen Creative Domain Packs` — `TASK-18`, [Sen.Packages.psm1](../scripts/Sen.Packages.psm1), [guard.ps1](../scripts/guard.ps1)):**
+  - Tích hợp 3 gói tùy chọn (`media-image`: `store-screenshots`, `media-video`: `ffmpeg-skill`, `media-3d`: `blender-director`) qua `Install-SenCreativePack` dùng Git Sparse-Checkout (`--filter=blob:none --no-checkout` + `sparse-checkout set`) ghim commit bất biến; tự động dò runtime `imagemagick`, `ffmpeg`, `blender` trong [tools.json](../scripts/tools.json); và chặn cứng lệnh `ffmpeg` ghi đè trực tiếp lên chính file nguồn (`-i <file> ... <same_file>`).
 
 ## 3. Các cổng chất lượng đã kiểm chứng
 - `scripts/Validate-Repo.ps1` & `Test-SenCapabilityParity`: **ĐẠT (0 lỗi, 5/5 tầng đẳng cấu)** (`rules/AGENTS.md` <= 5.750 bytes & <= 95 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).
 - `Measure-SenCodeHealth`: **ĐẠT (`Healthy = True`, `Score = 100/100` trên 28 tệp mã nguồn)**.
-- `tests/run.ps1`: **ĐẠT (229 / 229 bài kiểm thử trên 12 bộ test, 69/69 hàm phủ Unit Test 100%)**.
+- `tests/run.ps1`: **ĐẠT (233 / 233 bài kiểm thử trên 12 bộ test, 71/71 hàm phủ Unit Test 100%)**.
 
 ## 4. Bước tiếp theo & Danh sách Việc cần làm (`docs/TODO.md`)
-- Toàn bộ 17 hạng mục (`TASK-01` → `TASK-17`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
+- Toàn bộ 18 hạng mục (`TASK-01` → `TASK-18`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.

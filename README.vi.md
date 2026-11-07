@@ -81,7 +81,8 @@ Khi cài đặt, Sen tự động tải các gói kỹ năng mã nguồn mở uy
 
 - **[superpowers](https://github.com/obra/superpowers)** — Tác giả: **Jesse Vincent** · Giấy phép: **MIT License** (bắt buộc).
 - **[security-audit](https://github.com/cloudflare/security-audit-skill)** (`skills/security-audit`) — Tác giả: **Cloudflare** · Giấy phép: **MIT License** (bắt buộc).
-- **[vn-law-check](https://github.com/mhfed/vn-law-check)** (`plugins/vn-law-check/skills/vn-law-check`) — Tác giả: **Contributors to vn-web-compliance-audit** (`mhfed`) · Giấy phép: **MIT License** (tùy chọn, dùng cho cổng kiểm duyệt pháp lý Việt Nam).
+- **[vn-law-check](https://github.com/mhfed/vn-law-check)** (`plugins/vn-law-check/skills/vn-law-check`) — Tác giả: **Contributors to vn-web-compliance-audit** (`mhfed`) · Giấy phép: **MIT License** (bắt buộc cho cổng kiểm duyệt pháp lý Việt Nam).
+- **[vie-agentic-skills](https://github.com/huytran1120/vie-agentic-skills)** (`store-screenshots`, `ffmpeg-skill`, `blender-director`) — Tác giả: **Huy Trần (`huytran1120`)** · Giấy phép: **MIT License** (tùy chọn theo gói chuyên ngành sáng tạo **Creative Domain Packs**: `Install-SenCreativePack -Pack @("media-image", "media-video", "media-3d")` qua Git Sparse-Checkout, tự động dò runtime `imagemagick`/`ffmpeg`/`blender` và bảo vệ chống ghi đè file gốc `ffmpeg`).
 
 ## Tác giả & Ủng hộ
 

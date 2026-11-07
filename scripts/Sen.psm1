@@ -241,7 +241,7 @@ function New-SenFileFromTemplate {
 function Get-SenCleanVersion {
     param([string]$Raw)
     if ([string]::IsNullOrEmpty($Raw)) { return $null }
-    if ($Raw -match '(?i)\bv?(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\b') {
+    if ($Raw -match '(?i)\b[vn]?(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\b') {
         return $matches[1]
     }
     return $null
@@ -432,7 +432,15 @@ function Get-SenToolStatus {
     }
 
     if (-not [string]::IsNullOrEmpty($tool.versionCommand)) {
-        $ver = Get-SenCleanVersion -Raw (Invoke-SenRunner -Runner $Runner -CommandLine $tool.versionCommand)
+        $rawVerOut = Invoke-SenRunner -Runner $Runner -CommandLine $tool.versionCommand
+        if ([string]::IsNullOrEmpty($rawVerOut) -and $tool.id -eq "imagemagick") {
+            $rawVerOut = Invoke-SenRunner -Runner $Runner -CommandLine "magick --version"
+            if ([string]::IsNullOrEmpty($rawVerOut)) { $rawVerOut = Invoke-SenRunner -Runner $Runner -CommandLine "convert -version" }
+        }
+        elseif ([string]::IsNullOrEmpty($rawVerOut) -and $tool.id -eq "ffmpeg") {
+            $rawVerOut = Invoke-SenRunner -Runner $Runner -CommandLine "ffmpeg --version"
+        }
+        $ver = Get-SenCleanVersion -Raw $rawVerOut
         if (-not [string]::IsNullOrEmpty($ver)) {
             return (New-SenToolStatusResult -Id $tool.id -Version $ver -MinVersion $tool.minVersion -Source 'PATH')
         }
@@ -546,4 +554,4 @@ if (Test-Path -LiteralPath $senHarnessModulePath) {
     Import-Module -Name $senHarnessModulePath -Global -Force
 }
 
-Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolStatus, Get-SenInstallPlan
+Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack

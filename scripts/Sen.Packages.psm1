@@ -17,7 +17,7 @@ function ConvertTo-SenHashtable {
         return $h
     }
     if ($InputObject -is [System.Collections.IEnumerable] -and $InputObject -isnot [string]) {
-        return ,@($InputObject | ForEach-Object { ConvertTo-SenHashtable -InputObject $_ })
+        return , @($InputObject | ForEach-Object { ConvertTo-SenHashtable -InputObject $_ })
     }
     return $InputObject
 }
@@ -127,13 +127,23 @@ function Install-SenPackage {
     $tmpRoot = New-SenTempDir
     $clone = Join-Path $tmpRoot "src"
     try {
-        $r = & $Git @("clone", "--depth", "1", "--quiet", [string]$Package.repo, $clone)
+        $isSparse = ($Package.PSObject.Properties.Name -contains "sparse" -and [bool]$Package.sparse -and -not [string]::IsNullOrWhiteSpace([string]$Package.subPath))
+        $pinned = if ($Package.PSObject.Properties.Name -contains "pinnedCommit" -and -not [string]::IsNullOrWhiteSpace([string]$Package.pinnedCommit)) { ([string]$Package.pinnedCommit).Trim() } else { "" }
+        $cloneArgs = if ($isSparse) { @("clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--quiet", [string]$Package.repo, $clone) } else { @("clone", "--depth", "1", "--quiet", [string]$Package.repo, $clone) }
+        $r = & $Git $cloneArgs
         if ($r.ExitCode -ne 0) {
             $msg = "git clone failed for $($Package.repo) (exit $($r.ExitCode))"
             if ($r.Output) { $msg += ": " + $r.Output }
             return [pscustomobject]@{ Id = $id; Commit = $null; Status = "failed"; Error = $msg }
         }
-        $pinned = if ($Package.PSObject.Properties.Name -contains "pinnedCommit" -and -not [string]::IsNullOrWhiteSpace([string]$Package.pinnedCommit)) { ([string]$Package.pinnedCommit).Trim() } else { "" }
+        if ($isSparse) {
+            try {
+                [void](& $Git @("-C", $clone, "sparse-checkout", "init", "--cone"))
+                [void](& $Git @("-C", $clone, "sparse-checkout", "set", [string]$Package.subPath))
+                if (-not $pinned) { [void](& $Git @("-C", $clone, "checkout", "--quiet", "HEAD")) }
+            }
+            catch { <# Best-effort sparse-checkout when mock git is used #> }
+        }
         if ($pinned) {
             try {
                 [void](& $Git @("-C", $clone, "fetch", "--depth", "1", "origin", $pinned))
@@ -141,13 +151,24 @@ function Install-SenPackage {
             }
             catch { <# Best-effort pinned checkout when mock git is used #> }
         }
+        $src = if ([string]::IsNullOrEmpty([string]$Package.subPath)) { $clone } else { Join-Path $clone ([string]$Package.subPath) }
+        if ($isSparse -and -not (Test-Path -LiteralPath $src)) {
+            try { [void](& $Git @("-C", $clone, "checkout", "--quiet", "HEAD")) } catch { <# Fallback HEAD checkout #> }
+        }
+        if ($isSparse -and -not (Test-Path -LiteralPath $src)) {
+            if (Test-Path -LiteralPath $clone) { Remove-Item -LiteralPath $clone -Recurse -Force -ErrorAction SilentlyContinue }
+            $rFallback = & $Git @("clone", "--depth", "1", "--quiet", [string]$Package.repo, $clone)
+            if ($rFallback.ExitCode -eq 0 -and $pinned) {
+                try {
+                    [void](& $Git @("-C", $clone, "fetch", "--depth", "1", "origin", $pinned))
+                    [void](& $Git @("-C", $clone, "checkout", "--quiet", $pinned))
+                }
+                catch { <# Best-effort pinned checkout on fallback #> }
+            }
+        }
         $commit = Get-SenGitCommit -Path $clone -Git $Git
         if (($commit -eq "unknown" -or [string]::IsNullOrWhiteSpace($commit)) -and $pinned) {
             $commit = $pinned
-        }
-        $src = $clone
-        if (-not [string]::IsNullOrEmpty([string]$Package.subPath)) {
-            $src = Join-Path $clone ([string]$Package.subPath)
         }
         if (-not (Test-Path -LiteralPath $src)) {
             return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "failed"; Error = "subPath '$($Package.subPath)' not found in $($Package.repo)" }
@@ -168,6 +189,86 @@ function Install-SenPackage {
         if (Test-Path -LiteralPath $tmpRoot) {
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
+    }
+}
+
+function Install-SenCreativePack {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $false)]
+        [string[]]$Pack = @("all"),
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$Git = $null,
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$ToolRunner = $null
+    )
+    if ($null -eq $Git) { $Git = Get-SenDefaultGit }
+    $catalog = [System.Collections.Generic.List[object]]::new()
+    foreach ($item in (Get-SenPackagesCatalog)) {
+        if ($null -ne $item -and $null -ne $item.PSObject.Properties["pack"] -and -not [string]::IsNullOrWhiteSpace([string]$item.pack)) {
+            $catalog.Add($item)
+        }
+    }
+    $validNames = @("all") + @($catalog | ForEach-Object { [string]$_.pack }) + @($catalog | ForEach-Object { [string]$_.id })
+    foreach ($reqPack in @($Pack)) {
+        if ($validNames -notcontains $reqPack) {
+            throw "Unknown creative pack '$reqPack'. Valid packs: media-image, media-video, media-3d, all"
+        }
+    }
+    $selected = if ($Pack -contains "all") {
+        @($catalog.ToArray())
+    }
+    else {
+        @($catalog | Where-Object { ($Pack -contains [string]$_.pack) -or ($Pack -contains [string]$_.id) })
+    }
+
+    $lock = Read-SenLock -Workspace $Workspace
+    $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $pkgResults = [System.Collections.Generic.List[object]]::new()
+    $missingTools = [System.Collections.Generic.List[string]]::new()
+    $allOk = ($selected.Count -gt 0)
+
+    foreach ($pkg in $selected) {
+        $r = Install-SenPackage -Workspace $Workspace -Package $pkg -Git $Git
+        $pkgResults.Add([pscustomobject]@{
+                Id     = $r.Id
+                Pack   = [string]$pkg.pack
+                Dest   = [string]$pkg.dest
+                Status = $r.Status
+                Commit = $r.Commit
+                Error  = $r.Error
+            })
+        if ($r.Status -eq "failed") {
+            $allOk = $false
+            continue
+        }
+        $old = $lock.packages[$r.Id]
+        if (-not ($r.Status -eq "exists" -and $old -is [hashtable] -and $old.commit)) {
+            $commit = if ($r.Commit) { $r.Commit } else { "unknown" }
+            $lock.packages[$r.Id] = [ordered]@{ repo = [string]$pkg.repo; subPath = [string]$pkg.subPath; commit = $commit; installedAt = $now }
+        }
+        if ($pkg.PSObject.Properties.Name -contains "requiredTools" -and (Get-Command Get-SenToolStatus -ErrorAction SilentlyContinue)) {
+            foreach ($tid in @($pkg.requiredTools)) {
+                if ([string]::IsNullOrWhiteSpace([string]$tid) -or $missingTools.Contains([string]$tid)) { continue }
+                $ts = Get-SenToolStatus -Id ([string]$tid) -Runner $ToolRunner
+                if ($ts.Status -ne "ok") { $missingTools.Add([string]$tid) }
+            }
+        }
+    }
+
+    $lockWritten = $false
+    if ($allOk) {
+        Write-SenLock -Workspace $Workspace -Lock $lock
+        $lockWritten = $true
+    }
+    return [pscustomobject]@{
+        Workspace    = $Workspace
+        Packs        = @($selected | ForEach-Object { [string]$_.pack } | Select-Object -Unique)
+        Packages     = @($pkgResults.ToArray())
+        MissingTools = @($missingTools.ToArray())
+        LockWritten  = [bool]$lockWritten
     }
 }
 
@@ -244,7 +345,8 @@ function Get-SenPackagesCatalog {
         throw "Packages catalog not found: $resolved"
     }
     $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $resolved).Path, [System.Text.Encoding]::UTF8)
-    return @(ConvertFrom-Json -InputObject $raw)
+    $parsed = ConvertFrom-Json -InputObject $raw
+    return @($parsed | ForEach-Object { $_ })
 }
 
 function New-SenPackageBackup {
@@ -343,11 +445,11 @@ function Get-SenPackageBackups {
             $metaObj = ConvertFrom-Json -InputObject $rawMeta
             if ($metaObj.id -eq $Id) {
                 $valid.Add([pscustomobject]@{
-                    Directory = $d
-                    Meta      = $metaObj
-                    Timestamp = [string]$metaObj.timestamp
-                    Commit    = [string]$metaObj.commit
-                })
+                        Directory = $d
+                        Meta      = $metaObj
+                        Timestamp = [string]$metaObj.timestamp
+                        Commit    = [string]$metaObj.commit
+                    })
             }
         }
         catch { <# Ignore malformed backup metadata entry #> }
@@ -618,39 +720,27 @@ function Update-SenPackages {
 
 function Restore-SenPackage {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Id
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Id)
     try {
         $catalogPackages = Get-SenPackagesCatalog
         $pkg = $catalogPackages | Where-Object { $_.id -eq $Id } | Select-Object -First 1
         $lock = Read-SenLock -Workspace $Workspace
-        $dest = if ($null -ne $pkg) {
-            Join-Path -Path $Workspace -ChildPath ([string]$pkg.dest)
-        }
-        elseif ($lock.packages.ContainsKey($Id) -and $lock.packages[$Id].dest) {
-            Join-Path -Path $Workspace -ChildPath ([string]$lock.packages[$Id].dest)
-        }
+        $dest = if ($null -ne $pkg) { Join-Path -Path $Workspace -ChildPath ([string]$pkg.dest) }
+        elseif ($lock.packages.ContainsKey($Id) -and $lock.packages[$Id].dest) { Join-Path -Path $Workspace -ChildPath ([string]$lock.packages[$Id].dest) }
         else {
             $candSkill = Join-Path -Path $Workspace -ChildPath (".agents/skills/" + $Id)
             if (Test-Path -LiteralPath $candSkill) { $candSkill } else { Join-Path -Path $Workspace -ChildPath (".agents/plugins/" + $Id) }
         }
-
         $backups = @(Get-SenPackageBackups -Workspace $Workspace -Id $Id)
         if ($backups.Count -eq 0) {
             return [pscustomobject]@{ Id = $Id; Status = "failed"; Commit = $null; Error = "No backups found for package '$Id'" }
         }
-
         $targetBackup = $backups[0]
         $restoredCommit = $targetBackup.Commit
         $backupCommitFile = Join-Path $targetBackup.Directory.FullName ".sen-commit"
         if (([string]::IsNullOrEmpty($restoredCommit) -or $restoredCommit -eq "unknown") -and (Test-Path -LiteralPath $backupCommitFile)) {
             $restoredCommit = ([System.IO.File]::ReadAllText($backupCommitFile)).Trim()
         }
-
         if (Test-Path -LiteralPath $dest) {
             $currCommit = Resolve-SenInstalledCommit -Lock $lock -Id $Id -Dest $dest
             $preBk = New-SenPackageBackup -Workspace $Workspace -Id $Id -Dest $dest -Commit $currCommit
@@ -658,7 +748,6 @@ function Restore-SenPackage {
                 return [pscustomobject]@{ Id = $Id; Status = "failed"; Commit = $null; Error = "Pre-restore backup failed: $($preBk.Error)" }
             }
         }
-
         $swap = Invoke-SenAtomicDestSwap -Dest $dest -Commit $restoredCommit -PopulateAction {
             param($targetDest)
             Copy-SenTree -Source $targetBackup.Directory.FullName -Destination $targetDest -Exclude @(".git", ".sen-backup-meta.json")
@@ -666,7 +755,6 @@ function Restore-SenPackage {
         if (-not $swap.Success) {
             return [pscustomobject]@{ Id = $Id; Status = "failed"; Commit = $null; Error = "Restore failed: $($swap.Error)" }
         }
-
         $lock = Read-SenLock -Workspace $Workspace
         $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
         if ($lock.packages.ContainsKey($Id)) {
@@ -684,4 +772,4 @@ function Restore-SenPackage {
     }
 }
 
-Export-ModuleMember -Function Get-SenLockPath, ConvertTo-SenHashtable, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenSelf, Get-SenPackagesCatalog, New-SenPackageBackup, Get-SenPackageBackups, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage
+Export-ModuleMember -Function Get-SenLockPath, ConvertTo-SenHashtable, Read-SenLock, Write-SenLock, Install-SenPackage, Install-SenCreativePack, Install-SenSelf, Get-SenPackagesCatalog, New-SenPackageBackup, Get-SenPackageBackups, Get-SenUpdateStatus, Update-SenPackages, Restore-SenPackage

@@ -81,7 +81,8 @@ During installation, Sen automatically fetches these open-source packages direct
 
 - **[superpowers](https://github.com/obra/superpowers)** — Author: **Jesse Vincent** · License: **MIT License** (required).
 - **[security-audit](https://github.com/cloudflare/security-audit-skill)** (`skills/security-audit`) — Author: **Cloudflare** · License: **MIT License** (required).
-- **[vn-law-check](https://github.com/mhfed/vn-law-check)** (`plugins/vn-law-check/skills/vn-law-check`) — Author: **Contributors to vn-web-compliance-audit** (`mhfed`) · License: **MIT License** (optional, for the Vietnamese legal compliance gate).
+- **[vn-law-check](https://github.com/mhfed/vn-law-check)** (`plugins/vn-law-check/skills/vn-law-check`) — Author: **Contributors to vn-web-compliance-audit** (`mhfed`) · License: **MIT License** (required, for the Vietnamese legal compliance gate).
+- **[vie-agentic-skills](https://github.com/huytran1120/vie-agentic-skills)** (`store-screenshots`, `ffmpeg-skill`, `blender-director`) — Author: **Huy Tran (`huytran1120`)** · License: **MIT License** (optional **Creative Domain Packs**: `Install-SenCreativePack -Pack @("media-image", "media-video", "media-3d")` via Git Sparse-Checkout, auto-probing `imagemagick`/`ffmpeg`/`blender` runtimes and blocking destructive in-place `ffmpeg` overwrites).
 
 ## Author & Support
 

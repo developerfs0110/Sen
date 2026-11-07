@@ -208,6 +208,45 @@ foreach ($r in $rules) {
     }
 }
 
+# 4. Non-destructive media safety rule: block ffmpeg in-place overwrite of the same input file path
+function Test-SenFfmpegInPlaceOverwrite([string]$CommandText) {
+    if ($CommandText -notmatch '(?i)\bffmpeg(\.exe)?\b') { return $false }
+    $tokenPattern = '"([^"]*)"|''([^'']*)''|(\S+)'
+    foreach ($seg in ($CommandText -split '[;&|]+')) {
+        if ($seg -notmatch '(?i)\bffmpeg(\.exe)?\b') { continue }
+        $mList = [regex]::Matches($seg, $tokenPattern)
+        $tokens = [System.Collections.Generic.List[string]]::new()
+        foreach ($m in $mList) {
+            $val = if ($m.Groups[1].Success) { $m.Groups[1].Value } elseif ($m.Groups[2].Success) { $m.Groups[2].Value } else { $m.Groups[3].Value }
+            $tokens.Add($val)
+        }
+        $inputs = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        $inputIndices = [System.Collections.Generic.HashSet[int]]::new()
+        for ($i = 0; $i -lt $tokens.Count; $i++) {
+            if ($tokens[$i] -ieq "-i" -and ($i + 1) -lt $tokens.Count) {
+                $normIn = ($tokens[$i + 1].Trim().Replace('\', '/') -replace '^\./', '').ToLowerInvariant()
+                if ($normIn -and $normIn -ne "-") {
+                    [void]$inputs.Add($normIn)
+                    [void]$inputIndices.Add($i + 1)
+                }
+                $i++
+            }
+        }
+        if ($inputs.Count -eq 0) { continue }
+        $outIdx = $tokens.Count - 1
+        while ($outIdx -gt 0 -and $tokens[$outIdx] -match '^(?i)-(y|n|v|nostdin|stats|benchmark)$') { $outIdx-- }
+        if ($outIdx -ge 0 -and (-not $inputIndices.Contains($outIdx)) -and (-not $tokens[$outIdx].StartsWith("-"))) {
+            $normOut = ($tokens[$outIdx].Trim().Replace('\', '/') -replace '^\./', '').ToLowerInvariant()
+            if ($inputs.Contains($normOut)) { return $true }
+        }
+    }
+    return $false
+}
+
+if (Test-SenFfmpegInPlaceOverwrite -CommandText $cmd) {
+    Out-Decision "deny" "[SEN GUARD] Blocked: Non-destructive media guard: ffmpeg in-place overwrite of input file is prohibited. Write output to a separate file or output/ folder." $primaryWs $toolName $cmd $cmd
+}
+
 # Case-sensitive pattern: git branch -D (force-deletes unmerged branch)
 if ($cmd -cmatch '\bgit\b[^|;&]*\bbranch\b[^|;&]*(\s-D\b|--delete\s+--force|--force\s+--delete)') {
     Out-Decision "deny" "[SEN GUARD] Blocked: git branch -D (force-deletes unmerged branch). If you truly need this command, run it manually." $primaryWs $toolName $cmd $cmd

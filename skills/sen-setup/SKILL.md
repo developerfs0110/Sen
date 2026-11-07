@@ -22,9 +22,9 @@ flowchart LR
   S3 --> S4["Stage 4 (Step 9)\nOpen Workspace & 3-Tier Tour"]
 ```
 
-- **Explain IDE permission prompts in 2 lines:** Tell the user that on a fresh Antigravity install, the IDE will show a **Run / Allow** button before each PowerShell/Bash command. They do not need to pre-configure any permissions; simply click **Allow** when prompted.
-- **Highlight when the Safety Shield turns on:** Point out that in **Stage 2 (Step 4)**, Sen installs a **2-layer Safety Shield** (`hooks.json` + `scripts/guard.ps1`/`guard.sh` hard-blocking `git push --force`, `git reset --hard`, and recursive deletes `rm -rf` / `Remove-Item -Recurse`, plus `.agents/rules/safety.md` confining file access to the workspace).
-- **Express 1-Step Mode (`"cài nhanh"` / `"express setup"`):** Offer the user a choice between **Express Mode** (uses the top recommended drive `<Drive>:\Sen-Workspace`, installs required packages at their pinned commits, sets default `Standard` project scale, and skips optional prompts like `vn-law-check` and OS scheduler until asked) and **Guided 9-Step Mode** (below).
+- **Explain IDE permission prompts in 2 lines:** On a fresh Antigravity install, the IDE shows a **Run / Allow** button before each PowerShell/Bash command; simply click **Allow** when prompted.
+- **Highlight when the Safety Shield turns on:** In **Stage 2 (Step 4)**, Sen installs a **2-layer Safety Shield** (`hooks.json` + `scripts/guard.ps1`/`guard.sh` blocking `git push --force`, `git reset --hard`, and recursive deletes `rm -rf` / `Remove-Item -Recurse`, plus `.agents/rules/safety.md`).
+- **Express 1-Step Mode (`"cài nhanh"` / `"express setup"`):** Offer **Express Mode** (uses the top recommended drive `<Drive>:\Sen-Workspace`, installs required packages at pinned commits, sets `Standard` project scale) or **Guided 9-Step Mode** (below).
 
 ---
 
@@ -65,8 +65,9 @@ flowchart LR
 
 ---
 
-### Step 3: Confirm Core Legal & Security Gates (`security-audit` & `vn-law-check`)
-Inform the user in one sentence that Sen installs **`superpowers`**, **`security-audit`**, and **`vn-law-check`** (Vietnamese Web & Mobile App legal compliance: Luật 91/2025, NĐ 356/2025, Luật TMĐT 122/2025, Luật AI 134/2025) by default so every web/app project is protected from design to release.
+### Step 3: Confirm Core Legal & Security Gates (`security-audit` & `vn-law-check`) & Optional Creative Packs
+1. Inform the user in one sentence that Sen installs **`superpowers`**, **`security-audit`**, and **`vn-law-check`** (Vietnamese Web & Mobile App legal compliance: Luật 91/2025, NĐ 356/2025, Luật TMĐT 122/2025, Luật AI 134/2025) by default so every web/app project is protected from design to release.
+2. Mention that if their work involves **Graphic Design / Store Screenshots**, **Video Editing**, or **3D Modeling**, Sen also provides 3 optional **Creative Domain Packs** (`media-image`, `media-video`, `media-3d`) powered by Git sparse-checkout (`Install-SenCreativePack -Workspace "<WORKSPACE>" -Pack @("media-image", "media-video", "media-3d")`) that they can enable anytime without bloating core setups.
 
 ---
 

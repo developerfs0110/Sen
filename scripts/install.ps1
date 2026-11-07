@@ -59,7 +59,7 @@ try {
     $requiredOk = $true
 
     foreach ($pkg in @($packages)) {
-        if (-not $pkg.required -and -not $WithVnLawCheck) { continue }
+        if (-not $pkg.required -and ($pkg.id -ne "vn-law-check" -or -not $WithVnLawCheck)) { continue }
         $pArgs = @{ Workspace = $Workspace; Package = $pkg }
         if ($Git) { $pArgs.Git = $Git }
         $r = Install-SenPackage @pArgs
