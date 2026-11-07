@@ -215,6 +215,21 @@ if ((Test-Path -LiteralPath $readmeMain) -and (Test-Path -LiteralPath $readmeVi)
     }
 }
 
+# 8. Validate 5-Layer Zero-Amnesia Capability Parity when Sen module and manifest are present
+$senModPath = Join-Path -Path $resolvedRoot -ChildPath "scripts/Sen.psm1"
+$senManifestPath = Join-Path -Path $resolvedRoot -ChildPath "scripts/process-manifest.json"
+if ((Test-Path -LiteralPath $senModPath) -and (Test-Path -LiteralPath $senManifestPath)) {
+    Import-Module -Name $senModPath -Force -ErrorAction SilentlyContinue
+    if (Get-Command -Name "Test-SenCapabilityParity" -ErrorAction SilentlyContinue) {
+        $parity = Test-SenCapabilityParity -SenRoot $resolvedRoot
+        if (-not $parity.Passed) {
+            foreach ($mi in @($parity.MissingItems)) {
+                $errors.Add("capability parity gap: $mi")
+            }
+        }
+    }
+}
+
 $isDotSourced = ($MyInvocation.InvocationName -eq '.')
 
 if ($errors.Count -gt 0) {

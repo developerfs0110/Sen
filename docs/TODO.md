@@ -83,3 +83,7 @@
 - [x] **TASK-16 (P0): Vòng lặp Tự động Commit/Push & Kiểm tra – Sửa lỗi – Đẩy lại CI từ xa (`Get-SenRemoteCiStatus` & `Invoke-SenCiPushLoop`)**
   - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu (2026-11-07).
   - **Nội dung:** Sau khi vượt qua cổng kiểm tra cục bộ (`Validate-Repo.ps1`, `Measure-SenCodeHealth`, `tests/run.ps1`), tự động commit (tiếng Việt) & push lên GitHub, kiểm tra trạng thái GitHub Actions CI từ xa (`Get-SenRemoteCiStatus`), nếu phát hiện lỗi CI thì tự động bóc tách bước lỗi (`FailedSteps`), sửa dứt điểm, chạy lại test và push lại (tối đa 3 vòng) cho đến khi CI xanh 100%.
+
+- [x] **TASK-17 (P0): Khép kín Quy trình Mô phỏng Output 2 Giai đoạn (`Dual-Phase Output Simulation` — `Write-SenOfficeShowcase`) vào Luật lõi & Process Manifest**
+  - **Nguồn:** Phát hiện phản biện trực tiếp của anh Gấu (2026-11-07) về việc bỏ sót bước Mô phỏng Output trong quy trình kiểm toán.
+  - **Nội dung:** Đưa `Write-SenOfficeShowcase` (`.agents/office/showcase.json` — Giai đoạn 1: Blueprint kỳ vọng ở Stage 2 & Giai đoạn 2: Kết quả thực tế + 4 cổng ở Stage 4) vào Mục 8 của `rules/AGENTS.md`, `scripts/process-manifest.json` (`S2-DESIGN-SPEC`, `S4-CONTEXT-REPORT`), tự động hóa 0-token trong `Test-SenSingleStepEvidence` (`Sen.Harness.psm1`), và hiển thị đầy đủ trên `office/index.html` cùng bộ tài liệu hướng dẫn.

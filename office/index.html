@@ -1453,11 +1453,27 @@ async function pollLiveServer() {
       draw();
     }
     if (data.showcase) {
-      if (data.showcase.phase1 && data.showcase.phase1.summary) {
-        document.getElementById('p1Summary').textContent = data.showcase.phase1.summary;
+      if (data.showcase.tier) {
+        document.getElementById('p1Tier').textContent = `Cấp ${data.showcase.tier} (Tier ${data.showcase.tier})`;
       }
-      if (data.showcase.phase2 && data.showcase.phase2.summary) {
-        document.getElementById('p2Summary').textContent = data.showcase.phase2.summary;
+      if (data.showcase.phase1) {
+        if (data.showcase.phase1.summary) document.getElementById('p1Summary').textContent = data.showcase.phase1.summary;
+        if (Array.isArray(data.showcase.phase1.expectedOutputs) && data.showcase.phase1.expectedOutputs.length) {
+          document.getElementById('p1Outputs').innerHTML = data.showcase.phase1.expectedOutputs.map(x => `<li>${escapeHtml(x)}</li>`).join('');
+        }
+      }
+      if (data.showcase.phase2) {
+        if (data.showcase.phase2.summary) document.getElementById('p2Summary').textContent = data.showcase.phase2.summary;
+        if (Array.isArray(data.showcase.phase2.verifiedOutputs) && data.showcase.phase2.verifiedOutputs.length) {
+          document.getElementById('p2Deliverables').innerHTML = data.showcase.phase2.verifiedOutputs.map(x => `<li><code>${escapeHtml(x)}</code></li>`).join('');
+        }
+        if (data.showcase.phase2.gates) {
+          const g = data.showcase.phase2.gates;
+          if (g.tests) document.getElementById('gTests').textContent = g.tests;
+          if (g.build) document.getElementById('gBuild').textContent = g.build;
+          if (g.security) document.getElementById('gSec').textContent = g.security;
+          if (g.legal) document.getElementById('gLaw').textContent = g.legal;
+        }
       }
     }
     if (data.tasks || data.metrics || data.lessons) {

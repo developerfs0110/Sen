@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEN (sen-method v0.4.0) — README | Pitch Deck | Cẩm Nang Sinh Viên IT</title>
+  <style>
+    :root {
+      --bg-0: #070b14;
+      --bg-1: #0f172a;
+      --card: rgba(15, 23, 42, 0.82);
+      --border: rgba(148, 163, 184, 0.2);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --lotus: #f43f5e;
+      --emerald: #10b981;
+      --cyan: #38bdf8;
+      --gold: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: radial-gradient(circle at 15% 15%, rgba(244,63,94,0.12), transparent 40%),
+                  radial-gradient(circle at 85% 80%, rgba(16,185,129,0.12), transparent 45%),
+                  linear-gradient(135deg, var(--bg-0), var(--bg-1));
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 28px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(7, 11, 20, 0.88);
+      backdrop-filter: blur(12px);
+      z-index: 20;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 0.98rem; }
+    .brand-badge {
+      background: linear-gradient(135deg, var(--lotus), var(--gold));
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 6px;
+      background: rgba(15, 23, 42, 0.9);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      background: transparent;
+      color: var(--muted);
+      border: none;
+      padding: 7px 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.84rem;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: linear-gradient(135deg, rgba(244,63,94,0.25), rgba(56,189,248,0.22));
+      color: #fff;
+      border: 1px solid rgba(56,189,248,0.45);
+    }
+    .controls { display: flex; align-items: center; gap: 8px; }
+    button.ctrl {
+      background: rgba(30, 41, 59, 0.85);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    button.ctrl:hover { border-color: var(--cyan); background: rgba(56, 189, 248, 0.15); }
+    button.ctrl.active { border-color: var(--emerald); background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+    main { flex: 1; position: relative; overflow: hidden; }
+    .view-pane { display: none; position: absolute; inset: 0; overflow-y: auto; }
+    .view-pane.active { display: block; }
+    .doc-container { max-width: 1180px; margin: 0 auto; padding: 28px 36px 60px; display: flex; flex-direction: column; gap: 22px; }
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 32px 52px 24px;
+      overflow-y: auto;
+      opacity: 0;
+      transform: translateX(40px);
+      pointer-events: none;
+      transition: opacity 0.28s ease, transform 0.28s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .slide.active { opacity: 1; transform: translateX(0); pointer-events: auto; }
+    .slide-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+      font-weight: 700;
+    }
+    h1 { font-size: 2.2rem; line-height: 1.2; font-weight: 800; }
+    h2 { font-size: 1.7rem; line-height: 1.25; font-weight: 800; }
+    .subtitle { font-size: 1.02rem; color: var(--muted); max-width: 960px; line-height: 1.55; }
+    .highlight {
+      background: linear-gradient(90deg, #fb7185, #fbbf24, #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      backdrop-filter: blur(10px);
+    }
+    .card h3 { font-size: 1rem; margin-bottom: 8px; color: #f1f5f9; }
+    .card p, .card li { font-size: 0.9rem; color: #cbd5e1; line-height: 1.55; }
+    .card ul { padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+    .kpi { font-size: 2rem; font-weight: 800; color: var(--emerald); margin-bottom: 4px; }
+    .kpi.gold { color: var(--gold); }
+    .kpi.cyan { color: var(--cyan); }
+    .kpi.lotus { color: #fb7185; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      font-size: 0.86rem;
+    }
+    th, td { padding: 10px 13px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: rgba(30, 41, 59, 0.92); color: var(--cyan); font-weight: 700; }
+    tr.best-row { background: rgba(16, 185, 129, 0.12); }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
+    .pill-pass { background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4); }
+    .pill-warn { background: rgba(245,158,11,0.2); color: #fcd34d; border: 1px solid rgba(245,158,11,0.4); }
+    .pill-crit { background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid rgba(244,63,94,0.4); }
+    .speaker-note {
+      margin-top: auto;
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid var(--gold);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.86rem;
+      color: #fde68a;
+      display: none;
+    }
+    body.show-notes .speaker-note { display: block; }
+    .flow-row { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+    .flow-step { flex: 1; min-width: 150px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+    .flow-step strong { color: var(--cyan); display: block; margin-bottom: 5px; font-size: 0.9rem; }
+    .flow-step span { font-size: 0.83rem; color: #cbd5e1; line-height: 1.45; display: block; }
+    .vs-box { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+    .vs-bad { background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.35); border-radius: 10px; padding: 12px; }
+    .vs-good { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.4); border-radius: 10px; padding: 12px; }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 28px;
+      border-top: 1px solid var(--border);
+      background: rgba(7, 11, 20, 0.9);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .progress-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--lotus), var(--gold), var(--emerald));
+      transition: width 0.25s ease;
+      z-index: 30;
+    }
+  </style>
+</head>
+<body class="show-notes">
+  <header>
+    <div class="brand">
+      <span class="brand-badge">SEN v0.4.0</span>
+      <span>Làm việc với đội AI một cách gọn, rõ, nhẹ</span>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn" id="tabReadmeBtn" onclick="switchTab('readme')">📘 Tab 1: README (v0.4.0)</button>
+      <button class="tab-btn active" id="tabPitchBtn" onclick="switchTab('pitch')">🖥️ Tab 2: Slide Thuyết Trình (10 Slides)</button>
+      <button class="tab-btn" id="tabStudentBtn" onclick="switchTab('student')">🎓 Tab 3: Sinh Viên Năm 1 IT (Step-by-Step)</button>
+    </div>
+    <div class="controls" id="slideControls">
+      <button id="btnNotes" class="ctrl active" onclick="toggleNotes()">🎤 Lời dẫn (N)</button>
+      <button class="ctrl" onclick="prevSlide()">← Trước</button>
+      <span id="slideCounter" style="font-weight:700; min-width:58px; text-align:center;">1 / 10</span>
+      <button class="ctrl" onclick="nextSlide()">Tiếp →</button>
+      <button class="ctrl" onclick="toggleFull()">⛶ Fullscreen (F)</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- TAB 1: README OVERVIEW -->
+    <div class="view-pane" id="pane-readme">
+      <div class="doc-container">
+        <div class="slide-tag">📘 TAB 1 • TỔNG QUAN README (ĐÃ MAPPING 100% VỚI SEN v0.4.0 MỚI NHẤT)</div>
+        <h1>Sen (<span class="highlight">sen-method v0.4.0</span>) — Hệ Điều Hành Điều Phối Đội AI Đa Nền Tảng</h1>
+        <p class="subtitle">Kết hợp <strong>Luật lõi siêu gọn (&lt;= 5.75 KB)</strong> với <strong>Runtime thực thi tất định (68 cmdlets, 10 kỹ năng sen-*, 0 phụ thuộc ngoài)</strong> trên cả 6 nền tảng: <strong>Antigravity IDE, Claude Code, Cursor, GitHub Copilot, Windsurf, Codex CLI / OpenCode</strong>.</p>
+        <div class="grid-3">
+          <div class="card"><h3>1. Đúng mức kiểm soát</h3><p>Tự động chấm điểm rủi ro (<code>Get-SenTaskRiskScore</code>): Việc nhỏ làm ngay (Cấp 1), việc vừa làm song song lạc quan kèm chứng minh (Cấp 2), việc rủi ro cao có thiết kế & phản biện 7 mũi nhọn (Cấp 3).</p></div>
+          <div class="card"><h3>2. Minh bạch & Đồng bộ 2 chiều</h3><p>Mọi việc hiển thị qua nhãn cấp độ, bảng Tài nguyên tiêu tốn, tự động đồng bộ <code>[x]</code> giữa Markdown và <code>tasks.json</code>, cùng Văn phòng 3D Chibi (<code>sen-office</code>).</p></div>
+          <div class="card"><h3>3. Bằng chứng vật lý & Tự chữa lành</h3><p>Bắt buộc vượt qua cổng Clean Code 6 chiều (100/100), Pháp lý VN 2025/2026, Kiểm toán 12 bước (<code>Test-SenDeliveryGate</code>) và vòng lặp tự chữa lành CI từ xa (<code>Invoke-SenCiPushLoop</code>).</p></div>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Cấp độ</th><th>Nhãn hiển thị</th><th>Khi nào áp dụng</th><th>Cơ chế "Trình bày trước — Làm luôn — Báo kết quả"</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Tier 1 (Cấp 1)</strong></td><td><code>[Cấp 1 - Thực thi ngay]</code></td><td>Sửa UI/CSS, đổi chữ, lỗi rõ nguyên nhân, 1–2 file</td><td>Làm ngay, tự chạy kiểm tra (lint/test/build) và báo kết quả. Không hỏi duyệt bước phụ.</td></tr>
+            <tr><td><strong>Tier 2 (Cấp 2)</strong></td><td><code>[Cấp 2 - Xác nhận phương án]</code></td><td>Tính năng mới, chạm 3+ file, thư viện mới, đổi API</td><td>Trình bày Chứng minh <em>Best-of-the-Best</em> + Phản biện + Bảng <strong>Tài nguyên tiêu tốn</strong>, chụp Restore Point, làm luôn song song và gửi báo cáo nghiệm thu kèm lệnh Undo.</td></tr>
+            <tr class="best-row"><td><strong>Tier 3 (Cấp 3)</strong></td><td><code>[Cấp 3 - Thiết kế & kế hoạch]</code></td><td>Dự án mới, kiến trúc, DB, Auth, Thanh toán, Xóa dữ liệu (<code>HardFloorTier3</code>)</td><td>Viết Thiết kế + Phản biện 7 mũi nhọn (<code>Invoke-SenDialecticalAudit</code>) + Kế hoạch, chụp Restore Point, điều phối Task DAG / khóa file / phiên bản <code>_rev</code> và kiểm toán đủ 12 bước.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: 10-SLIDE PITCH DECK -->
+    <div class="view-pane active" id="pane-pitch">
+      <section class="slide active">
+        <div class="slide-tag">Slide 01 • Tầm Nhìn & Định Vị</div>
+        <h1>SEN (<span class="highlight">sen-method</span>)<br/>"Phức tạp ở bên dưới, giản dị ở bên trên."</h1>
+        <p class="subtitle">Biến mọi công cụ AI Coding rời rạc thành một <strong>Đội ngũ Kỹ sư Phần mềm Chuẩn mực</strong>: Tự phân tầng rủi ro, Tự chứng minh & phản biện, Tự kiểm toán Clean Code 6 chiều, Tuân thủ Luật Việt Nam 2025/2026 và Hiển thị trực quan trong Văn phòng 3D.</p>
+        <div class="grid-4">
+          <div class="card"><div class="kpi">68 / 68</div><h3>Hàm Runtime Tất định</h3><p>100% độ phủ Unit Test trực tiếp; 0 phụ thuộc ngoài; thực thi dưới 35ms.</p></div>
+          <div class="card"><div class="kpi cyan">6 IDEs/CLIs</div><h3>Đa Nền Tảng Hợp Nhất</h3><p>Antigravity, Claude Code, Cursor, GitHub Copilot, Windsurf, Codex CLI.</p></div>
+          <div class="card"><div class="kpi gold">0 / 22</div><h3>Lỗ Hổng Sau Phản Biện</h3><p>Đã vượt qua 7 mũi tấn công Red-Team & 8 giả thuyết bác bỏ Karl Popper.</p></div>
+          <div class="card"><div class="kpi lotus">5.7 KB</div><h3>Ngân Sách Ngữ Cảnh</h3><p>Luật lõi chỉ 61 dòng — nhường &gt;98% bộ nhớ ngữ cảnh của AI cho dự án.</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Sen được thiết kế như một Hệ điều hành Quản trị & Điều phối (AI Engineering Harness) cực kỳ gọn nhẹ ở bề mặt nhưng chặt chẽ tuyệt đối ở tầng dưới."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 02 • Bối Cảnh & Nỗi Đau Thực Tế</div>
+        <h2>Tại sao 90% dự án dùng AI Coding rơi vào hỗn loạn khi mở rộng?</h2>
+        <div class="grid-3">
+          <div class="card"><h3>1. Vừa thừa vừa thiếu</h3><p>Việc nhỏ đổi màu CSS thì AI hỏi 5 bước rườm rà; việc nguy hiểm như xóa bảng DB hay sửa Auth thì AI làm thẳng gây sập hệ thống.</p></div>
+          <div class="card"><h3>2. Thiên kiến xác nhận</h3><p>AI luôn tự khen giải pháp đầu tiên của nó là tốt nhất, bỏ sót trường hợp biên (Edge Cases), Race Conditions và báo cáo xong giả tạo.</p></div>
+          <div class="card"><h3>3. Quên việc & Đốt Token</h3><p>Sang phiên chat mới, AI đọc tràn lan hàng chục file gây tốn Token, quên thiết kế cũ và bỏ sót Task trong bản kế hoạch.</p></div>
+          <div class="card"><h3>4. Lệnh hủy diệt & Lộ bí mật</h3><p>Một lệnh <code>rm -rf</code>, <code>git push --force</code> hoặc lộ khóa <code>AKIA...</code> / <code>github_pat_...</code> vào log là đủ gây thảm họa bảo mật.</p></div>
+          <div class="card"><h3>5. Điểm mù Pháp lý Việt Nam</h3><p>Gắn Google Analytics/Pixel chạy trước khi xin phép, thiếu luồng Xóa tài khoản trên App, vi phạm Luật DLCN <code>91/2025/QH15</code> & <code>NĐ 356/2025</code>.</p></div>
+          <div class="card"><h3>6. Phân mảnh công cụ trong Team</h3><p>Người dùng Cursor, người dùng Claude Code, người dùng Antigravity — mỗi IDE một quy tắc riêng, không có nguồn chân lý chung.</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Đây là 6 nỗi đau thực tế mà bất kỳ kỹ sư hay đội nhóm nào dùng AI hàng ngày cũng gặp. Sen giải quyết triệt để bằng Runtime tất định."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 03 • Thành Tựu Tổng Thể</div>
+        <h2>Sen đã làm được những gì? (8 Trụ cột Công nghệ Hoàn chỉnh)</h2>
+        <div class="grid-4">
+          <div class="card"><h3>① Phân tầng Rủi ro Tất định</h3><p><code>Get-SenTaskRiskScore</code> tự động phân loại Tier 0..3; khóa sàn cứng Cấp 3 với DB/Auth/Payment/Delete.</p></div>
+          <div class="card"><h3>② Thực thi Song song Lạc quan</h3><p><em>"Trình bày trước — Làm luôn — Báo kết quả"</em> kèm chụp điểm khôi phục <code>New-SenRestorePoint</code> & Undo 1-chạm.</p></div>
+          <div class="card"><h3>③ Vòng lặp Biện chứng 7 Mũi</h3><p>Chứng minh <em>Best-of-the-Best</em> + Bảng Tài nguyên tiêu tốn + Tự phản biện đối kháng (<code>Invoke-SenDialecticalAudit</code>).</p></div>
+          <div class="card"><h3>④ Điều phối DAG & Khóa File</h3><p>Quản lý Task DAG, khóa <code>allowedPaths</code> chống giẫm chân, kiểm soát tương tranh <code>_rev</code> & <code>Unlock-SenTask</code>.</p></div>
+          <div class="card"><h3>⑤ Đồng bộ 2 Chiều 0-Token</h3><p>Tự động nạp Plan/TODO vào <code>tasks.json</code> khi lưu file và tự động tích <code>[x]</code> ngược lại Markdown khi xong Task.</p></div>
+          <div class="card"><h3>⑥ Lá chắn Bảo mật STRIDE</h3><p><code>guard.ps1</code> / <code>guard.sh</code> chặn 19 mẫu lệnh hủy dữ liệu/force-push/IEX, chống sửa trộm file lõi và che khóa bí mật.</p></div>
+          <div class="card"><h3>⑦ Clean Code 6D & Luật VN</h3><p><code>Measure-SenCodeHealth</code> (ISO 5055 + SonarQube) & <code>Invoke-SenVnLawScan</code> (Luật 91/2025, NĐ 356/2025, Luật AI 134/2025).</p></div>
+          <div class="card"><h3>⑧ 6-Harness Bridge & 3D Office</h3><p>Đồng bộ 6 IDE/CLI, giám sát trực quan trong Văn phòng 3D Chibi và vòng lặp tự chữa lành CI từ xa (<code>Invoke-SenCiPushLoop</code>).</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Toàn bộ 8 trụ cột này đã được đóng gói trong 68 cmdlets PowerShell chuẩn ASCII và kiểm chứng qua 228 bài test tự động."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 04 • Trải Nghiệm Tốc Độ & An Toàn</div>
+        <h2>Phân tầng Rủi ro & Thực thi Song song Lạc quan</h2>
+        <div class="flow-row">
+          <div class="flow-step"><strong>1. Cold-Start 1-File</strong><span>Chỉ đọc <code>docs/CONTEXT.md</code> khi mở phiên — giảm 70% Token đọc thừa.</span></div>
+          <div class="flow-step"><strong>2. Chấm điểm Rủi ro</strong><span>Tự động gán nhãn <code>[Cấp 1/2/3]</code> bằng <code>Get-SenTaskRiskScore</code>.</span></div>
+          <div class="flow-step"><strong>3. Chứng minh & Snapshot</strong><span>Trình bày chứng minh + Bảng Chi phí và gọi <code>New-SenRestorePoint</code>.</span></div>
+          <div class="flow-step"><strong>4. Làm luôn Song song</strong><span>Thực thi ngay trong lúc người dùng đọc giải thích.</span></div>
+          <div class="flow-step"><strong>5. Nghiệm thu & Undo</strong><span>Qua cổng <code>Test-SenDeliveryGate</code> + hoàn tác <code>Restore-SenRestorePoint</code>.</span></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Trong lúc anh chị đọc bảng phân tích phương án thì ở bên dưới Sen đã chụp điểm khôi phục và làm xong việc, nếu muốn đổi ý chỉ mất 1 giây để Undo."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 05 • Đột Phá Phương Pháp Luận</div>
+        <h2>Vòng lặp Biện chứng: "Chứng minh — Phản biện — Tối ưu"</h2>
+        <div class="grid-3">
+          <div class="card"><h3>1. Thesis (Chứng minh)</h3><p>Chứng minh tại sao phương án chọn là <em>Best-of-the-Best</em> kèm cột <strong>Tài nguyên tiêu tốn</strong> (Token, Thời gian, CPU/RAM/Ổ cứng, Bảo trì).</p></div>
+          <div class="card"><h3>2. Antithesis (Phản biện 7 Mũi)</h3><p>Tự tấn công phương án bằng Phản ví dụ, Biên BVA, Socratic, Karl Popper, Bảng quyết định, Tương tranh & Bảo mật STRIDE.</p></div>
+          <div class="card"><h3>3. Synthesis (Tổng hợp $S^*$)</h3><p>Tinh chỉnh thành phương án tối ưu không thể bác bỏ trước khi thực thi và kiểm toán qua <code>Invoke-SenDialecticalAudit</code>.</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Quy trình này giúp phát hiện lỗi kiến trúc, race condition và bảo mật ngay trên bản vẽ — rẻ hơn gấp 10 lần so với sửa lỗi sau khi đã viết code."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 06 • Cổng Chất Lượng & Pháp Lý Nội Sinh</div>
+        <h2>3 Chốt Chặn Trước Bàn Giao: Clean Code 6D + STRIDE + Luật VN 2025/2026</h2>
+        <div class="grid-3">
+          <div class="card"><h3>🧹 Clean Code 6 Chiều</h3><p>Chuẩn ISO/IEC 5055 + SonarQube + AI-Native (<code>&lt;=800 dòng</code> logic, hàm <code>&lt;=100 dòng</code>, độ sâu <code>&lt;=4</code>, bắt <code>catch {}</code> rỗng, hàm chết & lặp code).</p></div>
+          <div class="card"><h3>⚖️ Legal-by-Design (Luật VN)</h3><p>Quét tự động theo Luật DLCN <code>91/2025</code>, <code>NĐ 356/2025</code>, Luật AI <code>134/2025</code>, Luật TMĐT <code>122/2025</code> (Consent Gate, <code>ACCOUNT_DELETE</code>, nhãn AI).</p></div>
+          <div class="card"><h3>🛡️ Lá Chắn Hook STRIDE</h3><p>Chặn 19 nhóm lệnh hủy dữ liệu/force-push/IEX, bảo vệ <code>tasks.json</code>/<code>guard.ps1</code> và tự động che khóa bí mật.</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Sen là công cụ đầu tiên tích hợp kiểm toán mã nguồn tự động theo Luật Việt Nam 2025/2026."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 07 • Đa Nền Tảng & Trực Quan Hóa 3D</div>
+        <h2>Cầu nối 6 IDE/CLI & Văn phòng AI 3D Chibi Thời gian thực</h2>
+        <div class="grid-2">
+          <div class="card"><h3>🔌 Multi-Harness Adapter (6 Nền tảng)</h3><p>Đồng bộ cả Luật và Hook bảo mật cho Antigravity, Claude Code, Cursor, GitHub Copilot, Windsurf và Codex CLI / OpenCode từ một nguồn <code>.agents/</code> duy nhất.</p></div>
+          <div class="card"><h3>🏢 3D AI Office & Mô phỏng Output 2 Giai đoạn</h3><p>9 vai trò Chibi AI + Boss trên sofa đỏ, đồng bộ 2 chiều 0-Token giữa Plan/TODO và <code>tasks.json</code>, kèm tab <strong>🎯 Đầu ra 2 Giai đoạn (<code>Write-SenOfficeShowcase</code>)</strong> đối chiếu trực quan <em>Phase 1 (Blueprint kỳ vọng)</em> và <em>Phase 2 (Sản phẩm thật & 4 cổng PASS)</em>.</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Mọi kỹ sư trong đội dù dùng IDE nào cũng nhìn vào cùng một Văn phòng 3D và cùng một bảng tiến độ."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 08 • Kiểm Chứng Khoa Học & Thực Nghiệm</div>
+        <h2>Bằng chứng Thực nghiệm: 100% Xanh qua Kiểm toán Độc lập</h2>
+        <table>
+          <thead>
+            <tr><th>Bộ Kiểm chứng (<code>sen-adversarial-bench</code>)</th><th>Trước Cải tiến</th><th>Sau Cải tiến (<code>v0.4.0</code>)</th><th>Trạng thái</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>1. Chứng minh Hình thức (<code>1a–1d</code>)</strong></td><td>4/4 Claims</td><td><strong>4/4 Claims (15/15 checks)</strong></td><td><span class="pill pill-pass">PASS 100%</span></td></tr>
+            <tr><td><strong>2. Độ phủ Unit Test Trực tiếp (<code>1C-EXPORT-COV</code>)</strong></td><td>54/66 (81.82%)</td><td><strong>68/68 hàm (100.00%)</strong></td><td><span class="pill pill-pass">100% COVERED</span></td></tr>
+            <tr><td><strong>3. Phản biện Đối kháng 7 Mũi nhọn (<code>2a–2g</code>)</strong></td><td>22 lỗ hổng</td><td><strong>0 / 22 lỗ hổng (Falsified = 0)</strong></td><td><span class="pill pill-pass">100% REMEDIATED</span></td></tr>
+            <tr><td><strong>4. Ma trận Bác bỏ Karl Popper (<code>H1–H8</code>)</strong></td><td>8/8 bị bác bỏ</td><td><strong>8 / 8 Vững chắc (CORROBORATED)</strong></td><td><span class="pill pill-pass">100% CORROBORATED</span></td></tr>
+            <tr class="best-row"><td><strong>5. Bộ Test Hồi quy & Sức khỏe Mã nguồn</strong></td><td>227/227 tests</td><td><strong>228/228 tests (571 asserts) | Health 100/100</strong></td><td><span class="pill pill-pass">VERIFIED</span></td></tr>
+          </tbody>
+        </table>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Mọi con số đều có thể tái lập ngay lập tức bằng cách chạy kịch bản Run-Benchmark.ps1."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 09 • Tại Sao Chọn Sen? (Ma Trận So Sánh & Chi Phí)</div>
+        <h2>So sánh Chuyên gia & Tài nguyên Tiêu tốn (Resource Cost)</h2>
+        <table>
+          <thead>
+            <tr><th>Giải pháp</th><th>Phân tầng & Biện chứng</th><th>Bảo mật, Clean Code & Luật VN</th><th>Tài nguyên tiêu tốn (Token / Thời gian / CPU-RAM / Bảo trì)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Rules Tĩnh</strong> (<code>.cursorrules</code>)</td><td>Không có (AI dễ quên)</td><td>Không có</td><td><strong>Token:</strong> ~2 KB (tốn nhiều token sửa sai) | <strong>RAM:</strong> 0 MB | <strong>Bảo trì:</strong> Cao</td></tr>
+            <tr><td><strong>Skill Packs Thuần</strong> (<code>Superpowers</code>)</td><td>Thủ công, chỉ chứng minh xuôi</td><td>Không có Runtime kiểm toán</td><td><strong>Token:</strong> 15–30 KB/phiên | <strong>RAM:</strong> ~5 MB | <strong>Bảo trì:</strong> Trung bình</td></tr>
+            <tr><td><strong>Framework Đa Agent</strong> (<code>CrewAI</code>)</td><td>Phải lập trình cứng bằng Python</td><td>Không tích hợp sẵn</td><td><strong>Token:</strong> Gấp 3x–5x | <strong>Setup:</strong> 2–5 ngày | <strong>RAM:</strong> 300+ MB | <strong>Bảo trì:</strong> Rất cao</td></tr>
+            <tr class="best-row"><td><strong>SEN (<code>sen-method</code>)</strong> <span class="pill pill-pass">Best-of-the-Best</span></td><td><strong>Tự động 100% + Phản biện 7 mũi</strong></td><td><strong>Hook STRIDE + Clean Code 6D + Luật VN</strong></td><td><strong>Token:</strong> Chỉ <code>5.7 KB</code> luật lõi (giảm 70% đọc thừa) | <strong>Setup:</strong> <code>&lt;60s</code> | <strong>RAM:</strong> 0 phụ thuộc (<code>&lt;35ms</code>)</td></tr>
+          </tbody>
+        </table>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Sen đạt được kỷ luật của một hệ thống đa tác nhân nhưng chi phí khởi tạo gần như bằng 0."</div>
+      </section>
+
+      <section class="slide">
+        <div class="slide-tag">Slide 10 • Tiềm Lực & Tầm Nhìn Chiến Lược</div>
+        <h2>Tiềm lực của Sen: Từ Trợ lý Kỹ sư đến Nền tảng AI Governance Doanh nghiệp</h2>
+        <div class="grid-2">
+          <div class="card"><h3>🚀 1. Nhân bản Năng suất Đội ngũ (Team Multiplier)</h3><p>Chuẩn hóa chất lượng đầu ra của cả phòng R&D/Outsourcing (5–500 kỹ sư) bất kể họ dùng IDE nào.</p></div>
+          <div class="card"><h3>⚖️ 2. Tiên phong RegTech / Legal-by-Design tại Việt Nam</h3><p>Giải quyết bài toán tuân thủ Luật DLCN <code>91/2025</code>, <code>NĐ 356/2025</code> và Luật AI <code>134/2025</code> ngay từ trong mã nguồn.</p></div>
+          <div class="card"><h3>🧠 3. Trí nhớ Tổ chức Tự Tiến hóa (3-Layer Memory)</h3><p>Tích lũy bài học thực thi (<code>lessons.json</code>) và tự đóng gói quy trình thành kỹ năng mới (<code>sen-skill-capture</code>).</p></div>
+          <div class="card"><h3>🌐 4. Nhà máy Phần mềm Tự hành (Autonomous Factory)</h3><p>Kiến trúc độc lập mô hình kết hợp vòng lặp tự chữa lành CI từ xa (<code>Invoke-SenCiPushLoop</code>).</p></div>
+        </div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Hãy bấm sang Tab 3 trên thanh menu để xem ví dụ trực quan từng bước dành cho Sinh viên Năm 1 IT!"</div>
+      </section>
+    </div>
+
+    <!-- TAB 3: IT FRESHMAN STEP-BY-STEP GUIDE -->
+    <div class="view-pane" id="pane-student">
+      <div class="doc-container">
+        <div class="slide-tag">🎓 TAB 3 • DÀNH CHO SINH VIÊN NĂM 1 IT (KHÔNG CẦN BIẾT THUẬT NGỮ CHUYÊN NGÀNH)</div>
+        <h1>Làm Sao Một Sinh Viên Năm 1 Giải Quyết Đề Án Khó Từ A–Z Cùng <span class="highlight">SEN</span>?</h1>
+        <p class="subtitle"><strong>Đề bài thực tế:</strong> Làm Web & App <strong>"UniStay — Tìm Phòng Trọ & Chợ Đồ Cũ Sinh Viên"</strong> có Đăng nhập, Đặt cọc giữ phòng bằng mã QR (chống 50 người cùng bấm đặt trùng 1 phòng trong 1 giây!), và Trợ lý AI gợi ý phòng.</p>
+
+        <div class="card">
+          <h3>Bước 1: Giao đề bài bằng tiếng Việt tự nhiên & Tự động bật Chế độ Bảo vệ Cao nhất</h3>
+          <p>🗣️ <strong>Bạn chỉ cần gõ:</strong> <code>"Em muốn làm web UniStay tìm phòng trọ, có đăng nhập, đặt cọc QR không bị trùng người, và có AI gợi ý phòng."</code></p>
+          <div class="vs-box">
+            <div class="vs-bad"><strong>❌ Cách khác (ChatGPT / IDE thuần):</strong> Nhảy vào đẻ ra hàng trăm dòng code ngay khi chưa hỏi kỹ ý bạn; nếu bạn giục "làm luôn đi" là làm ẩu, bỏ qua bảo mật tiền bạc.</div>
+            <div class="vs-good"><strong>✅ Làm cùng SEN:</strong> Nhận diện ngay đề án có Tiền bạc + Tài khoản + Dữ liệu $\rightarrow$ Bật nhãn <code>[Cấp 3 - Thiết kế & kế hoạch]</code> và khóa sàn an toàn <code>HardFloorTier3</code> để vẽ bản thiết kế chuẩn trước!</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Bước 2: Giải bài toán "50 người cùng bấm Đặt cọc 1 giây" bằng Vòng lặp Chứng minh — Phản biện</h3>
+          <p>⚙️ <strong>Cách Sen giúp bạn trả lời câu hỏi khó nhất của Thầy Cô:</strong> Sen tự đưa ra 3 cách, tự đóng vai "Giám khảo khó tính" để phản biện và chọn cách có <strong>Số thứ tự phiên bản (<code>_rev</code>)</strong>: Ai bấm trước ở <code>0.001 giây</code> thì số phiên bản phòng nhảy từ <code>1</code> lên <code>2</code>; 49 người bấm sau vẫn cầm số <code>1</code> sẽ được báo lịch sự <em>"Phòng vừa có bạn đặt cọc!"</em> — không ai bị trừ tiền oan và tốn <code>0 MB</code> phần mềm phụ!</p>
+          <div class="vs-box">
+            <div class="vs-bad"><strong>❌ Cách khác:</strong> AI viết hàm <code>if (room.free)</code> đơn giản $\rightarrow$ Cả 50 người cùng lọt qua và cùng quét QR chuyển tiền, ra hội đồng bảo vệ là bị trừ nửa số điểm!</div>
+            <div class="vs-good"><strong>✅ Làm cùng SEN:</strong> Tự phản biện tìm ra lỗi tranh chỗ ngay trên bản vẽ, lập sẵn bảng so sánh kèm cột <strong>Tài nguyên tiêu tốn</strong> để bạn tự tin thuyết trình trước thầy cô.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Bước 3 & 4: Mô phỏng Output (Phase 1), Đồng bộ 2 Chiều + Chụp "Ảnh Lưu Trạng Thái"</h3>
+          <p>⚙️ <strong>Thấy trước sản phẩm & Không sợ hỏng code:</strong> Sen vẽ sơ đồ mũi tên, dựng ngay <strong>Mô phỏng Output Giai đoạn 1 (<code>Write-SenOfficeShowcase</code> $\rightarrow$ <code>showcase.json</code>)</strong> để bạn thấy trước các đầu ra kỳ vọng, chia việc tự động tích <code>[x]</code>, và <strong>tự chụp bản sao lưu (<code>Restore Point</code>) trước khi sửa code</strong> + bật lá chắn <code>guard.ps1</code>.</p>
+          <div class="vs-box">
+            <div class="vs-bad"><strong>❌ Cách khác:</strong> Làm mù mờ không biết lúc xong trông ra sao; đang chạy được 80%, bảo AI sửa thêm 1 tính năng thì AI làm hỏng luôn cả 80% cũ.</div>
+            <div class="vs-good"><strong>✅ Làm cùng SEN:</strong> Có bảng Mô phỏng Output đối chiếu Kỳ vọng vs. Thực tế; lỡ sửa nhầm chỉ cần 1 lệnh <code>Restore-SenRestorePoint</code> là quay về nguyên trạng trong 1 giây!</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Bước 5, 6 & 7: Mở Văn phòng 3D + Mô phỏng Output (Phase 2) + Clean Code 100/100 & Luật VN</h3>
+          <p>⚙️ <strong>Về đích điểm A+:</strong> Gõ <code>"mở văn phòng"</code> để xem 9 nhân vật Chibi AI làm việc và bấm tab <strong>🎯 Đầu ra (2 Giai đoạn)</strong> đối chiếu 1-1 giữa <em>Cam kết thiết kế (Phase 1)</em> và <em>Sản phẩm thật + 4 cổng PASS (Phase 2)</em>; tự động dọn code sạch <code>100/100</code>, kiểm tra Luật VN 2025/2026, đẩy lên GitHub tự chữa lỗi CI và xuất sẵn <strong>Báo cáo Nghiệm thu Đồ án</strong>!</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div>Tài liệu chi tiết: <code>README.md</code> • <code>docs/SINH-VIEN-IT-STEP-BY-STEP.md</code> • <code>docs/SEN-SHOWCASE-PITCH.md</code></div>
+    <div>Phím tắt (Tab 2): <code>←</code> / <code>→</code> / <code>Space</code> Chuyển Slide • <code>N</code> Lời dẫn • <code>F</code> Toàn màn hình</div>
+  </footer>
+  <div class="progress-bar" id="progressBar" style="width: 10%;"></div>
+
+  <script>
+    let current = 0;
+    const slides = document.querySelectorAll('#pane-pitch .slide');
+    const counter = document.getElementById('slideCounter');
+    const bar = document.getElementById('progressBar');
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.view-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('pane-' + tabName).classList.add('active');
+      document.getElementById(tabName === 'readme' ? 'tabReadmeBtn' : (tabName === 'pitch' ? 'tabPitchBtn' : 'tabStudentBtn')).classList.add('active');
+      document.getElementById('slideControls').style.display = (tabName === 'pitch') ? 'flex' : 'none';
+    }
+    function showSlide(idx) {
+      current = (idx + slides.length) % slides.length;
+      slides.forEach((s, i) => s.classList.toggle('active', i === current));
+      counter.textContent = (current + 1) + ' / ' + slides.length;
+      bar.style.width = (((current + 1) / slides.length) * 100) + '%';
+    }
+    function nextSlide() { showSlide(current + 1); }
+    function prevSlide() { showSlide(current - 1); }
+    function toggleNotes() {
+      document.body.classList.toggle('show-notes');
+      document.getElementById('btnNotes').classList.toggle('active');
+    }
+    function toggleFull() {
+      if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); }
+      else { document.exitFullscreen(); }
+    }
+    document.addEventListener('keydown', (e) => {
+      if (!document.getElementById('pane-pitch').classList.contains('active')) return;
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+      else if (e.key === 'n' || e.key === 'N') { toggleNotes(); }
+      else if (e.key === 'f' || e.key === 'F') { toggleFull(); }
+    });
+  </script>
+</body>
+</html>

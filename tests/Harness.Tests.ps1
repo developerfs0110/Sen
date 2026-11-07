@@ -274,10 +274,14 @@ Test "Process Compliance 3-Tier Engine filters (*) and (**), enforces Stage Gate
 
         $g2After = Test-SenStageGate -Workspace $ws -Stage 2
         Assert-True $g2After.Passed "Stage 2 gate must pass once Spec, Plan, and DAG exist"
+        $sc1 = Read-SenOfficeShowcase -Workspace $ws
+        Assert-True ($null -ne $sc1 -and $null -ne $sc1.phase1) "Stage 2 gate must ensure Phase 1 Output Simulation (showcase.json) exists"
 
         $finalComp = Test-SenProjectCompliance -Workspace $ws
         Assert-True $finalComp.Compliant "End-of-project compliance must verify all (**) and (*) are 100% done"
         Assert-Equal 11 $finalComp.CompletedCount "All 11 selected steps (*) completed and latched"
+        $sc2 = Read-SenOfficeShowcase -Workspace $ws
+        Assert-True ($null -ne $sc2 -and $null -ne $sc2.phase2) "Stage 4 gate must ensure Phase 2 Output Simulation (showcase.json) exists"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
@@ -340,6 +344,35 @@ Test "Get-SenRemoteCiStatus and Invoke-SenCiPushLoop inspect remote CI runs and 
         $loopRes = Invoke-SenCiPushLoop -RepoPath $ws -CommitMessage "test" -RestInvoker $mockRestPass -SkipPush -PollSeconds 0
         Assert-True $loopRes.LocalPassed "Local check should pass"
         Assert-True $loopRes.CiPassed "CI check should pass when conclusion is success"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Test-SenCapabilityParity verifies 5-Layer Zero-Amnesia Isomorphism and guard.ps1 enforces Pre-Edit Restore Point Gate" {
+    $senRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+    $parity = Test-SenCapabilityParity -SenRoot $senRoot
+    Assert-True $parity.Passed "5-Layer Zero-Amnesia Capability Parity must pass (Missing: $($parity.MissingItems -join ', '))"
+    Assert-Equal 5 $parity.CheckedLayers "Must verify all 5 layers"
+    Assert-Equal 0 $parity.MissingItems.Count "Zero missing capability parity items"
+
+    $ws = New-HarnessTestWorkspace
+    try {
+        [void](Initialize-SenProcessAudit -Workspace $ws -ProjectName "Tier2App" -Tier 2 -ProjectScope "core")
+        $targetCode = Join-Path $ws "src/app.ts"
+        $blockedWrite = Invoke-HarnessHookJson -ScriptPath $guardScript -PayloadObj @{
+            toolCall       = @{ name = "write_file"; args = @{ Path = $targetCode } }
+            workspacePaths = @($ws)
+        }
+        Assert-Equal "deny" $blockedWrite.decision "guard.ps1 must block project file write in Tier 2/3 before New-SenRestorePoint is called"
+
+        [void](New-SenRestorePoint -Workspace $ws -Files @("src/app.ts") -Label "pre-edit")
+        $allowedWrite = Invoke-HarnessHookJson -ScriptPath $guardScript -PayloadObj @{
+            toolCall       = @{ name = "write_file"; args = @{ Path = $targetCode } }
+            workspacePaths = @($ws)
+        }
+        Assert-Equal "ask" $allowedWrite.decision "guard.ps1 must allow project file write in Tier 2/3 after New-SenRestorePoint is called"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

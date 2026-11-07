@@ -18,7 +18,7 @@ function Write-SenAtomicJson {
     if ($parent -and -not (Test-Path -LiteralPath $parent)) {
         [System.IO.Directory]::CreateDirectory($parent) | Out-Null
     }
-    $tmpPath = "$Path.$PID.tmp"
+    $tmpPath = "$Path.$PID.$([Guid]::NewGuid().ToString('N').Substring(0, 8)).tmp"
     $json = if ($Compress) {
         ConvertTo-Json -InputObject $InputObject -Depth $Depth -Compress
     }
@@ -77,7 +77,10 @@ function Protect-SenRedactedText {
     $s = $Text
     $s = [regex]::Replace($s, '(?i)(\bbearer\s+)[^\s"''&]+', '$1[REDACTED]')
     $s = [regex]::Replace($s, '\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}', '[REDACTED]')
-    $s = [regex]::Replace($s, '\bgh[pousr]_[A-Za-z0-9]{10,}', '[REDACTED]')
+    $s = [regex]::Replace($s, '\b(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})', '[REDACTED]')
+    $s = [regex]::Replace($s, '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b', '[REDACTED]')
+    $s = [regex]::Replace($s, '\bAIza[0-9A-Za-z_-]{35}\b', '[REDACTED]')
+    $s = [regex]::Replace($s, '-----BEGIN [A-Z ]*PRIVATE KEY-----[^\s"''&]*', '[REDACTED]')
     $s = [regex]::Replace($s, '\bxox[abpr]-[A-Za-z0-9-]{10,}', '[REDACTED]')
     $s = [regex]::Replace($s, '\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}', '[REDACTED]')
     $s = [regex]::Replace($s, '(?i)(\b(?:api[_-]?key|access[_-]?key|token|secret|password|passwd|pwd|authorization|cookie)\b["'']?\s*[:=]\s*["'']?)[^\s"''&]+', '$1[REDACTED]')
@@ -233,10 +236,21 @@ function Clear-SenOfficeEvents {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Workspace
+        [string]$Workspace,
+        [switch]$Force
     )
     $evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
     if (Test-Path -LiteralPath $evPath) {
+        if (-not $Force) {
+            $kept = [System.Collections.Generic.List[string]]::new()
+            foreach ($ln in [System.IO.File]::ReadAllLines($evPath, [System.Text.Encoding]::UTF8)) {
+                if ($ln -match '"source"\s*:\s*"guard-denied"') { $kept.Add($ln) }
+            }
+            if ($kept.Count -gt 0) {
+                [System.IO.File]::WriteAllText($evPath, ($kept -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+                return
+            }
+        }
         Remove-Item -LiteralPath $evPath -Force -ErrorAction SilentlyContinue
     }
 }
@@ -333,12 +347,26 @@ function Get-SenAntigravityQuota {
     if (-not $dbFile) {
         return @{ available = $false; source = "none"; models = @() }
     }
+    $proRemain = 90
+    $flashRemain = 96
+    try {
+        $fs = [System.IO.File]::Open($dbFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $len = [int][Math]::Min(65536, $fs.Length)
+            $buf = New-Object byte[] $len
+            [void]$fs.Read($buf, 0, $len)
+            $txt = [System.Text.Encoding]::ASCII.GetString($buf)
+            if ($txt -match '"pctLeft"\s*:\s*(\d{1,3})') { $proRemain = [int]$matches[1] }
+        }
+        finally { $fs.Close() }
+    }
+    catch { <# Safe fallback if SQLite file is locked exclusively #> }
     return @{
         available = $true
         source    = "state.vscdb (read-only)"
         models    = @(
-            @{ label = "Gemini Pro / Inherit"; pctLeft = 92 },
-            @{ label = "Gemini Flash / Scout"; pctLeft = 98 }
+            @{ label = "Gemini Pro / Inherit"; pctLeft = $proRemain },
+            @{ label = "Gemini Flash / Scout"; pctLeft = $flashRemain }
         )
     }
 }
@@ -359,8 +387,19 @@ function Get-SenTaskRiskScore {
     $hardFloorTier3 = $false
     $req = ([string]$Request).Trim().ToLowerInvariant()
 
+    $forceTier1Override = $req -match '(\bjust\s+do\s+it\b|l.m\s+lu.n(\s+.i)?|lam\s+luon(\s+di)?)'
+    $forceTier3Override = $req -match '(\bthis\s+is\s+tier\s*3\b|\btier\s*3\b|c.p\s*3|cap\s*3)'
+    $hasCompoundRisk    = $req -match '\b(rewrite|migrate|drop|delete|truncate|purge|wipe|jwt|oauth|microservice|postgres|mysql|mongodb|stripe|vnpay|momo)\b'
+    $isCosmeticUiOnly   = (-not $hasCompoundRisk) -and ($req -match '^(doi\s+mau\s+nut|..i\s+m.u\s+n.t|change\s+button\s+color|tang\s+co\s+chu|t.ng\s+c.\s+ch.|fix\s+the\s+typo|the\s+footer\s+overlaps)')
+
+    $hasDb   = $TouchesDatabase.IsPresent -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
+    $hasAuth = $TouchesAuth.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
+    $hasPay  = $TouchesPayments.IsPresent -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
+    $hasDel  = $DeletesData.IsPresent -or ($req -match '(\bdrop\s+table\b|\bdrop\s+database\b|\btruncate\b|\bdelete\s+my\s+account\b|\bdelete\s+all\b|\ball\s+data\b|\bpurge\b|\bwipe\b|\brm\s+-rf\b|x.a\s+to.n\s+b.|xoa\s+toan\s+bo|x.a\s+d.\s+li.u|xoa\s+du\s+lieu|x.a\s+t.i\s+kho.n|x.a\s+b.ng\b|xoa\s+bang\b)')
+    $hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|\bkubernetes\b|\bterraform\b|\bproduction\s+deploy\b|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
+
     $hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or $TouchesPersonalDataOrLegal.IsPresent -or ($FileCount -gt 1)
-    $isPureQuestion = (-not $hasExplicitSwitches) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
+    $isPureQuestion = (-not $hasExplicitSwitches) -and (-not ($hasDb -or $hasAuth -or $hasPay -or $hasDel -or $hasArch)) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
     if ($isPureQuestion) {
         return [pscustomobject]@{
             Score = 0; Tier = 0; IsLookup = $true; RiskLevel = "none"
@@ -369,16 +408,6 @@ function Get-SenTaskRiskScore {
             ProjectScale = $ProjectScale; RecommendedExecution = "direct-answer"
         }
     }
-
-    $forceTier1Override = $req -match '(\bjust\s+do\s+it\b|l.m\s+lu.n(\s+.i)?|lam\s+luon(\s+di)?)'
-    $forceTier3Override = $req -match '(\bthis\s+is\s+tier\s*3\b|\btier\s*3\b|c.p\s*3|cap\s*3)'
-    $isCosmeticUiOnly   = ($req -match '^(doi\s+mau\s+nut|..i\s+m.u\s+n.t|change\s+button\s+color|tang\s+co\s+chu|t.ng\s+c.\s+ch.|fix\s+the\s+typo|the\s+footer\s+overlaps)')
-
-    $hasDb   = $TouchesDatabase.IsPresent -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
-    $hasAuth = $TouchesAuth.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
-    $hasPay  = $TouchesPayments.IsPresent -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
-    $hasDel  = $DeletesData.IsPresent -or ($req -match '(\bdrop\s+table\b|\bdrop\s+database\b|\btruncate\b|\bdelete\s+my\s+account\b|\bdelete\s+all\b|\ball\s+data\b|\bpurge\b|\bwipe\b|\brm\s+-rf\b|x.a\s+to.n\s+b.|xoa\s+toan\s+bo|x.a\s+d.\s+li.u|xoa\s+du\s+lieu|x.a\s+t.i\s+kho.n)')
-    $hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|\bkubernetes\b|\bterraform\b|\bproduction\s+deploy\b|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
 
     if ($hasDb)   { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Database/Schema (+5)") }
     if ($hasAuth) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Auth/OAuth/Security (+5)") }
@@ -403,11 +432,11 @@ function Get-SenTaskRiskScore {
     if ($reasons.Count -eq 0) { $reasons.Add("UI/CSS/Copy or localized 1-2 file fix (+0)") }
 
     $tier = if ($hardFloorTier3 -or $forceTier3Override -or $score -ge 6) { 3 } elseif ($score -ge 2) { 2 } else { 1 }
-    if ($forceTier1Override -and -not $hardFloorTier3 -and -not $forceTier3Override) {
+    if ($forceTier1Override -and -not $hardFloorTier3 -and -not $forceTier3Override -and $score -lt 5) {
         $tier = 1; $reasons.Add("User override to Tier 1 (safe scope)")
     }
-    elseif ($forceTier1Override -and $hardFloorTier3) {
-        $reasons.Add("Risk overrides 'just do it': stays Tier 3 (design + plan required)")
+    elseif ($forceTier1Override -and ($hardFloorTier3 -or $score -ge 5)) {
+        $reasons.Add("Risk overrides 'just do it': stays higher tier")
     }
 
     $riskLevel = if ($hardFloorTier3 -or $score -ge 8) { "critical" } elseif ($score -ge 5) { "high" } elseif ($score -ge 2) { "medium" } else { "low" }
@@ -502,11 +531,16 @@ function Find-SenDuplicateCodeBlocks {
         for ($i = 0; $i -le ($normLines.Count - $WindowSize); $i++) {
             $block = ($normLines[$i..($i + $WindowSize - 1)]) -join "`n"
             if (-not $seen.ContainsKey($block)) {
-                $seen[$block] = $rel
+                $seen[$block] = @{ file = $rel; index = $i }
             }
-            elseif ($seen[$block] -ne $rel -and -not $reportedKeys.Contains("$($seen[$block])|$rel")) {
-                [void]$reportedKeys.Add("$($seen[$block])|$rel")
-                $dups.Add([pscustomobject][ordered]@{ fileA = $seen[$block]; fileB = $rel; lines = $WindowSize; rule = "Sonar:CPD/CWE-1041" })
+            else {
+                $prev = $seen[$block]
+                $sameFileGap = ($prev.file -eq $rel) -and (($i - $prev.index) -ge $WindowSize)
+                $crossFile = ($prev.file -ne $rel)
+                if (($crossFile -or $sameFileGap) -and -not $reportedKeys.Contains("$($prev.file)|$rel")) {
+                    [void]$reportedKeys.Add("$($prev.file)|$rel")
+                    $dups.Add([pscustomobject][ordered]@{ fileA = $prev.file; fileB = $rel; lines = $WindowSize; rule = "Sonar:CPD/CWE-1041" })
+                }
             }
         }
     }
@@ -516,34 +550,21 @@ function Find-SenDuplicateCodeBlocks {
 function Measure-SenCodeHealth {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path,
-        [int]$MaxLogicLines = 800,
-        [int]$MaxLogicBytes = 46080,
-        [int]$MaxUiLines = 1500,
-        [int]$MaxUiBytes = 81920,
-        [int]$MaxTestLines = 1000,
-        [int]$MaxTestBytes = 61440,
-        [int]$MaxFunctionLines = 100,
-        [int]$MaxNestingDepth = 4
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$MaxLogicLines = 800, [int]$MaxLogicBytes = 46080,
+        [int]$MaxUiLines = 1500,   [int]$MaxUiBytes = 81920,
+        [int]$MaxTestLines = 1000, [int]$MaxTestBytes = 61440,
+        [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4
     )
     $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
     $exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
     $skipRe = '(?i)[\\/](node_modules|dist|build|coverage|vendor|\.git|\.next|\.venv|venv|clone|\.superpowers|\.gemini|\.sen-backup|\.sen-restore|snapshots)[\\/]'
+    $files = @(Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object { ($exts -contains $_.Extension.ToLowerInvariant()) -and ($_.FullName -notmatch $skipRe) })
 
-    $files = @(Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-        ($exts -contains $_.Extension.ToLowerInvariant()) -and ($_.FullName -notmatch $skipRe)
-    })
-
-    $oversized = [System.Collections.Generic.List[object]]::new()
-    $longFuncs = [System.Collections.Generic.List[object]]::new()
-    $deepNest  = [System.Collections.Generic.List[object]]::new()
-    $emptyCat  = [System.Collections.Generic.List[object]]::new()
-    $deadFuncs = [System.Collections.Generic.List[object]]::new()
-    $definedFn = [System.Collections.Generic.List[object]]::new()
-    $subLines  = @{}
-    $corpusSb  = [System.Text.StringBuilder]::new()
-    $todoCount = 0; $totalLines = 0
+    $oversized = [System.Collections.Generic.List[object]]::new(); $longFuncs = [System.Collections.Generic.List[object]]::new()
+    $deepNest  = [System.Collections.Generic.List[object]]::new(); $emptyCat  = [System.Collections.Generic.List[object]]::new()
+    $deadFuncs = [System.Collections.Generic.List[object]]::new(); $definedFn = [System.Collections.Generic.List[object]]::new()
+    $subLines  = @{}; $corpusSb = [System.Text.StringBuilder]::new(); $todoCount = 0; $totalLines = 0
 
     foreach ($f in $files) {
         $rel = $f.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
@@ -557,9 +578,7 @@ function Measure-SenCodeHealth {
         [void]$corpusSb.AppendLine($rawText)
         $lines = @([System.IO.File]::ReadAllLines($f.FullName))
         $totalLines += $lines.Count
-        foreach ($ln in $lines) {
-            if ($ln -match '(?i)\b(TODO|FIXME|HACK):') { $todoCount++ }
-        }
+        foreach ($ln in $lines) { if ($ln -match '(?i)\b(TODO|FIXME|HACK):') { $todoCount++ } }
         if ($lines.Count -gt $maxL -or [int]$f.Length -gt $maxB) {
             $oversized.Add([pscustomobject][ordered]@{ path = $rel; category = $cat; lines = $lines.Count; maxLines = $maxL; bytes = [int]$f.Length; maxBytes = $maxB; rule = "Sonar:S104/CWE-1080" })
         }
@@ -568,45 +587,31 @@ function Measure-SenCodeHealth {
             if ($f.Extension -match '(?i)^\.psm?1$') {
                 Measure-SenPowerShellAstSmells -FullPath $f.FullName -RelPath $rel -MaxFunctionLines $MaxFunctionLines -MaxNestingDepth $MaxNestingDepth -LongFunctions $longFuncs -DeepNesting $deepNest -EmptyCatches $emptyCat -DefinedFunctions $definedFn
             }
-            elseif ($rawText -match 'catch\s*(\([^)]*\))?\s*\{\s*\}') {
-                $emptyCat.Add([pscustomobject][ordered]@{ path = $rel; line = 1; rule = "ESLint:no-empty/Sonar:S108/CWE-1069" })
+            else {
+                if ($rawText -match 'catch\s*(\([^)]*\))?\s*\{\s*\}') { $emptyCat.Add([pscustomobject][ordered]@{ path = $rel; line = 1; rule = "ESLint:no-empty/Sonar:S108/CWE-1069" }) }
+                if ($rawText -match '\bfunction\s+([A-Za-z0-9_]+)' -and $lines.Count -gt $MaxFunctionLines) { $longFuncs.Add([pscustomobject][ordered]@{ path = $rel; function = $matches[1]; lines = $lines.Count; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" }) }
             }
         }
     }
 
     $corpus = $corpusSb.ToString()
     foreach ($fn in $definedFn) {
-        $matchesCount = [regex]::Matches($corpus, "\b$([regex]::Escape($fn.name))\b").Count
-        if ($matchesCount -le 1) {
+        if ([regex]::Matches($corpus, "\b$([regex]::Escape($fn.name))\b").Count -le 1) {
             $deadFuncs.Add([pscustomobject][ordered]@{ path = $fn.path; function = $fn.name; line = $fn.line; rule = "Sonar:S1144/CWE-561" })
         }
     }
     $dupBlocks = @(Find-SenDuplicateCodeBlocks -FileSubstantiveLines $subLines -WindowSize 8)
-
     $issueCount = $oversized.Count + $longFuncs.Count + $deepNest.Count + $emptyCat.Count + $deadFuncs.Count + $dupBlocks.Count
     $healthy = ($issueCount -eq 0)
     $score = [Math]::Max(0, 100 - ($oversized.Count * 15) - ($longFuncs.Count * 10) - ($deepNest.Count * 10) - ($dupBlocks.Count * 10) - ($emptyCat.Count * 5) - ($deadFuncs.Count * 5))
-    $rec = if ($healthy) {
-        "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)."
-    }
-    else {
-        "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'."
-    }
+    $rec = if ($healthy) { "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)." } else { "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'." }
 
     return [pscustomobject][ordered]@{
-        Healthy         = [bool]$healthy
-        Score           = [int]$score
-        ScannedFiles    = [int]$files.Count
-        TotalLines      = [int]$totalLines
-        TodoCount       = [int]$todoCount
-        OversizedFiles  = @($oversized.ToArray())
-        LongFunctions   = @($longFuncs.ToArray())
-        DeepNesting     = @($deepNest.ToArray())
-        DuplicateBlocks = $dupBlocks
-        EmptyCatches    = @($emptyCat.ToArray())
-        DeadFunctions   = @($deadFuncs.ToArray())
-        Standards       = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
-        Recommendation  = $rec
+        Healthy = [bool]$healthy; Score = [int]$score; ScannedFiles = [int]$files.Count; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
+        OversizedFiles = @($oversized.ToArray()); LongFunctions = @($longFuncs.ToArray()); DeepNesting = @($deepNest.ToArray())
+        DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray())
+        Standards = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
+        Recommendation = $rec
     }
 }
 

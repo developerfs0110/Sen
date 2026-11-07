@@ -100,14 +100,25 @@ function Find-SenVnLawPatternHits {
     $hits = [System.Collections.Generic.List[string]]::new()
     foreach ($entry in $FileEntries) {
         if ($OnlyExtensions.Count -gt 0 -and ($OnlyExtensions -notcontains $entry.Ext)) { continue }
+        $fileHit = $false
         for ($i = 0; $i -lt $entry.Lines.Count; $i++) {
             $ln = $entry.Lines[$i]
             if ($ExcludeLineRegex -and ($ln -match $ExcludeLineRegex)) { continue }
             $m = [regex]::Match($ln, $Regex)
             if ($m.Success) {
+                $fileHit = $true
                 $snippet = $m.Value
                 if ($snippet.Length -gt 120) { $snippet = $snippet.Substring(0, 120) }
                 $hits.Add("$($entry.RelPath):$($i + 1):$snippet")
+                if ($hits.Count -ge $Limit) { return , @($hits.ToArray()) }
+            }
+        }
+        if (-not $fileHit -and -not [string]::IsNullOrWhiteSpace($entry.Raw) -and ($Regex -match '<script')) {
+            $mRaw = [regex]::Match($entry.Raw, "(?s)$Regex")
+            if ($mRaw.Success -and (-not $ExcludeLineRegex -or $mRaw.Value -notmatch $ExcludeLineRegex)) {
+                $snippet = ($mRaw.Value -replace '\s+', ' ').Trim()
+                if ($snippet.Length -gt 120) { $snippet = $snippet.Substring(0, 120) }
+                $hits.Add("$($entry.RelPath):1:$snippet")
                 if ($hits.Count -ge $Limit) { return , @($hits.ToArray()) }
             }
         }
@@ -225,7 +236,7 @@ function Invoke-SenVnLawScan {
         $staticRe = '(?i)<script[^>]*src\s*=\s*["''][^"'']*(googletagmanager\.com|google-analytics\.com|connect\.facebook\.net|analytics\.tiktok\.com|clarity\.ms|hotjar|cdn\.segment\.com)'
         $gateRe = '(?i)(cookiebot|onetrust|cookieyes|cookie-script\.com|klaro|iubenda|osano|termly|complianz|cookieconsent|gtag\(\s*["'']consent["'']|ad_storage["'']?\s*:\s*["'']denied|data-cookieconsent|data-category\s*=\s*["''](analytics|marketing)|cookie[_-]?consent|consent[_-]?(given|granted|accepted)|\u0111\u1ed3ng\s+\u00fd\s+cookie|ch\u1ea5p\s+nh\u1eadn\s+cookie)'
         $staticHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex $staticRe -Limit 3 -OnlyExtensions @('.html', '.htm', '.php', '.liquid') -ExcludeLineRegex '(?i)type\s*=\s*["'']text/plain'
-        $gateHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex $gateRe -Limit 3
+        $gateHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex $gateRe -Limit 3 -ExcludeLineRegex '^\s*(//|#|/\*|\*|<!--)'
         $evidence['TRACKING_PRELOAD'] = $staticHits
         $evidence['CONSENT_GATE'] = $gateHits
         if ($staticHits.Count -gt 0 -and $gateHits.Count -eq 0) { $consentState = 'static' }
@@ -237,7 +248,7 @@ function Invoke-SenVnLawScan {
     $isMobileApp = ($platforms.Count -gt 0)
     $hasAccountDelete = $false
     if ($isMobileApp -and $found['AUTH']) {
-        $delHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex '(?i)(delete[-_ ]?account|deleteAccount|deleteUser|x\u00f3a\s+t\u00e0i\s+kho\u1ea3n|xo\u00e1\s+t\u00e0i\s+kho\u1ea3n|account[-_ ]deletion)' -Limit 2
+        $delHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex '(?i)(delete[-_ ]?account|deleteAccount|deleteUser|x\u00f3a\s+t\u00e0i\s+kho\u1ea3n|xo\u00e1\s+t\u00e0i\s+kho\u1ea3n|account[-_ ]deletion)' -Limit 2 -ExcludeLineRegex '^\s*(//|#|/\*|\*|<!--)'
         $hasAccountDelete = ($delHits.Count -gt 0)
         $evidence['ACCOUNT_DELETE'] = $delHits
     }

@@ -12,14 +12,6 @@ try {
     }
     if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
     $payload = $raw | ConvertFrom-Json
-    $wsCandidates = [System.Collections.Generic.List[string]]::new()
-    if ($payload.workspacePaths) { foreach ($w in @($payload.workspacePaths)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
-    if ($payload.workspace_roots) { foreach ($w in @($payload.workspace_roots)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
-    if ($payload.cwd -and -not [string]::IsNullOrWhiteSpace([string]$payload.cwd)) { $wsCandidates.Add([string]$payload.cwd) }
-    $wsList = @($wsCandidates.ToArray())
-    if ($wsList.Count -eq 0) { exit 0 }
-    $ws = [string]$wsList[0]
-
     $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
     if (-not (Test-Path -LiteralPath $senModule)) {
         $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Runtime.psm1"
@@ -27,18 +19,24 @@ try {
     if (-not (Test-Path -LiteralPath $senModule)) { exit 0 }
     Import-Module $senModule -Force -ErrorAction SilentlyContinue
 
-    $rawTool = if ($payload.toolCall -and $payload.toolCall.name) { [string]$payload.toolCall.name } elseif ($payload.tool_name) { [string]$payload.tool_name } else { "" }
-    $toolName = $rawTool
-    switch -Regex ($rawTool) {
-        '^(?i)(run_command|bash|run_terminal_cmd|shell|exec)$' { $toolName = "run_command"; break }
-        '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { $toolName = "write_file"; break }
-        '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { $toolName = "edit_file"; break }
-        '^(?i)(read_file|read|view_file)$' { $toolName = "read_file"; break }
-        '^(?i)(grep_search|find_by_name|grep|glob|codebase_search|file_search)$' { $toolName = "grep_search"; break }
+    if (Get-Command ConvertFrom-SenHookPayload -ErrorAction SilentlyContinue) {
+        $norm     = ConvertFrom-SenHookPayload -InputObject $payload
+        $ws       = $norm.WorkspacePath
+        $toolName = $norm.CanonicalTool
+        $pathArg  = $norm.TargetPath
+        $cmdArg   = $norm.CommandLine
+        $queryArg = $norm.Query
     }
-    $argsObj = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } else { $null }
-    $pathArg = if ($argsObj -and $argsObj.Path) { [string]$argsObj.Path } elseif ($argsObj -and $argsObj.file_path) { [string]$argsObj.file_path } elseif ($argsObj -and $argsObj.target_file) { [string]$argsObj.target_file } elseif ($argsObj -and $argsObj.SearchPath) { [string]$argsObj.SearchPath } else { "" }
-    $cmdArg = if ($argsObj -and $argsObj.CommandLine) { [string]$argsObj.CommandLine } elseif ($argsObj -and $argsObj.command) { [string]$argsObj.command } else { "" }
+    else {
+        $wsCandidates = [System.Collections.Generic.List[string]]::new()
+        if ($payload.workspacePaths) { foreach ($w in @($payload.workspacePaths)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
+        if ($payload.workspace_roots) { foreach ($w in @($payload.workspace_roots)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
+        if ($payload.cwd -and -not [string]::IsNullOrWhiteSpace([string]$payload.cwd)) { $wsCandidates.Add([string]$payload.cwd) }
+        $wsList = @($wsCandidates.ToArray())
+        $ws = if ($wsList.Count -gt 0) { [string]$wsList[0] } else { "" }
+        $toolName = ""; $pathArg = ""; $cmdArg = ""; $queryArg = ""
+    }
+    if ([string]::IsNullOrWhiteSpace($ws)) { exit 0 }
     $shortFile = if ($pathArg) { [System.IO.Path]::GetFileName($pathArg) } else { "" }
 
     # Zero-token Auto-Orchestration: sync Plan / TODO Markdown to .agents/office/tasks.json on write/edit
@@ -66,7 +64,7 @@ try {
         $from = "r1"
         $lane = "Scout"
         $model = "flash_lite"
-        $q = if ($argsObj.Query) { [string]$argsObj.Query } elseif ($argsObj.Pattern) { [string]$argsObj.Pattern } else { $shortFile }
+        $q = if (-not [string]::IsNullOrWhiteSpace($queryArg)) { $queryArg } else { $shortFile }
         $ecoText = "Search: $q"
     }
     elseif ($toolName -eq "read_file") {

@@ -322,3 +322,46 @@ Test "Security hardening invariants: no Invoke-Expression, DOM XSS escaped, and 
     Assert-True ($startOffice -match '65536') "start-office.ps1 must enforce 64KB Content-Length cap"
     Assert-True ($startOffice -match 'forbidden origin') "start-office.ps1 must reject non-localhost Origin on POST"
 }
+
+Test "Direct unit coverage for Unlock-SenTask, Clear-SenTasks, Invoke-SenDialecticalAudit, and core helpers" {
+    $ws = New-OrchTestWorkspace
+    try {
+        $jsonPath = Join-Path $ws "atomic.json"
+        Write-SenAtomicJson -Path $jsonPath -InputObject @{ ok = $true }
+        $readBack = Read-SenSafeJson -Path $jsonPath
+        Assert-True ([bool]$readBack.ok) "Write-SenAtomicJson and Read-SenSafeJson roundtrip"
+        Assert-True (Test-SenPathOverlap -PathsA @("src/api/user.ts") -PathsB @("src/api")) "Test-SenPathOverlap detects directory prefix overlap"
+
+        [void](New-SenTask -Workspace $ws -Id "T-STUCK" -Title "Stuck Task" -AllowedPaths @("src/api"))
+        [void](Start-SenTask -Workspace $ws -Id "T-STUCK")
+        $unlocked = Unlock-SenTask -Workspace $ws -Id "T-STUCK"
+        Assert-True $unlocked.Unlocked "Unlock-SenTask releases stuck in_progress task"
+        Assert-Equal "ready" $unlocked.Task.status "Unlocked task transitions back to ready"
+
+        Clear-SenTasks -Workspace $ws
+        Assert-Equal 0 @(Get-SenTasks -Workspace $ws).Count "Clear-SenTasks empties tasks.json"
+
+        [void](Add-SenExecutionLesson -Workspace $ws -Category "Test" -Problem "P" -Solution "S")
+        $lessons = @(Get-SenExecutionLessons -Workspace $ws)
+        Assert-Equal 1 $lessons.Count "Get-SenExecutionLessons returns stored lessons"
+
+        $mdFile = Join-Path $ws "MANAGED.md"
+        Assert-True (Update-SenManagedBlock -Path $mdFile -Content "Managed Rules") "Update-SenManagedBlock creates managed section"
+        Assert-True (Remove-SenManagedBlock -Path $mdFile) "Remove-SenManagedBlock removes managed section"
+
+        $lockPath = Get-SenLockPath -Workspace $ws
+        Assert-True ($lockPath -match 'sen\.lock\.json$') "Get-SenLockPath resolves sen.lock.json"
+        $ht = ConvertTo-SenHashtable -InputObject ([pscustomobject]@{ k = "v" })
+        Assert-Equal "v" $ht["k"] "ConvertTo-SenHashtable converts PSCustomObject"
+        Assert-True (@((Get-SenPackagesCatalog).packages).Count -ge 3) "Get-SenPackagesCatalog lists companion packages"
+        Assert-Equal 0 @(Get-SenPackageBackups -Workspace $ws -Id "sen-method").Count "Get-SenPackageBackups returns empty on clean workspace"
+        Assert-True (@(Get-SenSelfPayloadNames).Count -ge 4) "Get-SenSelfPayloadNames returns payload directories"
+
+        $dial = Invoke-SenDialecticalAudit -Workspace $ws
+        Assert-True $dial.Passed "Invoke-SenDialecticalAudit passes on clean workspace"
+        Assert-Equal 100 $dial.Score "Invoke-SenDialecticalAudit scores 100 on clean workspace"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

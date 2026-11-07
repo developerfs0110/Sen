@@ -11,15 +11,50 @@ function Save-SenTasks {
         [string]$Workspace,
         [AllowEmptyCollection()]
         [Parameter(Mandatory = $true)]
-        [object[]]$Tasks
+        [object[]]$Tasks,
+        [switch]$Internal
     )
+    $tasksPath = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
+    $finalList = [System.Collections.Generic.List[object]]::new()
+    if (-not $Internal -and (Test-Path -LiteralPath $tasksPath)) {
+        $diskObj = Read-SenSafeJson -Path $tasksPath
+        $diskArr = if ($null -ne $diskObj -and $diskObj.PSObject.Properties.Name -contains "tasks") { @($diskObj.tasks) } else { @() }
+        $diskMap = @{}
+        foreach ($dt in $diskArr) { if ($dt -and $dt.id) { $diskMap[[string]$dt.id] = $dt } }
+        foreach ($t in $Tasks) {
+            if (-not $t) { continue }
+            $tid = [string]$t.id
+            $tRev = if ($t.PSObject.Properties.Name -contains "_rev") { [int]$t._rev } else { 1 }
+            if ($diskMap.ContainsKey($tid)) {
+                $dt = $diskMap[$tid]
+                $dRev = if ($dt.PSObject.Properties.Name -contains "_rev") { [int]$dt._rev } else { 1 }
+                if ($dRev -gt $tRev) {
+                    $finalList.Add($dt)
+                    continue
+                }
+                if ([string]$t.status -ne [string]$dt.status) {
+                    $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($dRev + 1) -Force
+                }
+            }
+            $finalList.Add($t)
+        }
+    }
+    else {
+        foreach ($t in $Tasks) {
+            if (-not $t) { continue }
+            if ($t.PSObject.Properties.Name -notcontains "_rev") {
+                $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue 1 -Force
+            }
+            $finalList.Add($t)
+        }
+    }
     $payload = [ordered]@{
         version   = 1
         updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-        tasks     = @($Tasks)
+        tasks     = @($finalList.ToArray())
     }
-    Write-SenAtomicJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json") -InputObject $payload -Depth 8
-    return @($Tasks)
+    Write-SenAtomicJson -Path $tasksPath -InputObject $payload -Depth 8
+    return @($finalList.ToArray())
 }
 
 function Get-SenTasks {
@@ -47,11 +82,16 @@ function Get-SenTasks {
             foreach ($d in $deps) {
                 if (-not $doneIds.Contains([string]$d)) { $allDone = $false; break }
             }
-            if ($allDone) { $t.status = "ready"; $changed = $true }
+            if ($allDone) {
+                $t.status = "ready"
+                $curRev = if ($t.PSObject.Properties.Name -contains "_rev") { [int]$t._rev } else { 1 }
+                $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
+                $changed = $true
+            }
         }
     }
     if ($changed) {
-        [void](Save-SenTasks -Workspace $Workspace -Tasks $list)
+        [void](Save-SenTasks -Workspace $Workspace -Tasks $list -Internal)
     }
     return @($list)
 }
@@ -143,9 +183,10 @@ function New-SenTask {
         }
         createdAt          = $now
         updatedAt          = $now
+        _rev               = 1
     }
     $tasks.Add($newTask)
-    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks.ToArray())
+    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks.ToArray() -Internal)
     return $newTask
 }
 
@@ -229,8 +270,10 @@ function Start-SenTask {
     if (-not [string]::IsNullOrWhiteSpace($Assignee)) {
         $target.assignee = $Assignee
     }
+    $curRev = if ($target.PSObject.Properties.Name -contains "_rev") { [int]$target._rev } else { 1 }
+    $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
     $target.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks)
+    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
     return [pscustomobject]@{
         Started        = $true
         Status         = "in_progress"
@@ -238,6 +281,27 @@ function Start-SenTask {
         Task           = $target
         Reason         = $null
     }
+}
+
+function Unlock-SenTask {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Workspace,
+        [Parameter(Mandatory = $true)]
+        [string]$Id
+    )
+    $tasks = @(Get-SenTasks -Workspace $Workspace)
+    $target = $tasks | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1
+    if ($null -eq $target) {
+        return [pscustomobject]@{ Unlocked = $false; Status = "not_found"; Reason = "Task '$Id' not found" }
+    }
+    $target.status = "ready"
+    $curRev = if ($target.PSObject.Properties.Name -contains "_rev") { [int]$target._rev } else { 1 }
+    $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
+    $target.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
+    return [pscustomobject]@{ Unlocked = $true; Status = "ready"; Task = $target }
 }
 
 function Submit-SenTaskForReview {
@@ -258,8 +322,10 @@ function Submit-SenTaskForReview {
     if (-not [string]::IsNullOrWhiteSpace($Notes) -and $target.evidence) {
         $target.evidence.notes = $Notes
     }
+    $curRev = if ($target.PSObject.Properties.Name -contains "_rev") { [int]$target._rev } else { 1 }
+    $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
     $target.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks)
+    [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
     return [pscustomobject]@{ Submitted = $true; Status = "reviewing"; Task = $target }
 }
 
@@ -282,14 +348,19 @@ function Complete-SenTaskReview {
     if ($null -eq $target) {
         return [pscustomobject]@{ Completed = $false; Status = "not_found"; Reason = "Task '$Id' not found" }
     }
+    $validRoles = @("reviewer", "tester", "qa", "sec", "security", "owner-judge", "judge", "pm", "arch", "lead")
+    if ($validRoles -notcontains $Reviewer.Trim().ToLowerInvariant()) {
+        return [pscustomobject]@{ Completed = $false; Status = [string]$target.status; Reason = "Unrecognized or unauthenticated Reviewer role '$Reviewer'." }
+    }
 
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $curRev = if ($target.PSObject.Properties.Name -contains "_rev") { [int]$target._rev } else { 1 }
     if ($Passed) {
-        if ([string]::IsNullOrWhiteSpace($EvidenceCommand) -or $ExitCode -ne 0) {
+        if ([string]::IsNullOrWhiteSpace($EvidenceCommand) -or $EvidenceCommand -notmatch '[A-Za-z0-9]{3,}' -or $ExitCode -ne 0) {
             return [pscustomobject]@{
                 Completed = $false
                 Status    = [string]$target.status
-                Reason    = "Integration & Testing gate requires a non-empty EvidenceCommand and ExitCode = 0 to mark '$Id' done."
+                Reason    = "Integration & Testing gate requires a valid executable EvidenceCommand and ExitCode = 0 to mark '$Id' done."
             }
         }
         $target.status = "done"
@@ -300,8 +371,9 @@ function Complete-SenTaskReview {
             verifiedAt = $now
             notes      = $Notes
         }
+        $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
         $target.updatedAt = $now
-        [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks)
+        [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
         [void](Get-SenTasks -Workspace $Workspace)
         if (Get-Command Sync-SenTasksToMarkdown -ErrorAction SilentlyContinue) {
             [void](Sync-SenTasksToMarkdown -Workspace $Workspace)
@@ -318,8 +390,9 @@ function Complete-SenTaskReview {
             verifiedAt = $now
             notes      = $Notes
         }
+        $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
         $target.updatedAt = $now
-        [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks)
+        [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
         return [pscustomobject]@{
             Completed   = $false
             Status      = "in_progress"
@@ -337,7 +410,9 @@ function Test-SenDeliveryGate {
         [string]$Workspace,
         [string]$ProjectPath = "",
         [switch]$CheckCodeHealth,
-        [switch]$CheckVnLaw
+        [switch]$CheckVnLaw,
+        [switch]$SkipCodeHealth,
+        [switch]$SkipVnLaw
     )
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
     $tasks = @(Get-SenTasks -Workspace $Workspace)
@@ -355,7 +430,7 @@ function Test-SenDeliveryGate {
         $reasons.Add("Incomplete or unverified tasks ($($incomplete -join ', '))")
     }
     $codeHealthObj = $null
-    if ($CheckCodeHealth.IsPresent -and (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue)) {
+    if ((-not $SkipCodeHealth.IsPresent) -and (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue)) {
         $codeHealthObj = Measure-SenCodeHealth -Path $targetDir
         if (-not $codeHealthObj.Healthy) {
             $allowed = $false
@@ -363,7 +438,7 @@ function Test-SenDeliveryGate {
         }
     }
     $vnLawObj = $null
-    if ($CheckVnLaw.IsPresent -and (Get-Command Invoke-SenVnLawScan -ErrorAction SilentlyContinue)) {
+    if ((-not $SkipVnLaw.IsPresent) -and (Get-Command Invoke-SenVnLawScan -ErrorAction SilentlyContinue)) {
         $vnLawObj = Invoke-SenVnLawScan -Path $targetDir
         if (-not $vnLawObj.CompliantCodeLevel) {
             $allowed = $false
@@ -490,7 +565,7 @@ function Add-SenBacklogItem {
         "# Project Backlog (TODO)`n`n"
     }
 
-    if ($existingText -notmatch [regex]::Escape($Id)) {
+    if ($existingText -notmatch "(?<!\w)$([regex]::Escape($Id))(?!\w)") {
         $entryLine = "- [ ] **${Id} (${Priority}): ${Title}**"
         if (-not [string]::IsNullOrWhiteSpace($Details)) {
             $entryLine += "`n  - " + $Details.Trim()
@@ -690,5 +765,5 @@ function Get-SenMemorySnapshot {
     }
 }
 
-Export-ModuleMember -Function Save-SenTasks, Get-SenTasks, Clear-SenTasks, New-SenTask, Get-SenReadyTasks, Start-SenTask, Submit-SenTaskForReview, Complete-SenTaskReview, Test-SenDeliveryGate, Get-SenRecoveryState, Get-SenQualityMetrics, Add-SenBacklogItem, New-SenRestorePoint, Restore-SenRestorePoint, Add-SenExecutionLesson, Get-SenExecutionLessons, Get-SenMemorySnapshot
+Export-ModuleMember -Function Save-SenTasks, Get-SenTasks, Clear-SenTasks, New-SenTask, Get-SenReadyTasks, Start-SenTask, Unlock-SenTask, Submit-SenTaskForReview, Complete-SenTaskReview, Test-SenDeliveryGate, Get-SenRecoveryState, Get-SenQualityMetrics, Add-SenBacklogItem, New-SenRestorePoint, Restore-SenRestorePoint, Add-SenExecutionLesson, Get-SenExecutionLessons, Get-SenMemorySnapshot
 
