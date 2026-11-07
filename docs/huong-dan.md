@@ -14,7 +14,7 @@ Tài liệu này dành cho bất kỳ ai muốn làm việc cùng AI một cách
 | **Antigravity** | Giống như tòa nhà văn phòng nơi bạn và đội trợ lý AI ngồi làm việc chung trên các thư mục dự án. | Bạn mở ứng dụng Antigravity IDE trên máy tính, gõ yêu cầu bằng tiếng Việt vào ô chat bên cạnh các file dự án. |
 | **Rule (Quy tắc)** | Giống như nội quy công ty luôn treo trên tường mà mọi nhân viên phải tuân theo mỗi ngày mà không cần nhắc lại. | File `rules/AGENTS.md` của Sen luôn bật để nhắc AI phân cấp mọi yêu cầu thành Cấp 1, Cấp 2 hoặc Cấp 3 ngay dòng đầu tiên. |
 | **Skill (Kỹ năng)** | Giống như cuốn sổ tay hướng dẫn từng bước cho một nghiệp vụ chuyên môn, chỉ mở ra xem khi cần làm đúng việc đó. | Khi cần bàn giao việc Cấp 2/3, AI mở skill `sen-delivery-report` để lập báo cáo nghiệm thu đúng chuẩn; khi cần rà soát bảo mật, AI mở `security-audit`. |
-| **Plugin (Gói mở rộng)** | Giống như một bộ đồ nghề đóng hộp sẵn gồm cả nội quy (rule) lẫn các sổ tay kỹ năng (skill) để lắp vào văn phòng chỉ trong một lần. | `sen-method` là một plugin chứa rule lõi cùng 7 skill `sen-*`, giúp bạn cài đặt hoặc bật/tắt toàn bộ phương pháp Sen chỉ bằng một thao tác. |
+| **Plugin (Gói mở rộng)** | Giống như một bộ đồ nghề đóng hộp sẵn gồm cả nội quy (rule) lẫn các sổ tay kỹ năng (skill) để lắp vào văn phòng chỉ trong một lần. | `sen-method` (`v0.4.0`) là một plugin chứa rule lõi (`<= 5.95 KB`), **10 skill `sen-*`** và **73 cmdlets thực thi tất định** (`237/237` bài test qua `12` bộ kiểm thử, hoàn tất `22/22` tasks `TASK-01` -> `TASK-22`), giúp bạn cài đặt hoặc bật/tắt toàn bộ phương pháp Sen trên 6 IDE/CLI chỉ bằng một thao tác. |
 
 ---
 
@@ -86,24 +86,23 @@ Mọi yêu cầu trong Sen đều được phân vào một trong 3 cấp độ 
   > `Thêm chức năng lọc sản phẩm theo giá`
 - **Bạn sẽ thấy gì:**
   1. AI mở đầu bằng nhãn **`[Cấp 2 - Xác nhận phương án]`**.
-  2. AI trình bày ngắn gọn phương án xử lý (ví dụ: thêm ô chọn khoảng giá trên giao diện, lọc danh sách sản phẩm ở tầng xử lý, bổ sung test) kèm **danh sách các file dự kiến sẽ sửa**.
-  3. AI dừng lại và hỏi bạn duyệt phương án **đúng một lần**.
+  2. **Lượt 1 (Chứng minh + Thực thi Song song Lạc quan):** AI trình bày bảng thẩm định chuyên gia (*Best-of-the-Best* + Phản biện + cột **Tài nguyên tiêu tốn**) kèm danh sách các file dự kiến sẽ sửa, tự động chụp điểm khôi phục (`New-SenRestorePoint`) và **giao việc ngay cho Dev subagent chạy song song** trong lúc bạn đọc phương án.
+  3. **Lượt 2 (Nghiệm thu & Hoàn tác 1-chạm):** AI vượt qua các cổng kiểm duyệt (`Measure-SenCodeHealth`, `Invoke-SenVnLawScan`, `Test-SenHungTasks`, `Test-SenDeliveryGate`) và gửi **Báo cáo nghiệm thu (`sen-delivery-report`)** kèm lệnh hoàn tác tức thì (`Restore-SenRestorePoint`).
 - **Bạn cần làm gì:**
-  - Xem qua phương án và trả lời **`"Duyệt"`** (hoặc góp ý chỉnh sửa nếu muốn).
-  - Ngay sau khi bạn duyệt, AI tự làm một mạch cho đến khi xong, chạy cổng kiểm duyệt chất lượng và gửi **Báo cáo nghiệm thu (`sen-delivery-report`)**.
+  - Xem bảng phương án và báo cáo nghiệm thu. Nếu muốn đổi ý hoặc quay lại trạng thái cũ, bạn chỉ cần bảo hoàn tác (`Restore-SenRestorePoint`).
 
 ### Ví dụ Cấp 3 — Dự án mới, kiến trúc, cơ sở dữ liệu, xác thực hoặc thanh toán
 - **Bạn gõ yêu cầu:**
   > `Làm một website bán hàng mới cho tiệm bánh`
 - **Bạn sẽ thấy gì:**
   1. AI mở đầu bằng nhãn **`[Cấp 3 - Thiết kế & kế hoạch]`**.
-  2. **Bước làm rõ & Thiết kế:** AI trao đổi ngắn gọn để làm rõ nhu cầu, sau đó viết bản **Thiết kế (Design Spec)** lưu trong `docs/specs/` kèm sơ đồ trực quan Mermaid và danh sách công cụ cần cài.
-  3. **Bước lập kế hoạch:** Sau khi bạn đồng ý thiết kế, AI viết **Kế hoạch triển khai (Implementation Plan)** chia nhỏ thành từng task rõ ràng, và tự chọn chế độ thực thi phù hợp:
-     - **Native (AI chính tự làm):** khi ít task (dưới ~5 task) hoặc các task phụ thuộc chặt vào nhau.
-     - **Subagent-driven (Đội agent phụ):** khi có nhiều task độc lập hoặc đụng phần nhạy cảm (thanh toán, dữ liệu), kèm ghi chú ước tính chi phí token khoảng **2–3 lần** so với tự làm.
-  4. **Bước chuẩn bị môi trường & Thực thi:** AI kiểm tra công cụ trên máy (`sen-environment`), điều phối các vai trò (BA, Trinh sát, Dev, Tester, Kiểm định bảo mật/pháp lý), cập nhật tiến độ vào `docs/CONTEXT.md` và kết thúc bằng báo cáo nghiệm thu.
+  2. **Bước Thiết kế, Mô phỏng Output Phase 1 & Phản biện 7 mũi nhọn:** AI viết bản **Thiết kế (Design Spec)** lưu trong `docs/superpowers/specs/` (được kiểm tra dấu thời gian đúng phiên hiện tại qua cổng `SessionStartedAtUtc` — `TASK-20`), ghi **Mô phỏng Output Giai đoạn 1** bằng `Write-SenOfficeShowcase -Phase 1` (cơ chế *Read-Merge-Write* không ghi đè mất dữ liệu), chạy phản biện 7 mũi nhọn (`Invoke-SenDialecticalAudit`) và vẽ sơ đồ trực quan Mermaid.
+  3. **Bước lập kế hoạch & Đồng bộ 2 chiều:** AI viết **Kế hoạch triển khai (Implementation Plan)** tự động đồng bộ vào `.agents/office/tasks.json` (`Sync-SenPlanToTasks`), và chọn chế độ thực thi phù hợp:
+     - **Native (1 Dev subagent):** khi ít task (dưới ~5 task) hoặc các task phụ thuộc chặt vào nhau.
+     - **Subagent-driven (Đội agent phụ song song):** khi có nhiều task độc lập hoặc đụng phần nhạy cảm (thanh toán, dữ liệu), kèm ghi chú ước tính chi phí token khoảng **2–3 lần** so với Native.
+  4. **Bước Thực thi, Thăm dò Sự sống 3 Tín hiệu & Bàn giao:** AI điều phối các vai trò (BA, Trinh sát, Dev, Tester, Kiểm định bảo mật/pháp lý bao gồm cả quét rò rỉ dữ liệu qua Bot/Backend `BOT_DATA_FORWARDING_WITHOUT_CONSENT`), bảo vệ các tác vụ chạy lâu bằng thăm dò sự sống 3 tín hiệu (`Test-SenHungTasks` & `Clear-SenHungTasks` — `TASK-21` & `TASK-22`), cập nhật **Mô phỏng Output Giai đoạn 2 (`Write-SenOfficeShowcase -Phase 2`)**, kiểm tra đồng bộ 5 tầng Logic ↔ Tài liệu (`Test-SenCapabilityParity`), cập nhật `docs/CONTEXT.md` và kết thúc bằng báo cáo nghiệm thu.
 - **Bạn cần làm gì:**
-  - Trả lời câu hỏi làm rõ ban đầu, xem và duyệt **Thiết kế** cùng **Kế hoạch**, sau đó theo dõi đội AI hoàn thành và đọc báo cáo nghiệm thu cuối cùng.
+  - Xem Thiết kế, Kế hoạch, đối chiếu Mô phỏng Output Phase 1 vs. Phase 2 trên Văn phòng 3D và đọc báo cáo nghiệm thu cuối cùng.
 
 ---
 

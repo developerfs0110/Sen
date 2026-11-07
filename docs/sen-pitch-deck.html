@@ -220,7 +220,7 @@
       <div class="doc-container">
         <div class="slide-tag">📘 TAB 1 • TỔNG QUAN README (ĐÃ MAPPING 100% VỚI SEN v0.4.0 MỚI NHẤT)</div>
         <h1>Sen (<span class="highlight">sen-method v0.4.0</span>) — Hệ Điều Hành Điều Phối Đội AI Đa Nền Tảng</h1>
-        <p class="subtitle">Kết hợp <strong>Luật lõi siêu gọn (&lt;= 5.75 KB)</strong> với <strong>Runtime thực thi tất định (68 cmdlets, 10 kỹ năng sen-*, 0 phụ thuộc ngoài)</strong> trên cả 6 nền tảng: <strong>Antigravity IDE, Claude Code, Cursor, GitHub Copilot, Windsurf, Codex CLI / OpenCode</strong>.</p>
+        <p class="subtitle">Kết hợp <strong>Luật lõi siêu gọn (&lt;= 5.95 KB)</strong> với <strong>Runtime thực thi tất định (73 cmdlets, 10 kỹ năng sen-*, 0 phụ thuộc ngoài, 237/237 bài test qua 12 bộ kiểm thử, hoàn tất 22/22 tasks TASK-01 → TASK-22)</strong> trên cả 6 nền tảng: <strong>Antigravity IDE, Claude Code, Cursor, GitHub Copilot, Windsurf, Codex CLI / OpenCode</strong>.</p>
         <div class="grid-3">
           <div class="card"><h3>1. Đúng mức kiểm soát</h3><p>Tự động chấm điểm rủi ro (<code>Get-SenTaskRiskScore</code>): Việc nhỏ làm ngay (Cấp 1), việc vừa làm song song lạc quan kèm chứng minh (Cấp 2), việc rủi ro cao có thiết kế & phản biện 7 mũi nhọn (Cấp 3).</p></div>
           <div class="card"><h3>2. Minh bạch & Đồng bộ 2 chiều</h3><p>Mọi việc hiển thị qua nhãn cấp độ, bảng Tài nguyên tiêu tốn, tự động đồng bộ <code>[x]</code> giữa Markdown và <code>tasks.json</code>, cùng Văn phòng 3D Chibi (<code>sen-office</code>).</p></div>
@@ -246,10 +246,10 @@
         <h1>SEN (<span class="highlight">sen-method</span>)<br/>"Phức tạp ở bên dưới, giản dị ở bên trên."</h1>
         <p class="subtitle">Biến mọi công cụ AI Coding rời rạc thành một <strong>Đội ngũ Kỹ sư Phần mềm Chuẩn mực</strong>: Tự phân tầng rủi ro, Tự chứng minh & phản biện, Tự kiểm toán Clean Code 6 chiều, Tuân thủ Luật Việt Nam 2025/2026 và Hiển thị trực quan trong Văn phòng 3D.</p>
         <div class="grid-4">
-          <div class="card"><div class="kpi">68 / 68</div><h3>Hàm Runtime Tất định</h3><p>100% độ phủ Unit Test trực tiếp; 0 phụ thuộc ngoài; thực thi dưới 35ms.</p></div>
+          <div class="card"><div class="kpi">73 / 73</div><h3>Hàm Runtime Tất định</h3><p>100% độ phủ Unit Test trực tiếp (237/237 tests / 12 suites); 22/22 tasks; 0 phụ thuộc ngoài.</p></div>
           <div class="card"><div class="kpi cyan">6 IDEs/CLIs</div><h3>Đa Nền Tảng Hợp Nhất</h3><p>Antigravity, Claude Code, Cursor, GitHub Copilot, Windsurf, Codex CLI.</p></div>
-          <div class="card"><div class="kpi gold">0 / 22</div><h3>Lỗ Hổng Sau Phản Biện</h3><p>Đã vượt qua 7 mũi tấn công Red-Team & 8 giả thuyết bác bỏ Karl Popper.</p></div>
-          <div class="card"><div class="kpi lotus">5.7 KB</div><h3>Ngân Sách Ngữ Cảnh</h3><p>Luật lõi chỉ 61 dòng — nhường &gt;98% bộ nhớ ngữ cảnh của AI cho dự án.</p></div>
+          <div class="card"><div class="kpi gold">0 / 22</div><h3>Lỗ Hổng Sau Phản Biện</h3><p>Đã vượt qua 7 mũi tấn công Red-Team, 8 giả thuyết Karl Popper & cổng 5/5 Parity.</p></div>
+          <div class="card"><div class="kpi lotus">&lt;= 5.95 KB</div><h3>Ngân Sách Ngữ Cảnh</h3><p>Luật lõi chỉ 62 dòng — nhường &gt;98% bộ nhớ ngữ cảnh của AI cho dự án.</p></div>
         </div>
         <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Sen được thiết kế như một Hệ điều hành Quản trị & Điều phối (AI Engineering Harness) cực kỳ gọn nhẹ ở bề mặt nhưng chặt chẽ tuyệt đối ở tầng dưới."</div>
       </section>
@@ -275,13 +275,13 @@
           <div class="card"><h3>① Phân tầng Rủi ro Tất định</h3><p><code>Get-SenTaskRiskScore</code> tự động phân loại Tier 0..3; khóa sàn cứng Cấp 3 với DB/Auth/Payment/Delete.</p></div>
           <div class="card"><h3>② Thực thi Song song Lạc quan</h3><p><em>"Trình bày trước — Làm luôn — Báo kết quả"</em> kèm chụp điểm khôi phục <code>New-SenRestorePoint</code> & Undo 1-chạm.</p></div>
           <div class="card"><h3>③ Vòng lặp Biện chứng 7 Mũi</h3><p>Chứng minh <em>Best-of-the-Best</em> + Bảng Tài nguyên tiêu tốn + Tự phản biện đối kháng (<code>Invoke-SenDialecticalAudit</code>).</p></div>
-          <div class="card"><h3>④ Điều phối DAG & Khóa File</h3><p>Quản lý Task DAG, khóa <code>allowedPaths</code> chống giẫm chân, kiểm soát tương tranh <code>_rev</code> & <code>Unlock-SenTask</code>.</p></div>
-          <div class="card"><h3>⑤ Đồng bộ 2 Chiều 0-Token</h3><p>Tự động nạp Plan/TODO vào <code>tasks.json</code> khi lưu file và tự động tích <code>[x]</code> ngược lại Markdown khi xong Task.</p></div>
+          <div class="card"><h3>④ DAG, Khóa File &amp; Liveness 3 Tín hiệu</h3><p>Quản lý Task DAG, khóa <code>allowedPaths</code>, phiên bản <code>_rev</code>, <code>Unlock-SenTask</code> &amp; thăm dò sự sống <code>Test-SenHungTasks</code> / <code>Clear-SenHungTasks</code> (bảo vệ <code>ActiveLongRunningIds</code>, bắt <code>DeadlockedItems</code>, dọn <code>StaleTaskIds</code> &amp; <code>IdleSubagents</code>).</p></div>
+          <div class="card"><h3>⑤ Đồng bộ 2 Chiều &amp; 5-Layer Parity</h3><p>Tự động nạp Plan/TODO vào <code>tasks.json</code> và tích <code>[x]</code> ngược lại Markdown; cổng dấu thời gian phiên <code>SessionStartedAtUtc</code> (<code>TASK-20</code>) &amp; khóa đồng bộ Logic ↔ Tài liệu 5 tầng (<code>Test-SenCapabilityParity</code>).</p></div>
           <div class="card"><h3>⑥ Lá chắn Bảo mật STRIDE</h3><p><code>guard.ps1</code> / <code>guard.sh</code> chặn 19 mẫu lệnh hủy dữ liệu/force-push/IEX, chống sửa trộm file lõi và che khóa bí mật.</p></div>
-          <div class="card"><h3>⑦ Clean Code 6D & Luật VN</h3><p><code>Measure-SenCodeHealth</code> (ISO 5055 + SonarQube) & <code>Invoke-SenVnLawScan</code> (Luật 91/2025, NĐ 356/2025, Luật AI 134/2025).</p></div>
-          <div class="card"><h3>⑧ 6-Harness Bridge & 3D Office</h3><p>Đồng bộ 6 IDE/CLI, giám sát trực quan trong Văn phòng 3D Chibi và vòng lặp tự chữa lành CI từ xa (<code>Invoke-SenCiPushLoop</code>).</p></div>
+          <div class="card"><h3>⑦ Clean Code 6D &amp; Luật VN</h3><p><code>Measure-SenCodeHealth</code> (ISO 5055 + SonarQube) &amp; <code>Invoke-SenVnLawScan</code> (Luật 91/2025, NĐ 356/2025, Luật AI 134/2025 + quét rò rỉ biên lai/dữ liệu Bot <code>BOT_DATA_FORWARDING_WITHOUT_CONSENT</code>).</p></div>
+          <div class="card"><h3>⑧ 6-Harness Bridge &amp; 3D Office</h3><p>Đồng bộ 6 IDE/CLI, Văn phòng 3D Chibi với Mô phỏng Output 2 Giai đoạn <em>Read-Merge-Write</em> (<code>Write-SenOfficeShowcase -Phase 1|2</code>) và vòng lặp tự chữa lành CI từ xa (<code>Invoke-SenCiPushLoop</code>).</p></div>
         </div>
-        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Toàn bộ 8 trụ cột này đã được đóng gói trong 68 cmdlets PowerShell chuẩn ASCII và kiểm chứng qua 228 bài test tự động."</div>
+        <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Toàn bộ 8 trụ cột này đã được đóng gói trong 73 cmdlets PowerShell chuẩn ASCII và kiểm chứng qua 237/237 bài test tự động trên 12 bộ kiểm thử."</div>
       </section>
 
       <section class="slide">
@@ -337,11 +337,11 @@
             <tr><th>Bộ Kiểm chứng (<code>sen-adversarial-bench</code>)</th><th>Trước Cải tiến</th><th>Sau Cải tiến (<code>v0.4.0</code>)</th><th>Trạng thái</th></tr>
           </thead>
           <tbody>
-            <tr><td><strong>1. Chứng minh Hình thức (<code>1a–1d</code>)</strong></td><td>4/4 Claims</td><td><strong>4/4 Claims (15/15 checks)</strong></td><td><span class="pill pill-pass">PASS 100%</span></td></tr>
-            <tr><td><strong>2. Độ phủ Unit Test Trực tiếp (<code>1C-EXPORT-COV</code>)</strong></td><td>54/66 (81.82%)</td><td><strong>68/68 hàm (100.00%)</strong></td><td><span class="pill pill-pass">100% COVERED</span></td></tr>
-            <tr><td><strong>3. Phản biện Đối kháng 7 Mũi nhọn (<code>2a–2g</code>)</strong></td><td>22 lỗ hổng</td><td><strong>0 / 22 lỗ hổng (Falsified = 0)</strong></td><td><span class="pill pill-pass">100% REMEDIATED</span></td></tr>
+            <tr><td><strong>1. Chứng minh Hình thức (<code>1a–1d</code>)</strong></td><td>4/4 Claims</td><td><strong>4/4 Claims (15/15 checks + 5/5 Layer Parity)</strong></td><td><span class="pill pill-pass">PASS 100%</span></td></tr>
+            <tr><td><strong>2. Độ phủ Unit Test Trực tiếp (<code>1C-EXPORT-COV</code>)</strong></td><td>54/66 (81.82%)</td><td><strong>73/73 hàm (100.00%)</strong></td><td><span class="pill pill-pass">100% COVERED</span></td></tr>
+            <tr><td><strong>3. Phản biện Đối kháng 7 Mũi nhọn (<code>2a–2g</code>)</strong></td><td>22 lỗ hổng</td><td><strong>0 / 22 lỗ hổng (Falsified = 0 | 22/22 Tasks)</strong></td><td><span class="pill pill-pass">100% REMEDIATED</span></td></tr>
             <tr><td><strong>4. Ma trận Bác bỏ Karl Popper (<code>H1–H8</code>)</strong></td><td>8/8 bị bác bỏ</td><td><strong>8 / 8 Vững chắc (CORROBORATED)</strong></td><td><span class="pill pill-pass">100% CORROBORATED</span></td></tr>
-            <tr class="best-row"><td><strong>5. Bộ Test Hồi quy & Sức khỏe Mã nguồn</strong></td><td>227/227 tests</td><td><strong>228/228 tests (571 asserts) | Health 100/100</strong></td><td><span class="pill pill-pass">VERIFIED</span></td></tr>
+            <tr class="best-row"><td><strong>5. Bộ Test Hồi quy &amp; Sức khỏe Mã nguồn</strong></td><td>227/227 tests</td><td><strong>237/237 tests (12 suites) | Health 100/100</strong></td><td><span class="pill pill-pass">VERIFIED</span></td></tr>
           </tbody>
         </table>
         <div class="speaker-note">🎤 <strong>Lời dẫn:</strong> "Mọi con số đều có thể tái lập ngay lập tức bằng cách chạy kịch bản Run-Benchmark.ps1."</div>

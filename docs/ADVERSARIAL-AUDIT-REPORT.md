@@ -201,12 +201,16 @@ Bộ thử nghiệm đối kháng đã phát hiện và tái lập thực nghi�
 5. **Ranh giới từ `\b` trong `Add-SenBacklogItem` (`CONC-4-BACKLOG-SUBSTRING-DROP`):**
    - Sửa kiểm tra trùng ID tại [Sen.Orchestrator.psm1](../scripts/Sen.Orchestrator.psm1) dòng `493` thành `(?<!\w)$([regex]::Escape($Id))(?!\w)` để `TASK-10` không bao giờ nuốt mất `TASK-1`.
 
-### Trụ cột 5: Mở Rộng Độ Phủ AST Đa Ngôn Ngữ & Lấp Đầy 12 Hàm Test Trực Tiếp (Khắc phục `BVA-3`, `1c`, `SOC-3`)
+### Trụ cột 5: Mở Rộng Độ Phủ AST Đa Ngôn Ngữ, Lấp Đầy 100% Hàm Test Trực Tiếp & Bảo Vệ Toàn Vẹn Phiên Thực Thi (`TASK-20` $\rightarrow$ `TASK-22`)
 1. **Clean Code 6D Đa ngôn ngữ & Phát hiện trùng lặp nội tệp (`BVA-3-NON-PS-AST-BLINDSPOT`):**
    - Trong `Find-SenDuplicateCodeBlocks`, sửa điều kiện để bắt cả khối code trùng lặp **bên trong cùng một tệp** (khi khoảng cách dòng giữa 2 khối `>= WindowSize`).
    - Bổ sung bộ đếm độ sâu ngoặc nhọn `{...}` và độ dài hàm dựa trên mẫu khai báo hàm (`function`, `def`, `func`, `=>`) cho các tệp `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.cs`, `.go`.
 2. **Viết bổ sung Unit Test trực tiếp cho toàn bộ hàm xuất khẩu (`1c`):**
-   - Đưa độ phủ gọi trực tiếp (Direct Export Coverage) từ `81.82% (54/66)` lên **100% (68/68)**.
+   - Đưa độ phủ gọi trực tiếp (Direct Export Coverage) từ `81.82% (54/66)` lên **100% (`73/73`)** trên `12` bộ kiểm thử (`237/237` bài test).
+3. **Cổng Bằng chứng Theo Phiên (`TASK-20`), Thăm dò Sự sống 3 Tín hiệu (`TASK-21` & `TASK-22`) & Đồng bộ 5 Tầng (`Test-SenCapabilityParity`):**
+   - **Session-Scoped Evidence & Timestamp Gate (`TASK-20`):** Từ chối tài liệu Spec/Plan cũ từ phiên trước qua mốc `SessionStartedAtUtc`, quét hành vi Bot/Backend tự động đẩy biên lai/dữ liệu cá nhân nhạy cảm khi chưa tách bạch đồng ý (`BOT_DATA_FORWARDING_WITHOUT_CONSENT`), và áp dụng cơ chế *Read-Merge-Write* không mất dữ liệu trong `Write-SenOfficeShowcase -Phase 1|2`.
+   - **3-Signal Liveness Probe & Selective Teardown (`TASK-21` & `TASK-22`: `Test-SenHungTasks` & `Clear-SenHungTasks`):** Bảo vệ tuyệt đối các tác vụ chạy lâu đang có tiến triển thật (`ActiveLongRunningIds` qua heartbeat/sửa file/subagent đang chạy), bắt tức thì lỗi kẹt chờ nhập bàn phím (`DeadlockedItems`), và dọn dẹp chọn lọc các tác vụ treo (`StaleTaskIds`) cùng subagent nhàn rỗi (`IdleSubagents`).
+   - **Logic $\leftrightarrow$ Documentation 5-Layer Parity Gate (`Test-SenCapabilityParity`):** Đảm bảo đồng bộ 100% giữa `5/5` tầng (`73/73` hàm xuất khẩu, `README_SYNC`, `VERSION_DOC_SYNC`, `TODO_CONTEXT_SYNC`).
 
 ---
 
@@ -238,17 +242,17 @@ Bộ thử nghiệm đối kháng đã phát hiện và tái lập thực nghi�
 
 ## 6. Kết Quả Kiểm Định Thực Nghiệm Sau Khắc Phục (*Post-Remediation Verification: 100% Green*)
 
-Sau khi thực thi toàn bộ 5 Trụ cột Kỹ thuật và phương án $S^*$, toàn bộ các bộ kiểm định đã được chạy lại và xác minh thực nghiệm:
+Sau khi thực thi toàn bộ 5 Trụ cột Kỹ thuật, phương án $S^*$ và hoàn tất `22/22` hạng mục (`TASK-01` $\rightarrow$ `TASK-22`), toàn bộ các bộ kiểm định đã được chạy lại và xác minh thực nghiệm:
 
-| Hạng mục Kiểm định | Trước Khắc phục (Baseline) | Sau Khắc phục (Post-Remediation) | Trạng thái |
+| Hạng mục Kiểm định | Trước Khắc phục (Baseline) | Sau Khắc phục (`v0.4.0` — `TASK-01` $\rightarrow$ `TASK-22`) | Trạng thái |
 |---|---|---|---|
-| **1. Chứng minh Hình thức (`1a` – `1d`)** | `4/4` Claims (`15/15` checks) | **`4/4` Claims (`15/15` checks)** | **PASS (100%)** |
-| **2. Độ phủ Unit Test Trực tiếp (`1C-EXPORT-COV`)** | `54/66` hàm (`81.82%`) | **`68/68` hàm (`100.00%`)** | **PASS (100%)** |
-| **3. Phản biện Thực nghiệm 7 Mũi nhọn (`2a` – `2g`)** | `22/22` lỗ hổng bị đánh sập (`Falsified = 22`) | **`0/22` lỗ hổng (`Falsified = 0`)** | **100% REMEDIATED** |
+| **1. Chứng minh Hình thức (`1a` – `1d`) & 5-Layer Parity** | `4/4` Claims (`15/15` checks) | **`4/4` Claims (`15/15` checks + `5/5` Parity Layers)** | **PASS (100%)** |
+| **2. Độ phủ Unit Test Trực tiếp (`1C-EXPORT-COV`)** | `54/66` hàm (`81.82%`) | **`73/73` hàm (`100.00%`)** | **PASS (100%)** |
+| **3. Phản biện Thực nghiệm 7 Mũi nhọn (`2a` – `2g`) & 22 Tasks** | `22/22` lỗ hổng bị đánh sập (`Falsified = 22`) | **`0/22` lỗ hổng (`Falsified = 0` \| `22/22` Tasks)** | **100% REMEDIATED** |
 | **4. Ma trận Bác bỏ Popper (`H1` – `H8`)** | `8/8` giả thuyết bị bác bỏ (`Falsified = 8/8`) | **`0/8` bị bác bỏ (`8/8 [CORROBORATED]`)** | **100% CORROBORATED** |
 | **5. Bất thường Bảng Quyết định (`Probe 2e`)** | `6` bất thường (`Anomalies = 6`) | **`0` bất thường (`Anomalies = 0`)** | **100% CLEAN** |
 | **6. Chỉ số Sức khỏe Mã nguồn (`Measure-SenCodeHealth`)** | `100/100` (`Healthy = True`) | **`100/100` (`Healthy = True`, `28` tệp)** | **PASS (100/100)** |
-| **7. Ngân sách Ngữ cảnh ([rules/AGENTS.md](../rules/AGENTS.md))** | `5,612 / 5,750` bytes (`61 / 95` dòng) | **`5,716 / 5,750` bytes (`61 / 95` dòng)** | **PASS** |
-| **8. Bộ Test Hồi quy (`tests/run.ps1` & `Validate-Repo.ps1`)** | `227/227` tests (`0` lỗi) | **`228/228` tests (`0` lỗi)** | **PASS (100%)** |
+| **7. Ngân sách Ngữ cảnh ([rules/AGENTS.md](../rules/AGENTS.md))** | `5,612 / 5,750` bytes (`61 / 95` dòng) | **`<= 5,950 / 6,000` bytes (`62 / 99` dòng)** | **PASS** |
+| **8. Bộ Test Hồi quy (`tests/run.ps1` & `Validate-Repo.ps1`)** | `227/227` tests (`0` lỗi) | **`237/237` tests (`12` suites, `0` lỗi)** | **PASS (100%)** |
 
 

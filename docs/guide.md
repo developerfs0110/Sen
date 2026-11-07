@@ -14,7 +14,7 @@ This guide is written for anyone who wants to work with AI calmly, safely, and c
 | **Antigravity** | Like the shared office building where you and your AI assistants sit together working on your project folders. | You open Antigravity IDE on your computer and type requests in plain English into the chat panel next to your files. |
 | **Rule** | Like a short company policy posted on the wall that every assistant follows automatically every day without being reminded. | Sen's `rules/AGENTS.md` is always active and makes the AI classify every work request into Tier 1, Tier 2, or Tier 3 on the very first line. |
 | **Skill** | Like a step-by-step handbook for a specialized task that the assistant only opens when that specific job comes up. | When handing over a Tier 2/3 task, the AI opens `sen-delivery-report` to write a structured acceptance report; for security checks, it opens `security-audit`. |
-| **Plugin** | Like a ready-to-use toolbox containing both the wall policy (rule) and all the specialist handbooks (skills) in one package. | `sen-method` is a plugin bundling the core rule and all 7 `sen-*` skills so you can install or toggle the entire Sen workflow as a single unit. |
+| **Plugin** | Like a ready-to-use toolbox containing both the wall policy (rule) and all the specialist handbooks (skills) in one package. | `sen-method` (`v0.4.0`) is a plugin bundling the ultra-lean core rule (`<= 5.95 KB`), **10 `sen-*` skills**, and **73 deterministic cmdlets** (`237/237` automated tests passing across `12` test suites, `22/22` tasks completed `TASK-01` -> `TASK-22`) so you can install or toggle the entire Sen workflow across 6 IDEs/CLIs as a single unit. |
 
 ---
 
@@ -86,24 +86,23 @@ Every work request in Sen is classified into one of 3 tiers (drawn directly from
   > `Add dark mode to the app`
 - **What you see:**
   1. The AI starts its reply with **`[Tier 2 - Confirming the approach]`**.
-  2. It summarizes the proposed approach (e.g., theme context, CSS variables, toggle button, persistence) along with the **exact list of files it plans to create or edit**.
-  3. It pauses and asks for your approval **once**.
+  2. **Turn 1 (Dialectical Proof + Optimistic Parallel Execution):** It presents the objective *Best-of-the-Best* proof, adversarial critique, and **Resource Cost** table along with the exact files to edit, takes a restore point (`New-SenRestorePoint`), and **spawns a Dev subagent immediately in parallel** while you read.
+  3. **Turn 2 (Verified Delivery & 1-Touch Undo):** It passes the verification gates (`Measure-SenCodeHealth`, `Invoke-SenVnLawScan`, `Test-SenHungTasks`, `Test-SenDeliveryGate`) and presents an **Acceptance Report (`sen-delivery-report`)** with a 1-touch undo command (`Restore-SenRestorePoint`).
 - **What you do:**
-  - Review the short summary and reply **`"Approved"`** (or suggest adjustments).
-  - Once approved, the AI implements the entire feature, runs the verification gates, and presents an **Acceptance Report (`sen-delivery-report`)**.
+  - Review the proof table and acceptance report. If you ever want to roll back, run or ask for `Restore-SenRestorePoint`.
 
 ### Tier 3 Example — New Project, Architecture, Database, Auth, or Payments
 - **What you type:**
   > `Build a new mobile app for booking appointments`
 - **What you see:**
   1. The AI starts its reply with **`[Tier 3 - Design & plan]`**.
-  2. **Clarification & Design Spec:** The AI asks focused questions to clarify your needs, then writes a **Design Spec** in `docs/specs/` complete with Mermaid diagrams and a list of required/optional development tools.
-  3. **Implementation Plan & Execution Choice:** After you approve the design, the AI writes a step-by-step **Implementation Plan** and automatically picks the execution mode in one line (without asking you a confusing technical question):
-     - **Native (single agent):** when there are fewer than ~5 tasks or tasks are tightly coupled.
-     - **Subagent-driven (specialist team):** when there are many independent tasks or high-risk areas, noting that subagents use roughly **2–3x** the token usage of Native execution.
-  4. **Environment Check & Team Execution:** The AI checks your installed tools (`sen-environment`), coordinates specialist roles (BA, Scout, Dev, Tester, Security/Legal Reviewers), updates `docs/CONTEXT.md`, and finishes with an acceptance report.
+  2. **Design Spec, Phase 1 Output Simulation & 7-Vector Critique:** The AI writes a **Design Spec** in `docs/superpowers/specs/` (verified by the session-scoped `SessionStartedAtUtc` timestamp gate — `TASK-20`), records **Phase 1 Output Simulation** via `Write-SenOfficeShowcase -Phase 1` (non-destructive *Read-Merge-Write*), runs 7-vector dialectical critique (`Invoke-SenDialecticalAudit`), and embeds Mermaid diagrams.
+  3. **Implementation Plan & 2-Way Auto-Sync:** The AI writes a step-by-step **Implementation Plan** that auto-syncs into `.agents/office/tasks.json` (`Sync-SenPlanToTasks`), and picks the execution mode in one line:
+     - **Native (1 Dev subagent):** when there are fewer than ~5 tasks or tasks are tightly coupled.
+     - **Subagent-driven (parallel specialist team):** when there are many independent tasks or high-risk areas, noting that subagents use roughly **2–3x** the token usage of Native execution.
+  4. **Team Execution, 3-Signal Liveness Probe & Handover:** The AI coordinates specialist roles (BA, Scout, Dev, Tester, Security/Legal Reviewers including Bot/Backend personal data & receipt forwarding checks `BOT_DATA_FORWARDING_WITHOUT_CONSENT`), protects active long-running tasks via the 3-signal liveness probe & selective teardown (`Test-SenHungTasks` & `Clear-SenHungTasks` — `TASK-21` & `TASK-22`), updates **Phase 2 Output Simulation (`Write-SenOfficeShowcase -Phase 2`)**, verifies 5-layer Logic <-> Documentation parity (`Test-SenCapabilityParity`), updates `docs/CONTEXT.md`, and finishes with an acceptance report.
 - **What you do:**
-  - Answer the brief clarifying questions, review and approve the **Design** and **Plan**, and inspect the final acceptance report when the team finishes.
+  - Review the Design, Plan, and Dual-Phase Output Simulation in the 3D AI Office, and inspect the final acceptance report when the team finishes.
 
 ---
 

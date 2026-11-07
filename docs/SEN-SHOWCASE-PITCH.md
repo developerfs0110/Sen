@@ -51,7 +51,7 @@ Khi sử dụng các AI Agent hiện nay (Antigravity, Claude Code, Cursor, Copi
 
 ```mermaid
 flowchart TD
-    U["Người dùng / Kỹ sư<br/>(Giao việc tự nhiên bằng Tiếng Việt / Anh)"] --> R["Luật Lõi Siêu Gọn<br/>(rules/AGENTS.md < 5.75 KB)"]
+    U["Người dùng / Kỹ sư<br/>(Giao việc tự nhiên bằng Tiếng Việt / Anh)"] --> R["Luật Lõi Siêu Gọn<br/>(rules/AGENTS.md <= 5.95 KB)"]
     R --> T1["Cấp 1 (Tier 1)<br/>Làm ngay - Tự kiểm - Báo cáo"]
     R --> T2["Cấp 2 (Tier 2)<br/>Chứng minh & Phản biện + Cost<br/>Thực thi Song song Lạc quan"]
     R --> T3["Cấp 3 (Tier 3)<br/>Thiết kế + Kế hoạch + Phản biện 7 mũi<br/>Điều phối Đa Tác nhân (DAG & File Lock)"]
@@ -61,25 +61,25 @@ flowchart TD
 1. **Một cửa duy nhất (Single Entry Point):** Tự động nhận diện ngôn ngữ, phong cách làm việc và công nghệ chủ đạo qua hồ sơ cá nhân hóa.
 2. **Tương xứng rủi ro (Risk-Proportional Effort):** Việc nhỏ làm ngay (`Cấp 1`); việc vừa chứng minh phương án tối ưu rồi làm luôn (`Cấp 2`); việc lớn/rủi ro cao có thiết kế, phản biện và kế hoạch bài bản (`Cấp 3`).
 3. **An toàn mặc định (Safe by Default):** Chặn cứng lệnh phá hoại ở tầng Hook trước khi chạm tới hệ điều hành; luôn chụp điểm khôi phục (`Restore Point`) trước khi sửa code.
-4. **Dựa trên bằng chứng vật lý (Evidence-Based):** Mọi bước trong quy trình và mọi Task chỉ được công nhận hoàn thành khi có bằng chứng kiểm thử thực tế (`ExitCode = 0`).
-5. **Siêu tiết kiệm Ngữ cảnh (Ultra-Lean Context Budget):** Toàn bộ luật lõi luôn nạp trong phiên chỉ chiếm **`5,716 bytes` (`61 dòng`)** — nhường hơn **98% cửa sổ ngữ cảnh** của AI cho bài toán thực tế của dự án.
+4. **Dựa trên bằng chứng vật lý (Evidence-Based):** Mọi bước trong quy trình và mọi Task chỉ được công nhận hoàn thành khi có bằng chứng kiểm thử thực tế (`ExitCode = 0`) đúng phiên hiện tại (`SessionStartedAtUtc`).
+5. **Siêu tiết kiệm Ngữ cảnh (Ultra-Lean Context Budget):** Toàn bộ luật lõi luôn nạp trong phiên chỉ chiếm **`<= 5.95 KB` (`62 dòng`)** — nhường hơn **98% cửa sổ ngữ cảnh** của AI cho bài toán thực tế của dự án.
 
 ---
 
 ## Slide 3 — Sen đã làm được những gì? (8 Trụ cột Công nghệ Đã Hoàn tất & Kiểm chứng)
 
-Toàn bộ kiến trúc của Sen từ phiên bản `v0.1.0` đến `v0.4.0` đã được hiện thực hóa thành **68 hàm cmdlet thực thi**, **10 kỹ năng chuyên sâu (`sen-*`)**, **12 bộ kiểm thử tự động (`228/228` bài test)** và **0 phụ thuộc ngoài**:
+Toàn bộ kiến trúc của Sen từ phiên bản `v0.1.0` đến `v0.4.0` (`22/22` tasks hoàn tất từ `TASK-01` $\rightarrow$ `TASK-22`) đã được hiện thực hóa thành **73 hàm cmdlet thực thi (`73/73` phủ Unit Test 100%)**, **10 kỹ năng chuyên sâu (`sen-*`)**, **12 bộ kiểm thử tự động (`237/237` bài test)** và **0 phụ thuộc ngoài**:
 
 | # | Trụ cột Công nghệ | Giải quyết bài toán gì? | Thành phần / Hàm thực thi tiêu biểu |
 |---|---|---|---|
 | **1** | **Phân tầng Rủi ro Tất định & Cold-Start 1-File** | Chấm điểm rủi ro khách quan; khởi động phiên chat chỉ đọc 1 file duy nhất (`docs/CONTEXT.md`) | `Get-SenTaskRiskScore` trong [Sen.Runtime.psm1](../scripts/Sen.Runtime.psm1) |
 | **2** | **Thực thi Song song Lạc quan & Hoàn tác 1-Chạm** | *"Trình bày trước — Làm luôn — Báo kết quả"*: Không bắt người dùng chờ đợi duyệt thủ công; hoàn tác byte-exact tức thì | `New-SenRestorePoint`, `Restore-SenRestorePoint` trong [Sen.Orchestrator.psm1](../scripts/Sen.Orchestrator.psm1) |
 | **3** | **Vòng lặp Biện chứng "Chứng minh — Phản biện — Tối ưu"** | Bắt buộc chứng minh phương án là *Best-of-the-Best* kèm bảng **Tài nguyên tiêu tốn**, tự tấn công bằng 7 mũi phản biện trước khi chốt | `Invoke-SenDialecticalAudit` trong [Sen.Harness.psm1](../scripts/Sen.Harness.psm1) |
-| **4** | **Điều phối Đa Tác nhân (DAG, File Lock & OCC `_rev`)** | Quản lý trạng thái Task theo đồ thị phụ thuộc (DAG), khóa file chống giẫm chân, chống mất dữ liệu tương tranh và giải phóng khóa treo | `New-SenTask`, `Start-SenTask`, `Unlock-SenTask`, `Complete-SenTaskReview` |
-| **5** | **Đồng bộ 2 Chiều Tự động 0-Token & Kiểm toán 3 Tầng** | Tự động nạp Task từ Plan/TODO vào `tasks.json` và tự động tích `[x]` ngược lại Markdown; kiểm toán 12 bước qua 4 giai đoạn | `Sync-SenPlanToTasks`, `Sync-SenTasksToMarkdown`, `Test-SenStageGate`, `Test-SenProjectCompliance` |
+| **4** | **Điều phối Đa Tác nhân, DAG, OCC `_rev` & Liveness 3 Tín hiệu** | Quản lý trạng thái Task theo DAG, khóa `allowedPaths`, chống mất dữ liệu tương tranh, bảo vệ task chạy lâu (`ActiveLongRunningIds`), bắt kẹt stdin (`DeadlockedItems`) và dọn dẹp chọn lọc (`StaleTaskIds`, `IdleSubagents`) | `New-SenTask`, `Start-SenTask`, `Unlock-SenTask`, `Complete-SenTaskReview`, `Test-SenHungTasks`, `Clear-SenHungTasks` |
+| **5** | **Đồng bộ 2 Chiều 0-Token, Kiểm toán Phiên & Đồng bộ 5 Tầng** | Tự động nạp Task từ Plan/TODO vào `tasks.json` và tích `[x]` ngược lại Markdown; kiểm toán 12 bước theo phiên (`SessionStartedAtUtc`); khóa đồng bộ Logic ↔ Tài liệu 5 tầng | `Sync-SenPlanToTasks`, `Sync-SenTasksToMarkdown`, `Test-SenStageGate`, `Test-SenProjectCompliance`, `Test-SenCapabilityParity` |
 | **6** | **Lá chắn Bảo mật STRIDE & Chống Lặp Vô hạn** | Chặn 19 nhóm lệnh hủy dữ liệu/force-push/IEX, bảo vệ file cấu hình lõi, che giấu khóa bí mật (AWS, PAT, PEM, JWT), ngắt vòng lặp lỗi 3 lần | [guard.ps1](../scripts/guard.ps1), [guard.sh](../scripts/guard.sh), `Protect-SenRedactedText`, `Test-SenStuckLoop` |
-| **7** | **Clean Code 6 Chiều & Pháp lý Việt Nam Nội sinh** | Quét 6 chiều chất lượng mã nguồn (ISO/IEC 5055 + SonarQube + AI-Native 800L) và 11 tín hiệu Luật VN (`Luật 91/2025`, `NĐ 356/2025`, `Luật AI 134/2025`) | `Measure-SenCodeHealth`, `Invoke-SenVnLawScan` trong [Sen.Legal.psm1](../scripts/Sen.Legal.psm1) |
-| **8** | **Cầu nối 6 Nền tảng & Văn phòng AI 3D + Tự chữa lành CI** | Chạy đồng nhất trên Antigravity, Claude Code, Cursor, Copilot, Windsurf, Codex; hiển thị 3D AI Office thời gian thực; tự động sửa lỗi CI từ xa | `Install-SenHarness`, `Invoke-SenCiPushLoop`, [office/index.html](../office/index.html) |
+| **7** | **Clean Code 6 Chiều & Pháp lý Việt Nam Nội sinh** | Quét 6 chiều chất lượng mã nguồn (ISO/IEC 5055 + SonarQube + AI-Native 800L) và 12 tín hiệu Luật VN (`Luật 91/2025`, `NĐ 356/2025`, `Luật AI 134/2025` + quét rò rỉ dữ liệu Bot/Backend `BOT_DATA_FORWARDING_WITHOUT_CONSENT`) | `Measure-SenCodeHealth`, `Invoke-SenVnLawScan` trong [Sen.Legal.psm1](../scripts/Sen.Legal.psm1) |
+| **8** | **Cầu nối 6 Nền tảng & Văn phòng AI 3D + Tự chữa lành CI** | Chạy đồng nhất trên Antigravity, Claude Code, Cursor, Copilot, Windsurf, Codex; hiển thị 3D AI Office & Mô phỏng Output 2 Giai đoạn *Read-Merge-Write*; tự động sửa lỗi CI từ xa | `Install-SenHarness`, `Write-SenOfficeShowcase`, `Invoke-SenCiPushLoop`, [office/index.html](../office/index.html) |
 
 ---
 
@@ -145,7 +145,7 @@ Kết hợp tiêu chuẩn **ISO/IEC 5055**, **SonarQube**, **PSScriptAnalyzer/ES
 
 ### 2. Pháp lý Việt Nam Nội sinh (`Invoke-SenVnLawScan` — Legal-by-Design)
 Công cụ đầu tiên tại Việt Nam tích hợp kiểm toán mã nguồn tự động theo hệ thống luật mới nhất có hiệu lực **2025–2026**:
-- **Luật Bảo vệ dữ liệu cá nhân `91/2025/QH15` & Nghị định `356/2025/NĐ-CP`:** Tự động phát hiện script theo dõi (`gtag`, `fbq`, `tiktok`, `clarity`) nạp tĩnh trước khi người dùng nhấn đồng ý (`TRACKING_PRELOAD_WITHOUT_CONSENT`), chống lách luật qua thẻ `<script>` nhiều dòng hoặc comment giả mạo.
+- **Luật Bảo vệ dữ liệu cá nhân `91/2025/QH15` & Nghị định `356/2025/NĐ-CP`:** Tự động phát hiện script theo dõi (`gtag`, `fbq`, `tiktok`, `clarity`) nạp tĩnh trước khi người dùng nhấn đồng ý (`TRACKING_PRELOAD_WITHOUT_CONSENT`), chống lách luật qua thẻ `<script>` nhiều dòng hoặc comment giả mạo; đồng thời phát hiện hành vi Bot/Backend tự động chuyển tiếp ảnh biên lai/dữ liệu cá nhân nhạy cảm sang kênh thứ ba khi chưa tách bạch đồng ý (`BOT_DATA_FORWARDING_WITHOUT_CONSENT` — `TASK-20`).
 - **Quy định Kho ứng dụng & Quyền xóa dữ liệu:** Phát hiện ứng dụng Mobile (Flutter, React Native, Expo, iOS, Android) có đăng nhập (`AUTH`) nhưng thiếu luồng xóa tài khoản (`MOBILE_AUTH_MISSING_ACCOUNT_DELETE`).
 - **Luật Trí tuệ nhân tạo `134/2025/QH15` & Luật Thương mại điện tử `122/2025/QH15`:** Tự động nhận diện tín hiệu tích hợp AI (`OpenAI`, `Anthropic`, `Gemini`) để yêu cầu nhãn minh bạch AI, và chặn mọi trích dẫn văn bản pháp luật đã hết hiệu lực (`NĐ 13/2023`, `NĐ 52/2013`, `NĐ 85/2021`).
 
@@ -183,13 +183,13 @@ flowchart LR
 
 | Hạng mục Kiểm chứng Thực nghiệm | Trước Phản biện (Baseline) | Sau Cải tiến Biện chứng (`v0.4.0`) | Ý nghĩa Thực tiễn |
 |---|---|---|---|
-| **1. Chứng minh Hình thức 4 Mệnh đề (`1a` – `1d`)** | `4/4` Claims (`15/15` checks) | **`4/4` Claims (`15/15` checks)** | Đầy đủ quy trình 12 bước cho mọi loại dự án (CLI, Backend, Web, Mobile, AI) |
-| **2. Độ phủ Unit Test Trực tiếp (`1C-EXPORT-COV`)** | `54/66` hàm (`81.82%`) | **`68/68` hàm (`100.00%`)** | 100% hàm xuất khẩu của Sen đều có Unit Test kiểm chứng trực tiếp |
-| **3. Tấn công Phản biện 7 Mũi nhọn (`2a` – `2g`)** | `22` lỗ hổng bị xuyên thủng | **`0 / 22` lỗ hổng (`100% Vá kín`)** | Chặn đứng mọi biến thể lách luật, tương tranh, giả mạo và vượt rào |
+| **1. Chứng minh Hình thức 4 Mệnh đề (`1a` – `1d`) & 5-Layer Parity** | `4/4` Claims (`15/15` checks) | **`4/4` Claims (`15/15` checks + `5/5` Parity Layers)** | Đầy đủ quy trình 12 bước đúng phiên (`SessionStartedAtUtc`) & đồng bộ Logic ↔ Tài liệu |
+| **2. Độ phủ Unit Test Trực tiếp (`1C-EXPORT-COV`)** | `54/66` hàm (`81.82%`) | **`73/73` hàm (`100.00%`)** | 100% hàm xuất khẩu của Sen đều có Unit Test kiểm chứng trực tiếp |
+| **3. Tấn công Phản biện 7 Mũi nhọn (`2a` – `2g`) & 22 Tasks** | `22` lỗ hổng bị xuyên thủng | **`0 / 22` lỗ hổng (`100% Vá kín` | `22/22` Tasks)** | Chặn đứng mọi biến thể lách luật, tương tranh, giả mạo, vượt rào và treo tiến trình |
 | **4. Ma trận Bác bỏ Karl Popper (`H1` – `H8`)** | `8/8` giả thuyết bị bác bỏ | **`8 / 8` giả thuyết Vững chắc (`[CORROBORATED]`)** | Các bất biến an toàn đứng vững trước dữ liệu thù địch |
 | **5. Bảng Quyết định Tổ hợp (`Probe 2e`)** | `6` tổ hợp bất thường | **`0` bất thường (`Anomalies = 0`)** | Không còn điểm mù tổ hợp giữa Cấp độ (Tier 1–3) và Phạm vi (Core/Web/Mobile) |
 | **6. Chỉ số Sức khỏe Mã nguồn (`Measure-SenCodeHealth`)** | `100/100` | **`100 / 100` (`Healthy = True`, 28 tệp)** | Tự thân mã nguồn của Sen đạt chuẩn ISO/IEC 5055 & SonarQube tuyệt đối |
-| **7. Bộ Kiểm thử Hồi quy (`tests/run.ps1`)** | `227/227` PASS | **`228 / 228` PASS (`571` Assertions)** | Cam kết chất lượng bằng bằng chứng thực thi tự động |
+| **7. Bộ Kiểm thử Hồi quy (`tests/run.ps1`)** | `227/227` PASS | **`237 / 237` PASS (`12` Test Suites)** | Cam kết chất lượng bằng bằng chứng thực thi tự động |
 
 ---
 
@@ -199,7 +199,7 @@ flowchart LR
 
 | Tiêu chí | Prompt / Rules Tĩnh (`.cursorrules` / `CLAUDE.md` thuần) | Bộ Kỹ năng Quy trình (`Superpowers` / `BMAD` thuần) | Framework Đa Agent Nặng (`CrewAI` / `AutoGen` / `LangGraph`) | **Hệ sinh thái SEN (`sen-method` `v0.4.0`) — *Best-of-the-Best*** |
 |---|---|---|---|---|
-| **Bản chất kiến trúc** | Văn bản nhắc nhở tĩnh (AI có thể quên hoặc phớt lờ) | Bộ quy trình Markdown tốt nhưng thiếu Runtime kiểm toán & thiếu lá chắn hệ thống | Cần viết code Python riêng, dựng server/DB ngoài IDE | **Luật Lõi Siêu Gọn (`5.7 KB`) + Runtime Thực thi Tất định (`68` cmdlets) + Lá chắn Hook + 3D Office** |
+| **Bản chất kiến trúc** | Văn bản nhắc nhở tĩnh (AI có thể quên hoặc phớt lờ) | Bộ quy trình Markdown tốt nhưng thiếu Runtime kiểm toán & thiếu lá chắn hệ thống | Cần viết code Python riêng, dựng server/DB ngoài IDE | **Luật Lõi Siêu Gọn (`<= 5.95 KB`) + Runtime Thực thi Tất định (`73` cmdlets) + Lá chắn Hook + 3D Office** |
 | **Phân tầng theo Rủi ro** | Không (mọi việc xử lý giống nhau) | Thủ công (người dùng tự gọi lệnh) | Phải lập trình cứng từng luồng | **Tự động 100% (`Get-SenTaskRiskScore`) + Thực thi Song song Lạc quan** |
 | **Chứng minh & Phản biện** | Không có | Chỉ có Brainstorming xuôi | Tốn kém nhiều vòng chat giữa các Agent | **Vòng lặp Biện chứng Thích ứng Cấp độ + Kiểm toán Tự động (`Invoke-SenDialecticalAudit`)** |
 | **Bảo vệ Pháp lý VN & Clean Code 6D** | Không có | Không có | Không có | **Tích hợp sẵn (`Invoke-SenVnLawScan` theo Luật 2025/2026 + `Measure-SenCodeHealth`)** |

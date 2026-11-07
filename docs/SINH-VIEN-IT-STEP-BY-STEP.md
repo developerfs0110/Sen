@@ -137,8 +137,8 @@ sequenceDiagram
 
 #### 1. Sen làm gì cho bạn?
 Sau khi chốt cách làm, Sen tạo ra 3 thứ cực kỳ trực quan trong thư mục dự án của bạn:
-- **Bản vẽ Thiết kế (`docs/superpowers/specs/...`):** Có sẵn các sơ đồ hình vẽ mũi tên (Mermaid) — bạn có thể copy nguyên sơ đồ này dán thẳng vào file Word/PowerPoint báo cáo đồ án!
-- **Mô phỏng Output Giai đoạn 1 (`Write-SenOfficeShowcase` $\rightarrow$ `.agents/office/showcase.json`):** Ngay từ trước khi bắt tay vào code chi tiết, Sen dựng sẵn bảng **Mô phỏng Đầu ra Kỳ vọng (Phase 1 Blueprint)** trên tab **`🎯 Đầu ra (2 Giai đoạn)`** của Văn phòng ảo để bạn hình dung rõ sản phẩm cuối cùng sẽ gồm những màn hình và tính năng gì!
+- **Bản vẽ Thiết kế (`docs/superpowers/specs/...`):** Có sẵn các sơ đồ hình vẽ mũi tên (Mermaid) được kiểm tra dấu thời gian đúng phiên làm việc hiện tại (`SessionStartedAtUtc` — `TASK-20`) — bạn có thể copy nguyên sơ đồ này dán thẳng vào file Word/PowerPoint báo cáo đồ án!
+- **Mô phỏng Output Giai đoạn 1 (`Write-SenOfficeShowcase -Phase 1` $\rightarrow$ `.agents/office/showcase.json`):** Ngay từ trước khi bắt tay vào code chi tiết, Sen dựng sẵn bảng **Mô phỏng Đầu ra Kỳ vọng (Phase 1 Blueprint)** theo cơ chế *Read-Merge-Write* (ghi thêm mà không bao giờ xóa nhầm dữ liệu cũ) trên tab **`🎯 Đầu ra (2 Giai đoạn)`** của Văn phòng ảo để bạn hình dung rõ sản phẩm cuối cùng sẽ gồm những màn hình và tính năng gì!
 - **Bảng Kế hoạch từng bước (`docs/superpowers/plans/...`) & Đồng bộ 2 chiều 0-Token:** Chia đề án thành từng bước nhỏ (Task 1, Task 2, Task 3...). Ngay khoảnh khắc file kế hoạch được lưu, Sen tự động biến các gạch đầu dòng đó thành danh sách công việc điện tử (`.agents/office/tasks.json`). Khi làm xong việc nào, Sen **tự động đánh dấu tích `[x]`** vào lại file văn bản cho bạn!
 
 ```text
@@ -176,7 +176,7 @@ Sau khi chốt cách làm, Sen tạo ra 3 thứ cực kỳ trực quan trong th�
 #### 2. Sen bảo vệ bạn như thế nào?
 - **Chụp điểm khôi phục tự động (`New-SenRestorePoint`):** Trước khi chạm vào bất kỳ file code nào của bạn, Sen tự động chụp lại một bản sao nguyên vẹn cất vào két sắt ẩn. Nếu bạn không ưng ý, chỉ cần bảo *"Hoàn tác giúp mình"* (`Restore-SenRestorePoint`), mọi thứ quay về đúng từng chữ như 1 giây trước đó!
 - **Lá chắn an toàn (`guard.ps1`):** Nếu AI (hoặc chính bạn) vô tình chạy lệnh xóa nhầm thư mục (`rm -rf`, `Remove-Item -Recurse`) hoặc đẩy đè mất bài trên GitHub (`git push --force`), lá chắn của Sen sẽ **chặn đứng ngay lập tức** trước khi lệnh đó kịp chạy!
-- **Thực thi Song song Lạc quan:** Trong lúc bạn đang đọc phần giải thích của Sen trên màn hình, ở bên dưới các trợ lý AI của Sen đã đồng thời viết xong code và tự chạy bài kiểm tra (Test) để chắc chắn code không có lỗi rồi mới đưa cho bạn.
+- **Thực thi Song song Lạc quan & Thăm dò Sự sống 3 Tín hiệu (`Test-SenHungTasks` & `Clear-SenHungTasks` — `TASK-21` & `TASK-22`):** Trong lúc bạn đang đọc phần giải thích của Sen trên màn hình, ở bên dưới các trợ lý AI của Sen đã đồng thời viết xong code và tự chạy bài kiểm tra (Test). Đặc biệt, bộ thăm dò sự sống 3 tín hiệu bảo vệ tuyệt đối các việc chạy lâu đang có nhịp tim thực thi (`ActiveLongRunningIds`), phát hiện tức thì các lệnh bị đơ chờ bấm phím (`DeadlockedItems`), và tự động dọn dẹp các tác vụ treo (`StaleTaskIds`) cùng trợ lý phụ đã nghỉ (`IdleSubagents`) để laptop của bạn luôn mượt mà!
 
 #### 3. ⚔️ So sánh Bước 4: Dùng Cách Khác vs. Dùng SEN
 
@@ -226,8 +226,8 @@ Sau khi chốt cách làm, Sen tạo ra 3 thứ cực kỳ trực quan trong th�
 2. **Rà soát Bảo mật & Che giấu Mật khẩu (`Protect-SenRedactedText` & `security-audit`):**
    - Không bao giờ để lộ mật khẩu cơ sở dữ liệu hay chìa khóa kết nối AI (API Key) lên mạng.
 3. **Kiểm tra Tuân thủ Pháp luật Việt Nam (`Invoke-SenVnLawScan`):**
-   - Vì ứng dụng **UniStay** của bạn có thu thập Số điện thoại/Email sinh viên, có dùng AI tư vấn và có bản Mobile App:
-     - Sen tự động kiểm tra ứng dụng đã có **ô tích đồng ý chính sách bảo mật (không tích sẵn)** theo đúng **Luật Bảo vệ dữ liệu cá nhân `91/2025/QH15` & Nghị định `356/2025/NĐ-CP`** chưa.
+   - Vì ứng dụng **UniStay** của bạn có thu thập Số điện thoại/Email sinh viên, có gửi thông báo đặt cọc qua Bot Telegram/Zalo, có dùng AI tư vấn và có bản Mobile App:
+     - Sen tự động kiểm tra ứng dụng đã có **ô tích đồng ý chính sách bảo mật (không tích sẵn)** theo đúng **Luật Bảo vệ dữ liệu cá nhân `91/2025/QH15` & Nghị định `356/2025/NĐ-CP`** chưa, và chặn lỗi Bot/Backend tự động bắn ảnh biên lai chuyển khoản hay thông tin nhạy cảm sang nhóm chat thứ ba khi chưa xin phép riêng (`BOT_DATA_FORWARDING_WITHOUT_CONSENT` — `TASK-20`).
      - Sen kiểm tra bản Mobile App đã có nút **"Xóa tài khoản"** chưa, và khung chat AI đã gắn nhãn **"Trợ lý AI"** theo **Luật Trí tuệ nhân tạo `134/2025/QH15`** chưa!
 
 #### 2. ⚔️ So sánh Bước 6: Dùng Cách Khác vs. Dùng SEN
@@ -250,18 +250,19 @@ Sau khi chốt cách làm, Sen tạo ra 3 thứ cực kỳ trực quan trong th�
 
 ---
 
-## Phần 3: Tóm Lại — Chỉ Với 1 Câu Lệnh, Sinh Viên Năm 1 Nhận Được Gì Từ SEN?
+## Phần 3: Tóm Lại — Chỉ Với 1 Câu Lệnh, Sinh Viên Năm 1 Nhận Được Gì Từ SEN (`v0.4.0` — `73/73` Cmdlets, `237/237` Tests, `22/22` Tasks)?
 
 ```text
 +===================================================================================+
-| 🎓 KẾT QUẢ CUỐI CÙNG KHI BẠN DÙNG SEN LÀM ĐỀ ÁN:                                  |
+| 🎓 KẾT QUẢ CUỐI CÙNG KHI BẠN DÙNG SEN (v0.4.0) LÀM ĐỀ ÁN:                         |
 |                                                                                   |
 |  1. Không cần biết thuật ngữ khó  ---> Nói tiếng Việt tự nhiên, Sen tự phân tích  |
 |  2. Không sợ chọn sai giải pháp   ---> Có Vòng lặp Chứng minh - Phản biện bảo vệ  |
 |  3. Không sợ sửa hỏng code cũ     ---> Có Restore Point quay lui trong 1 giây     |
-|  4. Không sợ hết lượt dùng AI     ---> Tiết kiệm 70% Token nhờ Cold-Start 1-File  |
-|  5. Không sợ thầy cô bắt bẻ code  ---> Clean Code 100/100 + Đúng Luật VN 2025     |
-|  6. Dùng được trên mọi phần mềm   ---> Antigravity, Cursor, Claude, Copilot...    |
+|  4. Không sợ treo máy hay đơ IDE  ---> Có Liveness Probe 3 tín hiệu tự dọn dẹp    |
+|  5. Không sợ hết lượt dùng AI     ---> Tiết kiệm 70% Token nhờ Cold-Start 1-File  |
+|  6. Không sợ thầy cô bắt bẻ code  ---> Clean Code 100/100 + Đúng Luật VN 2025     |
+|  7. Dùng được trên mọi phần mềm   ---> Antigravity, Cursor, Claude, Copilot...    |
 +===================================================================================+
 ```
 
