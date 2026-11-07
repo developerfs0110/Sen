@@ -297,6 +297,56 @@ Test "Process Compliance 3-Tier Engine filters (*) and (**), enforces Stage Gate
     }
 }
 
+Test "TASK-20 audit fixes enforce session-scoped stage evidence and reject stale artifacts across sessions" {
+    $ws = New-HarnessTestWorkspace
+    try {
+        $specsDir = Join-Path $ws "docs/superpowers/specs"
+        $plansDir = Join-Path $ws "docs/superpowers/plans"
+        [System.IO.Directory]::CreateDirectory($specsDir) | Out-Null
+        [System.IO.Directory]::CreateDirectory($plansDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $specsDir "2026-11-06-old.md"), "# Old Spec`nBest-of-the-Best`n| Option | Resource Cost |")
+        [System.IO.File]::WriteAllText((Join-Path $plansDir "2026-11-06-old.md"), "### Task 1 (OLD-01): Work`n- [x] Step 1")
+        [System.IO.File]::WriteAllText((Join-Path $ws "docs/CONTEXT.md"), "# Stale Context")
+        [void](New-SenRestorePoint -Workspace $ws -Files @("docs/CONTEXT.md") -Label "old-rp")
+        [void](New-SenTask -Workspace $ws -Id "OLD-01" -Title "Old Task" -Tier 3)
+        [void](Start-SenTask -Workspace $ws -Id "OLD-01")
+        [void](Submit-SenTaskForReview -Workspace $ws -Id "OLD-01")
+        [void](Complete-SenTaskReview -Workspace $ws -Id "OLD-01" -Passed $true -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+
+        $pastUtc = [DateTime]::UtcNow.AddMinutes(-15)
+        foreach ($staleFile in @(
+                (Join-Path $specsDir "2026-11-06-old.md"),
+                (Join-Path $plansDir "2026-11-06-old.md"),
+                (Join-Path $ws "docs/CONTEXT.md")
+            )) {
+            (Get-Item -LiteralPath $staleFile).LastWriteTimeUtc = $pastUtc
+        }
+        foreach ($rpManifest in @(Get-ChildItem -LiteralPath (Join-Path $ws ".agents/.sen-restore") -Filter "manifest.json" -Recurse -File)) {
+            $rpManifest.LastWriteTimeUtc = $pastUtc
+        }
+        $staleTasks = @(Get-SenTasks -Workspace $ws)
+        foreach ($stTask in $staleTasks) {
+            $stTask.createdAt = $pastUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            $stTask.updatedAt = $pastUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            if ($stTask.evidence) { $stTask.evidence.verifiedAt = $pastUtc.ToString("yyyy-MM-ddTHH:mm:ssZ") }
+        }
+        [void](Save-SenTasks -Workspace $ws -Tasks $staleTasks)
+
+        $newAudit = Initialize-SenProcessAudit -Workspace $ws -ProjectName "NewSessionApp" -Tier 3 -ProjectScope "core"
+        $latchedStage2Plus = @($newAudit.selectedSteps | Where-Object { [int]$_.stage -ge 2 -and [bool]$_.latched })
+        Assert-Equal 0 $latchedStage2Plus.Count "New session audit must not inherit latched Stage 2-4 steps from previous project"
+        $staleG2 = Test-SenStageGate -Workspace $ws -Stage 2
+        Assert-True (-not $staleG2.Passed) "Stage 2 gate must reject stale Spec/Plan/Task older than session startedAt"
+        $staleG3 = Test-SenStageGate -Workspace $ws -Stage 3
+        Assert-True (-not $staleG3.Passed) "Stage 3 gate must reject stale RestorePoint/Task older than session startedAt"
+        $staleDeliv = Test-SenDeliveryGate -Workspace $ws
+        Assert-True (-not $staleDeliv.Allowed) "Delivery gate must block when only stale tasks from previous sessions exist"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Test "Get-SenRemoteCiStatus and Invoke-SenCiPushLoop inspect remote CI runs and extract failed steps" {
     $mockRestFail = {
         param([string]$Uri)

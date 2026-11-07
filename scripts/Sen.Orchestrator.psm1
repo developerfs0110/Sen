@@ -406,15 +406,17 @@ function Complete-SenTaskReview {
 function Test-SenDeliveryGate {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Workspace,
         [string]$ProjectPath = "",
+        [string]$SessionStartedAt = "",
+        [switch]$RequireActiveSessionTask,
         [switch]$CheckCodeHealth,
         [switch]$CheckVnLaw,
         [switch]$SkipCodeHealth,
         [switch]$SkipVnLaw
     )
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
+    if (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })
     $incomplete = [System.Collections.Generic.List[string]]::new()
@@ -425,50 +427,40 @@ function Test-SenDeliveryGate {
         else { $incomplete.Add([string]$t.id) }
     }
     $reasons = [System.Collections.Generic.List[string]]::new()
-    $allowed = ($incomplete.Count -eq 0)
-    if (-not $allowed) {
-        $reasons.Add("Incomplete or unverified tasks ($($incomplete -join ', '))")
+    $allowed = ($active.Count -gt 0) -and ($incomplete.Count -eq 0)
+    if ($active.Count -eq 0) { $reasons.Add("No active tasks registered in tasks.json") }
+    elseif ($incomplete.Count -gt 0) { $reasons.Add("Incomplete or unverified tasks ($($incomplete -join ', '))") }
+
+    $auditFile = Join-Path $Workspace ".agents/office/process-audit.json"
+    $auditObj = if (Test-Path -LiteralPath $auditFile) { Read-SenSafeJson -Path $auditFile } else { $null }
+    $sessStart = if (-not [string]::IsNullOrWhiteSpace($SessionStartedAt)) { $SessionStartedAt } elseif ($auditObj -and $auditObj.PSObject.Properties['startedAt']) { [string]$auditObj.startedAt } else { "" }
+    if ($active.Count -gt 0 -and (-not [string]::IsNullOrWhiteSpace($sessStart) -or $RequireActiveSessionTask.IsPresent)) {
+        $minTs = if (-not [string]::IsNullOrWhiteSpace($sessStart)) { $sessStart } else { [DateTime]::UtcNow.AddHours(-4).ToString("yyyy-MM-ddTHH:mm:ssZ") }
+        $sessionDone = @($active | Where-Object { [string]$_.status -eq "done" -and ([string]$_.updatedAt -ge $minTs -or ($_.evidence -and [string]$_.evidence.verifiedAt -ge $minTs)) })
+        if ($sessionDone.Count -eq 0) { $allowed = $false; $reasons.Add("No tasks verified in current audit session since $minTs") }
     }
     $codeHealthObj = $null
     if ((-not $SkipCodeHealth.IsPresent) -and (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue)) {
         $codeHealthObj = Measure-SenCodeHealth -Path $targetDir
-        if (-not $codeHealthObj.Healthy) {
-            $allowed = $false
-            $reasons.Add("Clean Code check failed (Score=$($codeHealthObj.Score))")
-        }
+        if (-not $codeHealthObj.Healthy) { $allowed = $false; $reasons.Add("Clean Code check failed (Score=$($codeHealthObj.Score))") }
     }
     $vnLawObj = $null
     if ((-not $SkipVnLaw.IsPresent) -and (Get-Command Invoke-SenVnLawScan -ErrorAction SilentlyContinue)) {
         $vnLawObj = Invoke-SenVnLawScan -Path $targetDir
         if (-not $vnLawObj.CompliantCodeLevel) {
-            $allowed = $false
-            $codes = @($vnLawObj.CodeRedFlags | ForEach-Object { $_.Code }) -join ', '
+            $allowed = $false; $codes = @($vnLawObj.CodeRedFlags | ForEach-Object { $_.Code }) -join ', '
             $reasons.Add("Vietnam Law code red flags ($codes)")
         }
     }
     $complianceObj = $null
-    if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/process-audit.json")) -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) {
-        $complianceObj = Test-SenProjectCompliance -Workspace $Workspace
-        if (-not $complianceObj.Compliant) {
-            $allowed = $false
-            $reasons.Add("Process Compliance missing steps ($($complianceObj.MissingSteps -join ', '))")
-        }
+    if ($null -ne $auditObj -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) {
+        $complianceObj = Test-SenProjectCompliance -Workspace $Workspace -ProjectPath $targetDir
+        if (-not $complianceObj.Compliant) { $allowed = $false; $reasons.Add("Process Compliance missing steps ($($complianceObj.MissingSteps -join ', '))") }
     }
-    if ($allowed) {
-        $reason = if ($active.Count -eq 0) { "No active tasks registered." } else { "All $($active.Count) active task(s) verified and done." }
-    }
-    else {
-        $reason = "Delivery blocked: " + ($reasons -join "; ") + "."
-    }
+    $reason = if ($allowed) { "All $($active.Count) active task(s) verified and done." } else { "Delivery blocked: " + ($reasons -join "; ") + "." }
     return [pscustomobject]@{
-        Allowed           = $allowed
-        TotalActive       = $active.Count
-        DoneCount         = $doneCount
-        IncompleteIds     = @($incomplete.ToArray())
-        CodeHealth        = $codeHealthObj
-        VnLawScan         = $vnLawObj
-        ProcessCompliance = $complianceObj
-        Reason            = $reason
+        Allowed = $allowed; TotalActive = $active.Count; DoneCount = $doneCount; IncompleteIds = @($incomplete.ToArray())
+        CodeHealth = $codeHealthObj; VnLawScan = $vnLawObj; ProcessCompliance = $complianceObj; Reason = $reason
     }
 }
 

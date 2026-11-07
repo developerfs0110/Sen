@@ -8,7 +8,7 @@
 ---
 
 ## 1. Trạng thái hiện tại
-Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi & Dual-Phase Output Simulation**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, Instant-Ack & 2-Turn Optimistic Parallel Execution, Dialectical Proof-Critique Loop, Zero-Amnesia 5-Layer Parity Gate, CI Auto-Heal Loop, 2-Way Auto-Sync, 3-Tier Process Compliance Engine & Creative Domain Packs**) đều đã hoàn tất 100%, vượt qua toàn bộ **234/234 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), `Test-SenCapabilityParity` (`5/5` tầng, `71/71` hàm phủ Unit Test `100%`), `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**, và GitHub Actions CI từ xa đạt trạng thái **`success` (100% xanh)**.
+Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi & Dual-Phase Output Simulation**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, Instant-Ack & 2-Turn Optimistic Parallel Execution, Dialectical Proof-Critique Loop, Zero-Amnesia 5-Layer Parity Gate, CI Auto-Heal Loop, 2-Way Auto-Sync, 3-Tier Session-Scoped Process Compliance Engine & Creative Domain Packs**) đều đã hoàn tất 100% (`20/20` hạng mục `TASK-01` → `TASK-20`), vượt qua toàn bộ **235/235 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), `Test-SenCapabilityParity` (`5/5` tầng, `71/71` hàm phủ Unit Test `100%`), `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**, và GitHub Actions CI từ xa đạt trạng thái **`success` (100% xanh)**.
 
 ## 2. Các quyết định thiết kế đã chốt (`v0.1.0` → `v0.4.0`)
 - **Giao thức Phản hồi Chờ Lịch sự Tức thì (`Instant-Ack`), Thực thi Song song 2 Nhịp (`2-Turn Handshake` — "Trình bày trước — Làm luôn — Báo kết quả"), Cổng Chặn `Pre-Edit Restore Point` & Cold-Start 1-File (`TASK-15`, `TASK-17`, `TASK-19` — [rules/AGENTS.md](../rules/AGENTS.md)):**
@@ -31,7 +31,7 @@ Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.
 ## 3. Các cổng chất lượng đã kiểm chứng
 - `scripts/Validate-Repo.ps1` & `Test-SenCapabilityParity`: **ĐẠT (0 lỗi, 5/5 tầng đẳng cấu)** (`rules/AGENTS.md` <= 5.750 bytes & <= 95 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).
 - `Measure-SenCodeHealth`: **ĐẠT (`Healthy = True`, `Score = 100/100` trên 28 tệp mã nguồn)**.
-- `tests/run.ps1`: **ĐẠT (234 / 234 bài kiểm thử trên 12 bộ test, 71/71 hàm phủ Unit Test 100%)**.
+- `tests/run.ps1`: **ĐẠT (235 / 235 bài kiểm thử trên 12 bộ test, 71/71 hàm phủ Unit Test 100%)**.
 
 ## 4. Bước tiếp theo & Danh sách Việc cần làm (`docs/TODO.md`)
-- Toàn bộ 19 hạng mục (`TASK-01` → `TASK-19`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
+- Toàn bộ 20 hạng mục (`TASK-01` → `TASK-20`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành` (bao gồm khóa bằng chứng theo phiên `startedAt` trong `Test-SenStageGate`, chặn `Test-SenDeliveryGate` báo `PASS` giả khi thiếu Task phiên hiện tại, hợp nhất 2 giai đoạn `Write-SenOfficeShowcase`, và quét `BOT_FORWARDING` theo NĐ 356/2025/NĐ-CP trong `Invoke-SenVnLawScan`).

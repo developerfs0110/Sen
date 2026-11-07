@@ -92,6 +92,10 @@ Test "Task Manager File Lock prevents two Developers from modifying overlapping 
 Test "Rework tracking, Quality Metrics, Recovery State, and Delivery Gate work end-to-end" {
     $ws = New-OrchTestWorkspace
     try {
+        # TASK-20 Fix 2: Delivery gate must block when 0 active tasks are registered
+        $gateEmpty = Test-SenDeliveryGate -Workspace $ws
+        Assert-True (-not $gateEmpty.Allowed) "Delivery gate must block when 0 active tasks are registered in tasks.json"
+
         [void](New-SenTask -Workspace $ws -Id "M-1" -Title "Core module" -AllowedPaths @("src/core/"))
         [void](Add-SenBacklogItem -Workspace $ws -Id "BL-1" -Title "Future idea" -Priority "P2")
 
@@ -118,6 +122,10 @@ Test "Rework tracking, Quality Metrics, Recovery State, and Delivery Gate work e
         # Delivery gate now allows (backlog item BL-1 does not block active delivery)
         $gate2 = Test-SenDeliveryGate -Workspace $ws
         Assert-True $gate2.Allowed "Delivery gate should allow once all active tasks are done with verified evidence"
+
+        # TASK-20 Fix 2: Delivery gate must block when all done tasks are older than SessionStartedAt
+        $gateStaleSession = Test-SenDeliveryGate -Workspace $ws -SessionStartedAt "2099-01-01T00:00:00Z"
+        Assert-True (-not $gateStaleSession.Allowed) "Delivery gate must block when no active tasks were verified in the current session"
 
         $metrics = Get-SenQualityMetrics -Workspace $ws
         Assert-Equal 100 $metrics.taskSuccessRatePct "Success rate should be 100%"
@@ -304,6 +312,22 @@ Test "Invoke-SenVnLawScan triages web/mobile apps and catches code-level red fla
         # 3. Test-SenDeliveryGate -CheckVnLaw blocks when CodeRedFlags exist
         $gate = Test-SenDeliveryGate -Workspace $ws -ProjectPath $shopDir -CheckVnLaw
         Assert-True (-not $gate.Allowed) "Delivery gate with -CheckVnLaw must block on code red flags"
+
+        # 4. TASK-20 Fix 4: Bot/Backend personal data & receipt photo forwarding detection
+        $botDir = Join-Path $ws "bot-app"
+        [System.IO.Directory]::CreateDirectory($botDir) | Out-Null
+        $botCode = "bot.on('message:photo', async (ctx) => { await ctx.api.forwardMessage(adminId, ctx.chat.id, ctx.message.message_id); });"
+        [System.IO.File]::WriteAllText((Join-Path $botDir "handlers.js"), $botCode)
+        $sBot = Invoke-SenVnLawScan -Path $botDir
+        Assert-True $sBot.BotForwarding "Bot forwarding signal must be detected in handlers.js"
+        Assert-Equal 1 $sBot.Level "Bot forwarding must raise triage level to at least 1"
+        Assert-True (-not $sBot.CompliantCodeLevel) "Bot forwarding without privacy/consent notice must fail CompliantCodeLevel"
+        Assert-Equal 1 @($sBot.CodeRedFlags | Where-Object { $_.Code -eq "BOT_DATA_FORWARDING_WITHOUT_CONSENT" }).Count "Must flag BOT_DATA_FORWARDING_WITHOUT_CONSENT"
+
+        [System.IO.File]::WriteAllText((Join-Path $botDir "PRIVACY.md"), "# Chinh sach bao mat & bao ve du lieu ca nhan theo ND 356/2025/ND-CP")
+        $sBotOk = Invoke-SenVnLawScan -Path $botDir
+        Assert-True $sBotOk.BotForwarding "Bot forwarding signal still detected"
+        Assert-True $sBotOk.CompliantCodeLevel "Bot forwarding with privacy/consent notice passes CompliantCodeLevel"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

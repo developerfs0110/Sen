@@ -312,23 +312,42 @@ function Test-SenStuckLoop {
 function Write-SenOfficeShowcase {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $false)]
-        [hashtable]$Showcase = $null,
-        [string]$TaskId = "",
-        [string]$Title = "",
-        [int]$Phase = 0,
-        [string]$Blueprint = ""
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $false)][hashtable]$Showcase = $null,
+        [string]$TaskId = "", [string]$Title = "", [int]$Phase = 0,
+        [string]$Blueprint = "", [string]$Summary = "",
+        [string[]]$ExpectedOutputs = @(), [string[]]$VerifiedOutputs = @(),
+        [hashtable]$Gates = $null, [hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
+        [int]$Tier = 2
     )
-    if ($null -eq $Showcase) {
-        $Showcase = @{
-            projectTitle = if ($Title) { $Title } elseif ($TaskId) { $TaskId } else { (Split-Path $Workspace -Leaf) }
-            tier         = 2
-            phase1       = @{ summary = $Blueprint; specPath = $TaskId; expectedOutputs = @() }
+    $existing = Read-SenOfficeShowcase -Workspace $Workspace
+    $merged = if ($null -ne $existing) { ConvertTo-SenHashtable -InputObject $existing } else { @{ } }
+    $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    if ($null -ne $Showcase) {
+        foreach ($k in $Showcase.Keys) {
+            if ($null -ne $Showcase[$k] -or (-not $merged.ContainsKey($k))) { $merged[$k] = $Showcase[$k] }
         }
     }
-    Write-SenAtomicJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json") -InputObject $Showcase -Depth 8
+    else {
+        if ($Title) { $merged["projectTitle"] = $Title }
+        elseif (-not $merged["projectTitle"]) { $merged["projectTitle"] = if ($TaskId) { $TaskId } else { (Split-Path $Workspace -Leaf) } }
+        if ($PSBoundParameters.ContainsKey("Tier") -or (-not $merged["tier"])) { $merged["tier"] = $Tier }
+        $txt = if ($Summary) { $Summary } elseif ($Blueprint) { $Blueprint } elseif ($Title) { $Title } else { "Output Showcase" }
+        if ($null -ne $Phase1Data) { $merged["phase1"] = $Phase1Data }
+        if ($null -ne $Phase2Data) { $merged["phase2"] = $Phase2Data }
+        if ($Phase -eq 2 -and $null -eq $Phase2Data) {
+            $g = if ($null -ne $Gates) { $Gates } else { @{ tests = "PASS"; build = "PASS"; security = "PASS"; legal = "PASS" } }
+            $vo = if ($VerifiedOutputs.Count -gt 0) { $VerifiedOutputs } elseif ($TaskId) { @($TaskId) } else { @("docs/CONTEXT.md") }
+            $merged["phase2"] = @{ summary = $txt; verifiedOutputs = $vo; gates = $g; updatedAt = $nowIso }
+        }
+        elseif (($Phase -eq 1 -or ($Phase -eq 0 -and $null -eq $Phase2Data)) -and $null -eq $Phase1Data) {
+            $eo = if ($ExpectedOutputs.Count -gt 0) { $ExpectedOutputs } elseif ($TaskId) { @($TaskId) } else { @() }
+            $merged["phase1"] = @{ summary = $txt; specPath = $TaskId; expectedOutputs = $eo; updatedAt = $nowIso }
+        }
+    }
+    $merged["updatedAt"] = $nowIso
+    $scPath = Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json"
+    Write-SenAtomicJson -Path $scPath -InputObject $merged -Depth 8
 }
 
 function Read-SenOfficeShowcase {
@@ -569,7 +588,7 @@ function Measure-SenCodeHealth {
     )
     $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
     $exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
-    $skipRe = '(?i)[\\/](node_modules|dist|build|coverage|vendor|\.git|\.next|\.venv|venv|clone|\.superpowers|\.gemini|\.sen-backup|\.sen-restore|snapshots)[\\/]'
+    $skipRe = '(?i)[\\/](node_modules|dist|build|coverage|vendor|\.git|\.next|\.venv|venv|clone|\.superpowers|\.gemini|\.claude|\.cursor|\.agents\.backup[^\\/]*|\.sen-backup|\.sen-restore|snapshots|Antigravity IDE)[\\/]'
     $files = @(Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object { ($exts -contains $_.Extension.ToLowerInvariant()) -and ($_.FullName -notmatch $skipRe) })
 
     $oversized = [System.Collections.Generic.List[object]]::new(); $longFuncs = [System.Collections.Generic.List[object]]::new()

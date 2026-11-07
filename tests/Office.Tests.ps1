@@ -133,6 +133,18 @@ Test "Write-SenOfficeShowcase and Read-SenOfficeShowcase round-trip Dual-Phase p
         Assert-Equal "Sen Office v0.2.0" $loaded.projectTitle
         Assert-Equal "Phase 1 Blueprint" $loaded.phase1.summary
         Assert-Equal "PASS" $loaded.phase2.gates.tests
+
+        # TASK-20 Fix 3: Sequential -Phase 1 and -Phase 2 calls preserve both phases without overwriting
+        Remove-Item -LiteralPath (Join-Path $ws ".agents/office/showcase.json") -Force -ErrorAction SilentlyContinue
+        [void](Write-SenOfficeShowcase -Workspace $ws -Phase 1 -TaskId "TASK-20" -Title "Dual Phase Sequential" -Blueprint "Expected Blueprint P1")
+        $afterP1 = Read-SenOfficeShowcase -Workspace $ws
+        Assert-Equal "Expected Blueprint P1" $afterP1.phase1.summary "Phase 1 summary written"
+
+        [void](Write-SenOfficeShowcase -Workspace $ws -Phase 2 -TaskId "TASK-20" -Blueprint "Verified Output P2")
+        $afterP2 = Read-SenOfficeShowcase -Workspace $ws
+        Assert-Equal "Expected Blueprint P1" $afterP2.phase1.summary "Phase 1 summary preserved after Phase 2 write"
+        Assert-Equal "Verified Output P2" $afterP2.phase2.summary "Phase 2 summary written"
+        Assert-Equal "PASS" $afterP2.phase2.gates.tests "Phase 2 default gates populated"
     } finally { Remove-OfficeTempDir $ws }
 }
 
