@@ -16,7 +16,8 @@ Test "rules/AGENTS.md exists" {
 
 Test "rules/AGENTS.md is at most 5750 bytes" {
     $full = (Resolve-Path -LiteralPath $rulePath).Path
-    $len = [System.IO.File]::ReadAllBytes($full).Length
+    $normTxt = [System.IO.File]::ReadAllText($full, [System.Text.Encoding]::UTF8).Replace("`r`n", "`n")
+    $len = [System.Text.Encoding]::UTF8.GetByteCount($normTxt)
     Assert-True ($len -le 5750) "rules/AGENTS.md must be <= 5750 bytes (got $len)"
 }
 

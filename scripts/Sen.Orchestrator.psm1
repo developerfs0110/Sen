@@ -6,14 +6,7 @@ $ErrorActionPreference = "Stop"
 
 function Save-SenTasks {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [AllowEmptyCollection()]
-        [Parameter(Mandatory = $true)]
-        [object[]]$Tasks,
-        [switch]$Internal
-    )
+    param([Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace, [AllowEmptyCollection()][Parameter(Mandatory = $true)][object[]]$Tasks, [switch]$Internal)
     $tasksPath = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
     $finalList = [System.Collections.Generic.List[object]]::new()
     if (-not $Internal -and (Test-Path -LiteralPath $tasksPath)) {
@@ -59,10 +52,7 @@ function Save-SenTasks {
 
 function Get-SenTasks {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
     $obj = Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json")
     if ($null -eq $obj) { return @() }
     $list = if ($obj.PSObject.Properties.Name -contains "tasks") { @($obj.tasks) } elseif ($obj -is [array]) { @($obj) } else { @() }
@@ -98,35 +88,22 @@ function Get-SenTasks {
 
 function Clear-SenTasks {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
     $tasksPath = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
-    if (Test-Path -LiteralPath $tasksPath) {
-        Remove-Item -LiteralPath $tasksPath -Force -ErrorAction SilentlyContinue
-    }
+    if (Test-Path -LiteralPath $tasksPath) { Remove-Item -LiteralPath $tasksPath -Force -ErrorAction SilentlyContinue }
 }
 
 function New-SenTask {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Id,
-        [Parameter(Mandatory = $true)]
-        [string]$Title,
-        [int]$Tier = 2,
-        [string]$RiskLevel = "medium",
-        [string]$Module = "Core",
-        [string]$Assignee = "dev_be",
-        [string[]]$DependsOn = @(),
-        [string[]]$AllowedPaths = @(),
+        [Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $true)][string]$Title,
+        [int]$Tier = 2, [string]$RiskLevel = "medium", [string]$Module = "Core", [string]$Assignee = "dev_be",
+        [string[]]$DependsOn = @(), [string[]]$AllowedPaths = @(),
         [string[]]$ForbiddenActions = @("delete_database", "force_push"),
-        [bool]$ApprovalRequired = $false,
-        [string[]]$AcceptanceCriteria = @(),
-        [ValidateSet("auto", "backlog", "pending", "ready", "in_progress", "reviewing", "done", "blocked", "failed")]
+        [bool]$ApprovalRequired = $false, [string[]]$AcceptanceCriteria = @(),
+        [ValidateSet("auto", "backlog", "pending", "ready", "todo", "in_progress", "reviewing", "done", "blocked", "failed")]
         [string]$Status = "auto"
     )
     $tasks = [System.Collections.Generic.List[object]]::new()
@@ -192,16 +169,13 @@ function New-SenTask {
 
 function Get-SenReadyTasks {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $activeTasks = @($tasks | Where-Object { [string]$_.status -eq "in_progress" })
     $results = [System.Collections.Generic.List[object]]::new()
 
     foreach ($t in $tasks) {
-        if ([string]$t.status -ne "ready") { continue }
+        if ([string]$t.status -notin @("ready", "todo")) { continue }
         $conflictId = $null
         foreach ($act in $activeTasks) {
             if ([string]$act.id -eq [string]$t.id) { continue }
@@ -403,20 +377,97 @@ function Complete-SenTaskReview {
     }
 }
 
+function Test-SenHungTasks {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15)
+    $cutoff = [DateTime]::UtcNow.AddMinutes(-1 * [Math]::Max(1, $StaleMinutes))
+    $staleTasks = [System.Collections.Generic.List[string]]::new()
+    foreach ($t in @(Get-SenTasks -Workspace $Workspace)) {
+        if (-not $t -or [string]$t.status -ne "in_progress") { continue }
+        $rawTs = if ($t.PSObject.Properties['updatedAt'] -and $t.updatedAt) { [string]$t.updatedAt } elseif ($t.PSObject.Properties['createdAt'] -and $t.createdAt) { [string]$t.createdAt } else { "" }
+        $parsed = [DateTime]::MinValue
+        $isStale = [string]::IsNullOrWhiteSpace($rawTs) -or (-not [DateTime]::TryParse($rawTs, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$parsed)) -or ($parsed -le $cutoff)
+        if ($isStale) { $staleTasks.Add([string]$t.id) }
+    }
+    $staleSubs = [System.Collections.Generic.List[string]]::new()
+    $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
+    if (Test-Path -LiteralPath $subFile) {
+        $subObj = Read-SenSafeJson -Path $subFile
+        $subList = if ($null -eq $subObj) { @() } elseif ($subObj.PSObject.Properties.Name -contains "subagents") { @($subObj.subagents) } else { @($subObj) }
+        foreach ($s in $subList) {
+            if (-not $s -or [string]$s.status -notin @("running", "active", "in_progress")) { continue }
+            $sTs = if ($s.PSObject.Properties['updatedAt'] -and $s.updatedAt) { [string]$s.updatedAt } elseif ($s.PSObject.Properties['startedAt'] -and $s.startedAt) { [string]$s.startedAt } else { "" }
+            $sParsed = [DateTime]::MinValue
+            if ([string]::IsNullOrWhiteSpace($sTs) -or (-not [DateTime]::TryParse($sTs, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$sParsed)) -or ($sParsed -le $cutoff)) {
+                $sid = if ($s.PSObject.Properties['id'] -and $s.id) { [string]$s.id } elseif ($s.PSObject.Properties['conversationId']) { [string]$s.conversationId } else { "unknown-subagent" }
+                $staleSubs.Add($sid)
+            }
+        }
+    }
+    return [pscustomobject][ordered]@{
+        Healthy = ($staleTasks.Count -eq 0 -and $staleSubs.Count -eq 0); StaleMinutes = $StaleMinutes
+        StaleTaskIds = @($staleTasks.ToArray()); StaleSubagents = @($staleSubs.ToArray())
+        CheckedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+}
+
+function Clear-SenHungTasks {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15, [ValidateSet("reset_to_todo", "mark_blocked", "ready", "blocked")][string]$Resolution = "reset_to_todo")
+    $check = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes
+    $newStatus = if ($Resolution -in @("mark_blocked", "blocked")) { "blocked" } elseif ($Resolution -eq "ready") { "ready" } else { "todo" }
+    $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $clearedTasks = [System.Collections.Generic.List[string]]::new()
+    if ($check.StaleTaskIds.Count -gt 0) {
+        $tasks = @(Get-SenTasks -Workspace $Workspace)
+        $staleSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$check.StaleTaskIds, [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($t in $tasks) {
+            if ($t -and $staleSet.Contains([string]$t.id)) {
+                $t.status = $newStatus; $t.updatedAt = $now
+                $noteMsg = "Cleared hung task (> ${StaleMinutes}m) -> $newStatus"
+                if ($t.evidence) { $t.evidence.notes = $noteMsg }
+                $t | Add-Member -NotePropertyName "notes" -NotePropertyValue $noteMsg -Force
+                $curRev = if ($t.PSObject.Properties.Name -contains "_rev") { [int]$t._rev } else { 1 }
+                $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
+                $clearedTasks.Add([string]$t.id)
+            }
+        }
+        [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
+    }
+    $clearedSubs = [System.Collections.Generic.List[string]]::new()
+    $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
+    if ($check.StaleSubagents.Count -gt 0 -and (Test-Path -LiteralPath $subFile)) {
+        $subObj = Read-SenSafeJson -Path $subFile
+        $isWrapped = ($null -ne $subObj -and $subObj.PSObject.Properties.Name -contains "subagents")
+        $subList = if ($null -eq $subObj) { @() } elseif ($isWrapped) { @($subObj.subagents) } else { @($subObj) }
+        $subSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$check.StaleSubagents, [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($s in $subList) {
+            $sid = if ($s.PSObject.Properties['id'] -and $s.id) { [string]$s.id } elseif ($s.PSObject.Properties['conversationId']) { [string]$s.conversationId } else { "" }
+            if ($sid -and $subSet.Contains($sid)) {
+                $s | Add-Member -NotePropertyName "status" -NotePropertyValue "terminated" -Force
+                $s | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue $now -Force
+                $clearedSubs.Add($sid)
+            }
+        }
+        $outPayload = if ($isWrapped) { $subObj.subagents = $subList; $subObj } else { $subList }
+        Write-SenAtomicJson -Path $subFile -InputObject $outPayload -Depth 6
+    }
+    return [pscustomobject][ordered]@{
+        ClearedCount = ($clearedTasks.Count + $clearedSubs.Count); ClearedTaskIds = @($clearedTasks.ToArray())
+        ClearedSubagents = @($clearedSubs.ToArray()); Resolution = $Resolution; NewStatus = $newStatus
+    }
+}
+
 function Test-SenDeliveryGate {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [string]$ProjectPath = "",
-        [string]$SessionStartedAt = "",
-        [switch]$RequireActiveSessionTask,
-        [switch]$CheckCodeHealth,
-        [switch]$CheckVnLaw,
-        [switch]$SkipCodeHealth,
-        [switch]$SkipVnLaw
+        [Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
+        [string]$ProjectPath = "", [string]$SessionStartedAt = "", [int]$StaleMinutes = 15,
+        [switch]$RequireActiveSessionTask, [switch]$CheckCodeHealth, [switch]$CheckVnLaw, [switch]$SkipCodeHealth, [switch]$SkipVnLaw
     )
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
     if (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
+    $hungObj = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })
     $incomplete = [System.Collections.Generic.List[string]]::new()
@@ -427,7 +478,8 @@ function Test-SenDeliveryGate {
         else { $incomplete.Add([string]$t.id) }
     }
     $reasons = [System.Collections.Generic.List[string]]::new()
-    $allowed = ($active.Count -gt 0) -and ($incomplete.Count -eq 0)
+    $allowed = ($active.Count -gt 0) -and ($incomplete.Count -eq 0) -and $hungObj.Healthy
+    if (-not $hungObj.Healthy) { $reasons.Add("Hung tasks or stale subagents ($((@($hungObj.StaleTaskIds) + @($hungObj.StaleSubagents)) -join ', '))") }
     if ($active.Count -eq 0) { $reasons.Add("No active tasks registered in tasks.json") }
     elseif ($incomplete.Count -gt 0) { $reasons.Add("Incomplete or unverified tasks ($($incomplete -join ', '))") }
 
@@ -460,7 +512,7 @@ function Test-SenDeliveryGate {
     $reason = if ($allowed) { "All $($active.Count) active task(s) verified and done." } else { "Delivery blocked: " + ($reasons -join "; ") + "." }
     return [pscustomobject]@{
         Allowed = $allowed; TotalActive = $active.Count; DoneCount = $doneCount; IncompleteIds = @($incomplete.ToArray())
-        CodeHealth = $codeHealthObj; VnLawScan = $vnLawObj; ProcessCompliance = $complianceObj; Reason = $reason
+        HungTasks = $hungObj; CodeHealth = $codeHealthObj; VnLawScan = $vnLawObj; ProcessCompliance = $complianceObj; Reason = $reason
     }
 }
 
@@ -577,13 +629,7 @@ function Add-SenBacklogItem {
 
 function New-SenRestorePoint {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $false)]
-        [string[]]$Files = @(),
-        [string]$Label = "pre-edit"
-    )
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Parameter(Mandatory = $false)][string[]]$Files = @(), [string]$Label = "pre-edit")
     $resolvedWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/')
     $restoreRoot = Join-Path -Path $resolvedWs -ChildPath ".agents/.sen-restore"
     $ts = [DateTime]::UtcNow.ToString("yyyyMMddHHmmssfff")
@@ -591,102 +637,54 @@ function New-SenRestorePoint {
     $rpDir = Join-Path -Path $restoreRoot -ChildPath $id
     $filesDir = Join-Path -Path $rpDir -ChildPath "files"
     [System.IO.Directory]::CreateDirectory($filesDir) | Out-Null
-
+    $skipHeavyRe = '(?i)(^|[\\/])(node_modules|\.git|\.agents|Code|Antigravity IDE|dist|build)([\\/]|$)'
     $entries = [System.Collections.Generic.List[object]]::new()
     $idx = 0
     foreach ($f in $Files) {
-        if ([string]::IsNullOrWhiteSpace($f)) { continue }
+        if ([string]::IsNullOrWhiteSpace($f) -or ($f -match $skipHeavyRe)) { continue }
         $fullPath = if ([System.IO.Path]::IsPathRooted($f)) { [System.IO.Path]::GetFullPath($f) } else { [System.IO.Path]::GetFullPath((Join-Path $resolvedWs $f)) }
-        $relPath = if ($fullPath.StartsWith($resolvedWs, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $fullPath.Substring($resolvedWs.Length).TrimStart('\', '/')
-        }
-        else {
-            [System.IO.Path]::GetFileName($fullPath)
-        }
+        $relPath = if ($fullPath.StartsWith($resolvedWs, [System.StringComparison]::OrdinalIgnoreCase)) { $fullPath.Substring($resolvedWs.Length).TrimStart('\', '/') } else { [System.IO.Path]::GetFileName($fullPath) }
+        if ($relPath -match $skipHeavyRe) { continue }
         $existed = Test-Path -LiteralPath $fullPath -PathType Leaf
         $storedName = "f_$idx.bak"
-        if ($existed) {
-            Copy-Item -LiteralPath $fullPath -Destination (Join-Path $filesDir $storedName) -Force
-        }
-        $entries.Add([ordered]@{
-            relPath    = $relPath
-            fullPath   = $fullPath
-            existed    = [bool]$existed
-            storedName = $storedName
-        })
+        if ($existed) { Copy-Item -LiteralPath $fullPath -Destination (Join-Path $filesDir $storedName) -Force }
+        $entries.Add([ordered]@{ relPath = $relPath; fullPath = $fullPath; existed = [bool]$existed; storedName = $storedName })
         $idx++
     }
-
-    $manifest = [ordered]@{
-        id        = $id
-        label     = $Label
-        createdAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-        entries   = @($entries.ToArray())
-    }
+    $manifest = [ordered]@{ id = $id; label = $Label; createdAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); entries = @($entries.ToArray()) }
     Write-SenAtomicJson -Path (Join-Path -Path $rpDir -ChildPath "manifest.json") -InputObject $manifest -Depth 6
-    return [pscustomobject]@{
-        Id        = $id
-        Label     = $Label
-        Directory = $rpDir
-        FileCount = $entries.Count
-    }
+    return [pscustomobject]@{ Id = $id; Label = $Label; Directory = $rpDir; FileCount = $entries.Count }
 }
 
 function Restore-SenRestorePoint {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [string]$Id = ""
-    )
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$Id = "")
     $resolvedWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/')
     $restoreRoot = Join-Path -Path $resolvedWs -ChildPath ".agents/.sen-restore"
-    if (-not (Test-Path -LiteralPath $restoreRoot)) {
-        return [pscustomobject]@{ Restored = $false; Id = $null; Error = "No restore points found" }
-    }
+    if (-not (Test-Path -LiteralPath $restoreRoot)) { return [pscustomobject]@{ Restored = $false; Id = $null; Error = "No restore points found" } }
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($Id)) {
         $cand = Join-Path -Path $restoreRoot -ChildPath $Id
         if (Test-Path -LiteralPath $cand) { Get-Item -LiteralPath $cand } else { $null }
     }
-    else {
-        Get-ChildItem -LiteralPath $restoreRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
-    }
-    if ($null -eq $targetDir) {
-        return [pscustomobject]@{ Restored = $false; Id = $Id; Error = "Restore point not found" }
-    }
+    else { Get-ChildItem -LiteralPath $restoreRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1 }
+    if ($null -eq $targetDir) { return [pscustomobject]@{ Restored = $false; Id = $Id; Error = "Restore point not found" } }
     $manifest = Read-SenSafeJson -Path (Join-Path -Path $targetDir.FullName -ChildPath "manifest.json")
-    if ($null -eq $manifest) {
-        return [pscustomobject]@{ Restored = $false; Id = $targetDir.Name; Error = "Manifest missing" }
-    }
+    if ($null -eq $manifest) { return [pscustomobject]@{ Restored = $false; Id = $targetDir.Name; Error = "Manifest missing" } }
     $filesDir = Join-Path -Path $targetDir.FullName -ChildPath "files"
     $restoredCount = 0
-
     foreach ($e in @($manifest.entries)) {
         $destPath = Join-Path -Path $resolvedWs -ChildPath ([string]$e.relPath)
         if ([bool]$e.existed) {
             $srcBak = Join-Path -Path $filesDir -ChildPath ([string]$e.storedName)
             if (Test-Path -LiteralPath $srcBak) {
                 $parent = Split-Path -Parent $destPath
-                if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-                    [System.IO.Directory]::CreateDirectory($parent) | Out-Null
-                }
-                Copy-Item -LiteralPath $srcBak -Destination $destPath -Force
-                $restoredCount++
+                if ($parent -and -not (Test-Path -LiteralPath $parent)) { [System.IO.Directory]::CreateDirectory($parent) | Out-Null }
+                Copy-Item -LiteralPath $srcBak -Destination $destPath -Force; $restoredCount++
             }
         }
-        else {
-            if (Test-Path -LiteralPath $destPath) {
-                Remove-Item -LiteralPath $destPath -Force -ErrorAction SilentlyContinue
-                $restoredCount++
-            }
-        }
+        elseif (Test-Path -LiteralPath $destPath) { Remove-Item -LiteralPath $destPath -Force -ErrorAction SilentlyContinue; $restoredCount++ }
     }
-    return [pscustomobject]@{
-        Restored      = $true
-        Id            = [string]$manifest.id
-        RestoredCount = $restoredCount
-        Error         = $null
-    }
+    return [pscustomobject]@{ Restored = $true; Id = [string]$manifest.id; RestoredCount = $restoredCount; Error = $null }
 }
 
 function Add-SenExecutionLesson {
@@ -757,5 +755,5 @@ function Get-SenMemorySnapshot {
     }
 }
 
-Export-ModuleMember -Function Save-SenTasks, Get-SenTasks, Clear-SenTasks, New-SenTask, Get-SenReadyTasks, Start-SenTask, Unlock-SenTask, Submit-SenTaskForReview, Complete-SenTaskReview, Test-SenDeliveryGate, Get-SenRecoveryState, Get-SenQualityMetrics, Add-SenBacklogItem, New-SenRestorePoint, Restore-SenRestorePoint, Add-SenExecutionLesson, Get-SenExecutionLessons, Get-SenMemorySnapshot
+Export-ModuleMember -Function Save-SenTasks, Get-SenTasks, Clear-SenTasks, New-SenTask, Get-SenReadyTasks, Start-SenTask, Unlock-SenTask, Submit-SenTaskForReview, Complete-SenTaskReview, Test-SenHungTasks, Clear-SenHungTasks, Test-SenDeliveryGate, Get-SenRecoveryState, Get-SenQualityMetrics, Add-SenBacklogItem, New-SenRestorePoint, Restore-SenRestorePoint, Add-SenExecutionLesson, Get-SenExecutionLessons, Get-SenMemorySnapshot
 

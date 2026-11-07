@@ -389,3 +389,51 @@ Test "Direct unit coverage for Unlock-SenTask, Clear-SenTasks, Invoke-SenDialect
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "TASK-21 Test-SenHungTasks and Clear-SenHungTasks detect and teardown hung tasks and stale subagents" {
+    $ws = New-OrchTestWorkspace
+    try {
+        $rpAlias = New-SenRestorePoint -WorkspacePath $ws -Files @("node_modules/pkg/index.js", "src/ok.js") -Label "alias-and-heavy-skip"
+        Assert-True (-not [string]::IsNullOrWhiteSpace($rpAlias.Id)) "New-SenRestorePoint accepts -WorkspacePath alias"
+        Assert-Equal 1 $rpAlias.FileCount "New-SenRestorePoint skips heavy node_modules directory"
+
+        [void](New-SenTask -Workspace $ws -Id "HUNG-01" -Title "Stuck background task" -AllowedPaths @("src/"))
+        [void](Start-SenTask -Workspace $ws -Id "HUNG-01")
+        $freshCheck = Test-SenHungTasks -WorkspacePath $ws -StaleMinutes 15
+        Assert-True $freshCheck.Healthy "Fresh in_progress task must not be flagged as hung"
+
+        $oldIso = [DateTime]::UtcNow.AddMinutes(-30).ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $tasks = @(Get-SenTasks -Workspace $ws)
+        $tasks[0].updatedAt = $oldIso
+        $tasks[0].createdAt = $oldIso
+        [void](Save-SenTasks -Workspace $ws -Tasks $tasks -Internal)
+
+        $subFile = Join-Path $ws ".agents/office/subagents.json"
+        Write-SenAtomicJson -Path $subFile -InputObject @{
+            subagents = @(
+                @{ id = "sub-stale-01"; status = "running"; startedAt = $oldIso; updatedAt = $oldIso }
+            )
+        }
+
+        $hungCheck = Test-SenHungTasks -Workspace $ws -StaleMinutes 15
+        Assert-True (-not $hungCheck.Healthy) "Stale in_progress task and running subagent must be flagged unhealthy"
+        Assert-Equal 1 $hungCheck.StaleTaskIds.Count "Should detect 1 hung task"
+        Assert-Equal "HUNG-01" $hungCheck.StaleTaskIds[0] "Should report HUNG-01"
+        Assert-Equal 1 $hungCheck.StaleSubagents.Count "Should detect 1 stale subagent"
+        Assert-Equal "sub-stale-01" $hungCheck.StaleSubagents[0] "Should report sub-stale-01"
+
+        $delivBlocked = Test-SenDeliveryGate -Workspace $ws -StaleMinutes 15
+        Assert-True (-not $delivBlocked.Allowed) "Delivery gate must block when hung tasks or stale subagents exist"
+        Assert-True (-not $delivBlocked.HungTasks.Healthy) "Delivery gate must expose HungTasks status"
+
+        $cleared = Clear-SenHungTasks -Workspace $ws -StaleMinutes 15 -Resolution "reset_to_todo"
+        Assert-Equal 2 $cleared.ClearedCount "Clear-SenHungTasks must clear both hung task and stale subagent"
+        Assert-Equal "todo" $cleared.NewStatus "Resolution reset_to_todo transitions task to todo"
+
+        $afterCheck = Test-SenHungTasks -Workspace $ws -StaleMinutes 15
+        Assert-True $afterCheck.Healthy "Workspace must be healthy immediately after Clear-SenHungTasks"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

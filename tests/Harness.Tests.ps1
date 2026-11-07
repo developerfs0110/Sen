@@ -432,6 +432,23 @@ Test "Test-SenCapabilityParity verifies 5-Layer Zero-Amnesia Isomorphism and gua
             workspacePaths = @($ws)
         }
         Assert-Equal "ask" $allowedWrite.decision "guard.ps1 must allow project file write in Tier 2/3 after New-SenRestorePoint is called"
+
+        $fakeRoot = Join-Path $ws "fake-sen"
+        [System.IO.Directory]::CreateDirectory((Join-Path $fakeRoot "docs")) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "README.md"), "# v0.4.0 A")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "README.vi.md"), "# v0.4.0 B")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "plugin.json"), '{"version":"0.4.0"}')
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "CHANGELOG.md"), "# 0.3.0 only")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "docs/TODO.md"), "- [x] **TASK-99: New item**")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "docs/CONTEXT.md"), "# Context v0.4.0 without task 99")
+        [System.IO.Directory]::CreateDirectory((Join-Path $fakeRoot "scripts")) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $senRoot "scripts/process-manifest.json") -Destination (Join-Path $fakeRoot "scripts/process-manifest.json") -Force
+        Copy-Item -LiteralPath (Join-Path $senRoot "scripts/Sen.Harness.psm1") -Destination (Join-Path $fakeRoot "scripts/Sen.Harness.psm1") -Force
+        $badParity = Test-SenCapabilityParity -SenRoot $fakeRoot
+        Assert-True (-not $badParity.Passed) "Test-SenCapabilityParity must fail when README, version, or TODO/CONTEXT are out of sync"
+        Assert-True ($badParity.MissingItems -contains "L5-DocSync:README_SYNC") "Must flag README_SYNC drift"
+        Assert-True ($badParity.MissingItems -contains "L5-DocSync:VERSION_DOC_SYNC:CHANGELOG.md") "Must flag VERSION_DOC_SYNC drift"
+        Assert-True ($badParity.MissingItems -contains "L5-DocSync:TODO_CONTEXT_SYNC:TASK-99") "Must flag TODO_CONTEXT_SYNC drift"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
