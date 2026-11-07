@@ -588,8 +588,8 @@ function New-SenRestorePoint {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string[]]$Files,
+        [Parameter(Mandatory = $false)]
+        [string[]]$Files = @(),
         [string]$Label = "pre-edit"
     )
     $resolvedWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/')

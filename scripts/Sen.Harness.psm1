@@ -479,9 +479,14 @@ function Initialize-SenProcessAudit {
                 verifiedAt = if ($wasLatched) { [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $null }
             })
     }
+    $offCfg = Get-SenOfficeConfig -Workspace $Workspace
+    $offMode = if ($offCfg -and $offCfg.mode) { [string]$offCfg.mode } else { "eco" }
+    $offPort = if ($offCfg -and $offCfg.port) { [int]$offCfg.port } else { 47890 }
+    $offAction = if ($Tier -lt 2) { "none" } elseif ($offMode -eq "off") { "offer_enable" } else { "auto_start" }
     $auditObj = [pscustomobject][ordered]@{
         manifestVersion = [string]$catalog.manifestVersion; projectName = $ProjectName; tier = $Tier
-        projectScope = $ProjectScope; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); selectedSteps = @($selected.ToArray())
+        projectScope = $ProjectScope; officeMode = $offMode; officeUrl = "http://127.0.0.1:$offPort/"; officeAction = $offAction
+        updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); selectedSteps = @($selected.ToArray())
     }
     Write-SenAtomicJson -Path $auditPath -InputObject $auditObj -Depth 8
     return $auditObj

@@ -14,7 +14,8 @@ description: Opens and controls the 3D AI Office monitor, walkie-talkie telemetr
   - `"tắt văn phòng"` / `"turn off office"` -> `mode = "off"` (0 tokens, 0 hook writes).
   - `"chế độ tiết kiệm"` / `"eco mode"` -> `mode = "eco"` (default, 0 extra LLM tokens; uses `PreToolUse` and `PostToolUse` hooks only).
   - `"chế độ chi tiết"` / `"full mode"` -> `mode = "full"` (adds natural-language AI explanations alongside hook telemetry; warn user once about ~3–8% extra token usage before switching).
-- **Automatic Lifecycle Updates (when `mode != "off"`):**
+- **Automatic Lifecycle Updates:**
+  - **At the start of Turn 1 for Tier 2 / Tier 3 tasks:** Inspect `Get-SenOfficeConfig` (or `process-audit.json` -> `officeAction`). If `mode != "off"` (`officeAction == "auto_start"`), automatically launch `scripts/start-office.ps1` as a background daemon (if not already running) and display the live 3D Office URL (`http://127.0.0.1:47890`) in Turn 1 so the user can watch subagents work in real time. If `mode == "off"` (`officeAction == "offer_enable"`), add a 1-line offer in Turn 1 asking if the user wants to open the 3D AI Office.
   - At the end of **Tier 3 Design & Plan** (`brainstorming` + `writing-plans`), update Phase 1 of `.agents/office/showcase.json` via `Write-SenOfficeShowcase`.
   - At the end of **Tier 2 / Tier 3 Delivery Report** (`sen-delivery-report`), update Phase 2 of `.agents/office/showcase.json` via `Write-SenOfficeShowcase`.
 

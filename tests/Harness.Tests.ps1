@@ -244,9 +244,18 @@ Test "Process Compliance 3-Tier Engine filters (*) and (**), enforces Stage Gate
         $cat = Get-SenProcessCatalog
         Assert-Equal 12 $cat.steps.Count "Master process-manifest.json must contain 12 standard steps"
 
+        [void](Set-SenOfficeConfig -Workspace $ws -Mode "off")
+        $auditOff = Initialize-SenProcessAudit -Workspace $ws -ProjectName "SenCore" -Tier 2 -ProjectScope "core"
+        Assert-Equal "off" $auditOff.officeMode "When office is off, officeMode should be off"
+        Assert-Equal "offer_enable" $auditOff.officeAction "Tier 2 with off mode must set officeAction = offer_enable"
+        [void](Set-SenOfficeConfig -Workspace $ws -Mode "eco")
+
         # Initialize project (*) for Tier 3 Core project (excludes web_mobile S4-VN-LAW -> 11 steps)
         $audit = Initialize-SenProcessAudit -Workspace $ws -ProjectName "SenCore" -Tier 3 -ProjectScope "core"
         Assert-Equal 11 $audit.selectedSteps.Count "Tier 3 core project should select 11 steps (*)"
+        Assert-Equal "eco" $audit.officeMode "Default officeMode should be eco"
+        Assert-Equal "auto_start" $audit.officeAction "Tier 3 with eco mode must set officeAction = auto_start"
+        Assert-Equal "http://127.0.0.1:47890/" $audit.officeUrl "Default officeUrl should be http://127.0.0.1:47890/"
 
         # Stage 1 gate should pass immediately since S1-RISK and S1-AUDIT-INIT are satisfied
         $g1 = Test-SenStageGate -Workspace $ws -Stage 1

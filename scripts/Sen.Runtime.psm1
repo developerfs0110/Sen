@@ -314,9 +314,20 @@ function Write-SenOfficeShowcase {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [hashtable]$Showcase
+        [Parameter(Mandatory = $false)]
+        [hashtable]$Showcase = $null,
+        [string]$TaskId = "",
+        [string]$Title = "",
+        [int]$Phase = 0,
+        [string]$Blueprint = ""
     )
+    if ($null -eq $Showcase) {
+        $Showcase = @{
+            projectTitle = if ($Title) { $Title } elseif ($TaskId) { $TaskId } else { (Split-Path $Workspace -Leaf) }
+            tier         = 2
+            phase1       = @{ summary = $Blueprint; specPath = $TaskId; expectedOutputs = @() }
+        }
+    }
     Write-SenAtomicJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json") -InputObject $Showcase -Depth 8
 }
 

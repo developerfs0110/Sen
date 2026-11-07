@@ -42,7 +42,7 @@ After writing the plan, pick and announce in one line:
 
 ## 8. Diagrams & Output Simulation
 - Tier 3: add Mermaid diagrams (business, system, state, data, UI mockup, task DAG). Tier 2: on request. Tier 1: none.
-- Tier 2–3: record Dual-Phase Output via `Write-SenOfficeShowcase` (`showcase.json`): Phase 1 (blueprint) at Stage 2, Phase 2 (verified output & gates) at Stage 4.
+- Tier 2–3: auto-start/offer 3D Office (`start-office.ps1`) in Turn 1; record `Write-SenOfficeShowcase` (`showcase.json`): Phase 1 at Stage 2, Phase 2 at Stage 4.
 
 ## 9. Quality gates & Legal-by-Design
 - Default gate (Tier 2–3): tests/build pass, `Measure-SenCodeHealth` passes (`sen-clean-code`), no leaked secrets/flaws (`verification-before-completion`).

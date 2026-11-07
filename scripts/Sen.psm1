@@ -287,12 +287,14 @@ function Invoke-SenRunner {
         try {
             $cleanCmd = ($CommandLine -replace '\s*2>&1\s*$', '').Trim()
             if ($cleanCmd.StartsWith('&')) { $cleanCmd = $cleanCmd.Substring(1).Trim() }
-            $parseErrors = $null
-            $tokens = @([System.Management.Automation.PSParser]::Tokenize($cleanCmd, [ref]$parseErrors))
-            $parts = @($tokens | Where-Object { $_.Type -in @('Command', 'CommandArgument', 'CommandParameter', 'String', 'Number') } | ForEach-Object { [string]$_.Content })
+            $parts = [System.Collections.Generic.List[string]]::new()
+            foreach ($m in [regex]::Matches($cleanCmd, '"([^"]+)"|''([^'']+)''|(\S+)')) {
+                $val = if ($m.Groups[1].Success) { $m.Groups[1].Value } elseif ($m.Groups[2].Success) { $m.Groups[2].Value } else { $m.Groups[3].Value }
+                if (-not [string]::IsNullOrWhiteSpace($val)) { $parts.Add($val) }
+            }
             if ($parts.Count -eq 0) { return $null }
-            $exe = $parts[0]
-            $cmdArgs = if ($parts.Count -gt 1) { @($parts[1..($parts.Count - 1)]) } else { @() }
+            $exe = [string]$parts[0]
+            [string[]]$cmdArgs = @(if ($parts.Count -gt 1) { $parts[1..($parts.Count - 1)] })
             $out = & $exe @cmdArgs 2>$null
             if ($null -eq $out) { return $null }
             if ($out -is [System.Collections.IEnumerable] -and $out -isnot [string]) {
