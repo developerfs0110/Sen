@@ -653,10 +653,10 @@ function Get-SenDeferredItems {
     $loaded = Read-SenSafeJson -Path $defPath
     if ($null -ne $loaded -and $loaded.PSObject.Properties['items']) { return @($loaded.items) }
     $defaultItems = @(
-        [ordered]@{ id = "W-09"; source = "Claude"; title = "Split Sen Core vs Sen Extras into 2 separate Git repositories"; status = "pending_user_confirmation"; mitigation = "Set-SenEdition -Edition core|full provides single-repo toggle without breaking links" },
-        [ordered]@{ id = "W-26"; source = "Grok"; title = "Remove 3D Chibi Office & Creative Packs from main repository"; status = "pending_user_confirmation"; mitigation = "Kept intact per user preference; can be toggled off via Set-SenEdition -Edition core" },
-        [ordered]@{ id = "IMP-13"; source = "Grok"; title = "Cross-project centralized telemetry sync across workspaces"; status = "pending_user_confirmation"; mitigation = "Deferred to protect strict per-workspace data isolation" },
-        [ordered]@{ id = "IMP-19"; source = "Claude/Grok"; title = "Publish companion packages to npm/PyPI/PowerShell Gallery"; status = "pending_user_confirmation"; mitigation = "Deferred until external account credentials and signing keys are configured" }
+        [ordered]@{ id = "W-09"; source = "Grok"; title = "Tone down marketing/pitch style in README.md and shorten overview prose"; status = "pending_user_confirmation"; mitigation = "Kept current inspiring/accessible prose style intact pending user confirmation" },
+        [ordered]@{ id = "W-26 / IMP-19"; source = "Claude"; title = "Hide or replace public personal contact & bank donate info (Phone, Email, Bank Account) in README.md and docs/huong-dan.md"; status = "pending_user_confirmation"; mitigation = "Never delete author contact/donation info without explicit owner confirmation" },
+        [ordered]@{ id = "IMP-13 / IMP-05"; source = "Grok"; title = "Rewrite core PowerShell runtime into Node.js/TypeScript or Python runtime"; status = "disagreed_rejected"; mitigation = "Rejected to preserve zero-dependency core (no node_modules required for core); solved cross-platform via POSIX .sh scripts and hook dispatcher" },
+        [ordered]@{ id = "IMP-10 / IMP-29"; source = "Grok/Claude"; title = "Split Sen.Legal.psm1 and sen-office into separate external Git repositories"; status = "disagreed_rejected"; mitigation = "Rejected repo fragmentation; solved via single-repo Set-SenEdition -Edition core|full switch" }
     )
     Write-SenAtomicJson -Path $defPath -InputObject ([ordered]@{ version = "0.5.0"; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); items = $defaultItems }) -Depth 6
     return @($defaultItems | ForEach-Object { [pscustomobject]$_ })

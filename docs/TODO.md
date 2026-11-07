@@ -128,13 +128,13 @@
 
 ## Danh Sách Chờ Xác Nhận / Bảo Lưu (Deferred & Pending Review — `.agents/office/deferred-items.json`)
 
-> Các hạng mục dưới đây được ghi nhận từ báo cáo đánh giá của Claude và Grok nhưng có đánh đổi lớn về kiến trúc. Sen đã lưu trữ tại `.agents/office/deferred-items.json` (truy xuất qua `Get-SenDeferredItems`) để nhắc anh Gấu xem xét khi cần:
+> Các hạng mục dưới đây được tách riêng từ bảng tổng hợp 3 nguồn đánh giá (**Grok**, **ChatGPT**, **Claude**), lưu trữ tại `.agents/office/deferred-items.json` (truy xuất qua `Get-SenDeferredItems`) để nhắc anh Gấu xem xét và quyết định:
 
-- [ ] **W-09 (Claude Report): Thu gọn `rules/AGENTS.md` xuống ~800 từ bằng cách tách chi tiết sang tài liệu tham khảo phụ**
-  - **Lý do bảo lưu:** Giữ nguyên toàn bộ 13 mục quy tắc cốt lõi hiển thị trực tiếp (`<= 5,750 bytes`) để AI không phải gọi thêm tool đọc file phụ ở mỗi phiên; đã cung cấp `Measure-SenTokenEstimate` để giám sát chặt ngân sách token.
-- [ ] **W-26 (Claude Report): Tách kho lưu trữ thành 2 gói độc lập (`sen-core` và `sen-enterprise`)**
-  - **Lý do bảo lưu:** Giữ kiến trúc 1 repo duy nhất để đồng bộ kiểm thử 100%; đã triển khai `Set-SenEdition -Edition core|full` giúp bật/tắt tức thì chế độ rút gọn ngay trong cùng bộ cài.
-- [ ] **IMP-13 (Grok Report): Đưa Pester v5 thành phụ thuộc cứng bắt buộc khi chạy test**
-  - **Lý do bảo lưu:** Bảo toàn triết lý Zero-Dependency để `tests/run.ps1` chạy ngay lập tức trên mọi máy Windows/macOS/Linux không cần mạng hay quyền cài module ngoài.
-- [ ] **IMP-19 (Grok Report): Chuyển đổi toàn bộ bộ nhớ trạng thái JSON sang cơ sở dữ liệu SQLite nhúng**
-  - **Lý do bảo lưu:** Giữ định dạng JSON thuần văn bản dễ đọc và dễ kiểm tra qua Git; vấn đề tranh chấp ghi song song đã được giải quyết triệt để bằng Named Mutex trong `Save-SenTasks`.
+- [ ] **W-09 (Grok Report) — [CHỜ ANH GẤU XÁC NHẬN]: Rút gọn văn phong marketing ("bán hàng") trong `README.md` sang thuần kỹ thuật**
+  - **Lý do bảo lưu:** Tạm giữ nguyên bố cục và văn phong truyền cảm hứng, gần gũi hiện tại của anh Gấu; chờ anh Gấu xác nhận có muốn rút gọn sang văn phong kỹ thuật khô khan hay không.
+- [ ] **W-26 / IMP-19 (Claude Report) — [CHỜ ANH GẤU XÁC NHẬN]: Ẩn hoặc thay thế thông tin cá nhân công khai (SĐT, Email, STK ngân hàng nhận Donate) trong `README.md` và `docs/huong-dan.md`**
+  - **Lý do bảo lưu:** Tuyệt đối không tự ý xóa thông tin liên hệ và tài khoản nhận ủng hộ (donate) của tác giả khi chưa có sự đồng ý của anh Gấu.
+- [ ] **IMP-13 / IMP-05 (Grok Report) — [KHÔNG ĐỒNG Ý / TỪ CHỐI]: Viết lại toàn bộ Core PowerShell sang Node.js/TypeScript hoặc Python runtime**
+  - **Lý do từ chối:** Bảo toàn triết lý Core Zero-Dependency (không bắt cài `node_modules` cho phần lõi như chính Claude đã khen); vấn đề đa nền tảng đã được giải quyết triệt để bằng bộ script `.sh` và Hook Dispatcher.
+- [ ] **IMP-10 / IMP-29 (Grok & Claude Report) — [KHÔNG ĐỒNG Ý / TỪ CHỐI]: Tách `Sen.Legal.psm1` và `sen-office` thành các Git repo độc lập bên ngoài**
+  - **Lý do từ chối:** Tránh phân mảnh repo và đứt gãy kiểm thử đồng bộ; đã giải quyết bằng công tắc `Set-SenEdition -Edition core | full` ngay trong cùng một bộ cài.
