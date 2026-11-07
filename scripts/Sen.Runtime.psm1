@@ -435,7 +435,7 @@ function Get-SenTaskRiskScore {
     $isPureQuestion = (-not $hasExplicitSwitches) -and (-not ($hasDb -or $hasAuth -or $hasPay -or $hasDel -or $hasArch)) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
     if ($isPureQuestion) {
         return [pscustomobject]@{
-            Score = 0; Tier = 0; IsLookup = $true; RiskLevel = "none"
+            Score = 0; Tier = 0; IsLookup = $true; RiskLevel = "none"; ComplexityLevel = "C0"; ExpressMode = $false
             Reasons = @("Pure lookup question (no tier label)"); HardFloorTier3 = $false
             RequiresDesignAndPlan = $false; LegalCheckRequired = $false
             ProjectScale = $ProjectScale; RecommendedExecution = "direct-answer"
@@ -473,19 +473,16 @@ function Get-SenTaskRiskScore {
     }
 
     $riskLevel = if ($hardFloorTier3 -or $score -ge 8) { "critical" } elseif ($score -ge 5) { "high" } elseif ($score -ge 2) { "medium" } else { "low" }
+    $compLevel = if ($hardFloorTier3 -or $score -ge 8) { "C4" } elseif ($tier -eq 3) { "C3" } elseif ($tier -eq 2) { "C2" } else { "C1" }
+    $expressMode = ($tier -eq 2) -and (-not $hardFloorTier3) -and (-not $hasApi) -and (-not $hasShared) -and (-not $hasDep) -and (-not $hasCfg)
     $execMode  = if ($tier -lt 3) { "single-agent" } elseif ($ProjectScale -eq "mini") { "native-compact" } elseif ($hardFloorTier3 -or $ProjectScale -eq "enterprise") { "subagent-driven" } else { "native" }
 
     return [pscustomobject]@{
-        Score                 = [int]$score
-        Tier                  = [int]$tier
-        IsLookup              = $false
-        RiskLevel             = $riskLevel
-        Reasons               = @($reasons.ToArray())
-        HardFloorTier3        = [bool]$hardFloorTier3
-        RequiresDesignAndPlan = [bool]($tier -eq 3)
-        LegalCheckRequired    = [bool]$hasLegal
-        ProjectScale          = $ProjectScale
-        RecommendedExecution  = $execMode
+        Score = [int]$score; Tier = [int]$tier; IsLookup = $false; RiskLevel = $riskLevel
+        ComplexityLevel = $compLevel; ExpressMode = [bool]$expressMode
+        Reasons = @($reasons.ToArray()); HardFloorTier3 = [bool]$hardFloorTier3
+        RequiresDesignAndPlan = [bool]($tier -eq 3); LegalCheckRequired = [bool]$hasLegal
+        ProjectScale = $ProjectScale; RecommendedExecution = $execMode
     }
 }
 

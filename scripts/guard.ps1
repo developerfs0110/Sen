@@ -65,6 +65,7 @@ try {
             '^(?i)(run_command|bash|run_terminal_cmd|shell|exec)$' { $toolName = "run_command"; break }
             '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { $toolName = "write_file"; break }
             '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { $toolName = "edit_file"; break }
+            '^(?i)(read_file|read|view_file)$' { $toolName = "read_file"; break }
         }
         $wsCandidates = [System.Collections.Generic.List[string]]::new()
         if ($payload.workspacePaths) { foreach ($w in @($payload.workspacePaths)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsCandidates.Add([string]$w) } } }
@@ -74,15 +75,32 @@ try {
         $primaryWs = if ($wsList.Count -gt 0) { [string]$wsList[0] } else { "" }
         $normTarget = ""; $normCmd = ""
     }
+    if (-not [string]::IsNullOrWhiteSpace($primaryWs) -and (Get-Command Resolve-SenWorkspaceRoot -ErrorAction SilentlyContinue)) {
+        $primaryWs = Resolve-SenWorkspaceRoot -StartPath $primaryWs
+    }
     $toolArgs = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } else { $null }
 }
 catch {
     Out-Decision "ask" "guard: failed to parse payload, falling back to user confirmation"
 }
 
-# 1. Enforce workspace boundary on write_file / edit_file when workspacePaths is provided
-if ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
+# 1. Enforce sensitive host path, symlink escape, and workspace boundary on read_file / write_file / edit_file
+if ($toolName -in @("write_file", "edit_file", "read_file")) {
     $targetPath = if (-not [string]::IsNullOrWhiteSpace($normTarget)) { $normTarget } elseif ($toolArgs -and $toolArgs.Path) { [string]$toolArgs.Path } elseif ($toolArgs -and $toolArgs.file_path) { [string]$toolArgs.file_path } elseif ($toolArgs -and $toolArgs.target_file) { [string]$toolArgs.target_file } elseif ($toolArgs -and $toolArgs.path) { [string]$toolArgs.path } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
+        if ($targetPath.Replace('\', '/') -match '(?i)(^|/)(\.ssh|\.aws|\.gnupg|\.kube)(/|$)|(^|/)(id_rsa|id_ed25519|\.npmrc|\.pypirc|\.netrc)$') {
+            Out-Decision "deny" "[SEN GUARD] Blocked: access to sensitive host credential path ($targetPath)." $primaryWs $toolName $targetPath $targetPath
+        }
+        if ((Get-Command Test-SenSafeWorkspacePath -ErrorAction SilentlyContinue) -and $wsList.Count -gt 0) {
+            $safeRes = Test-SenSafeWorkspacePath -TargetPath $targetPath -WorkspaceList $wsList -ToolName $toolName
+            if (-not $safeRes.Allowed) {
+                Out-Decision "deny" ("[SEN GUARD] Blocked: " + $safeRes.Reason) $primaryWs $toolName $targetPath $targetPath
+            }
+        }
+    }
+    if ($toolName -eq "read_file") {
+        Out-Decision "ask" $null
+    }
     if (-not [string]::IsNullOrWhiteSpace($targetPath) -and $wsList.Count -gt 0) {
         try {
             $fullTarget = [System.IO.Path]::GetFullPath($targetPath).TrimEnd('\', '/')
@@ -199,6 +217,8 @@ $rules = @(
     @{ re = '\bgit\b[^|;&]*\b(filter-branch|filter-repo)\b'; why = 'Git history rewrite' },
     @{ re = '\bgh\s+repo\s+delete\b'; why = 'GitHub repository deletion' },
     @{ re = '(\biex\b|\binvoke-expression\b)\s*\(?\s*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b|new-object\s+net\.webclient)'; why = 'Remote script download and execution (IEX / IRM)' },
+    @{ re = '(\bcurl\b|\bwget\b)[^;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; why = 'Piped remote script execution (curl/wget | sh/bash/pwsh)' },
+    @{ re = '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b)[^|;&]*([/\\]\.ssh[/\\]|[/\\]\.aws[/\\]|[/\\]\.gnupg[/\\]|[/\\]\.kube[/\\]|id_rsa|id_ed25519)'; why = 'Reading sensitive host credential/key files via shell' },
     @{ re = '\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}'; why = 'Encoded PowerShell command execution' }
 )
 

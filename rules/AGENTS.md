@@ -15,21 +15,21 @@ Work replies start with a tier label (`Get-SenTaskRiskScore`).
 | Tier 2 - Confirming the approach | New feature; 3+ files; shared component/API change; new library | Turn 1: *Best-of-the-Best* + **Resource Cost** table, restore point, subagent, end turn. Turn 2: report. |
 | Tier 3 - Design & plan | New project; architecture/DB/auth/payments; data-loss risk | Turn 1: design (`brainstorming`) + plan (`writing-plans`), restore point, subagent, end turn. Turn 2: report. |
 
-- **Instant-Ack & Cold-Start:** Before ANY tool call, emit a 1-sentence waiting notice with the user's name; for heavy research (>2 calls), emit notice + spawn `research`/`self` subagent in Turn 1 + end Turn 1. On new/resumed chat, read ONLY `docs/CONTEXT.md` first. Lookup: answer directly (`0 file edits`).
+- **Instant-Ack & Cold-Start:** Before ANY tool call, emit a 1-sentence waiting notice with user's name; for heavy research (>2 calls), emit notice + spawn `research`/`self` subagent in Turn 1 + end Turn 1. On new/resumed chat, read ONLY `docs/CONTEXT.md` first. Lookup: answer directly (`0 file edits`).
 - **Dialectical Proof, Critique & Cost (Tier 2–3):** (1) **Thesis:** prove options + pick are *Best-of-the-Best* with a **Resource Cost** column (tokens, time, CPU/RAM/disk, maintenance); (2) **Antithesis:** attack via counterexamples, boundaries, STRIDE; (3) **Synthesis:** optimal pick (`Invoke-SenDialecticalAudit`).
-- **2-Turn Handshake:** Tier 2–3 **Turn 1** outputs tier label + Dialectical Proof/Cost + `New-SenRestorePoint` + subagent (`invoke_subagent`), and **ends Turn 1 immediately** (no sync file edits in Turn 1; pause only for data-loss ops). **Turn 2** reports verified results & undo (`Restore-SenRestorePoint`).
-- Overrides: "làm luôn đi" / "just do it" → Tier 1; "đây là Cấp 3" / "this is Tier 3" → Tier 3. Risk overrides file count (DB, auth, payments, deletion = Tier 3).
+- **2-Turn Handshake:** Tier 2–3 **Turn 1** outputs tier label + Dialectical Proof/Cost + `New-SenRestorePoint` + subagent (`invoke_subagent`), and **ends Turn 1 immediately** (no sync file edits in Turn 1; pause only for data-loss ops; low-risk `ExpressMode` runs directly). **Turn 2** reports verified results & undo (`Restore-SenRestorePoint`).
+- Overrides: "làm luôn đi" / "just do it" → Tier 1; "đây là Cấp 3" / "this is Tier 3" → Tier 3; auto-escalate via `Test-SenMidTaskEscalation`. Risk overrides file count (DB, auth, payments, deletion = Tier 3).
 
 ## 3. Priority over superpowers
 - Sen's tier decides which skills run (`using-superpowers` replaced). `brainstorming` + `writing-plans` only at Tier 3. Other skills (`systematic-debugging`, `verification-before-completion`, ...) run at any tier. Never edit superpowers files.
 
 ## 4. Project rules
-- Apply the project's `AGENTS.md` (and parent folders' up to workspace root) if present.
+- Apply the project's `AGENTS.md` (and parent folders' up to root) if present.
 
 ## 5. Roles, models & task state
 - Tier 1: execute directly. Tier 2: spawn 1 Dev subagent (`invoke_subagent`) in Turn 1.
 - Tier 3: act as PM/Tech Lead, track state/DAG/locks in `.agents/office/tasks.json`, coordinate subagents: BA/Architect (`inherit`), Scout (`flash_lite`/`flash`), Dev (`inherit`/`pro`), Tester (`inherit`), Reviewers (`inherit`/`pro`). Parallelize independent tasks (`dispatching-parallel-agents`).
-- **Anti-Hang & Selective Teardown:** Pass `-Workspace` explicitly; never kill active or completed (`idle`) subagents (keep completed subagents green); only kill stdin-deadlocked or zero-progress stalled tasks (`manage_task`/`manage_subagents`, `Test-SenHungTasks`, `Clear-SenHungTasks`).
+- **Anti-Hang & Selective Teardown:** Pass `-Workspace`; never kill active or completed (`idle`) subagents; only kill stdin-deadlocked/stalled tasks (`manage_task`/`manage_subagents`, `Test-SenHungTasks`, `Clear-SenHungTasks`).
 
 ## 6. Tier 3 execution choice
 After writing the plan, announce in one line:
@@ -49,7 +49,7 @@ After writing the plan, announce in one line:
 - Web/App Legal-by-Design (`vn-law-check`): un-prechecked consent + log (Luật 91/2025, NĐ 356/2025), consent gate, mobile `ACCOUNT_DELETE`, AI labels (Luật 134/2025), privacy policy; run `Invoke-SenVnLawScan`. Security gate: `security-audit`. Project gates: from project's AGENTS.md.
 
 ## 10. State checkpoints, Logic-Doc Sync & backlog
-- Sync `docs/CONTEXT.md`, `docs/TODO.md`, `README.md`/`README.vi.md`, and `CHANGELOG.md` on logic/process changes (`Test-SenCapabilityParity`). On "lưu vào task cần làm" / "save to backlog", save to `docs/TODO.md` (`Add-SenBacklogItem`). Suggest `/compact` when long.
+- Sync `docs/CONTEXT.md`, `docs/TODO.md`, `README.md`/`README.vi.md`, `CHANGELOG.md`, and `docs/releases/` (`New-SenReleaseNote`, `Test-SenReleaseNoteGate`) on logic/process changes (`Test-SenCapabilityParity`). On "lưu vào task cần làm" / "save to backlog", save to `docs/TODO.md` (`Add-SenBacklogItem`). Suggest `/compact` when long.
 
 ## 11. Capture repeated work
 - When a workflow repeats 2–3 times or after a correction, offer `sen-skill-capture`.

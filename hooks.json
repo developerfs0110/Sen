@@ -2,7 +2,7 @@
   "sen-destructive-command-guard": {
     "PreToolUse": [
       {
-        "matcher": "run_command|write_file|edit_file",
+        "matcher": "run_command|write_file|edit_file|read_file",
         "hooks": [
           {
             "type": "command",

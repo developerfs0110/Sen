@@ -556,4 +556,9 @@ if (Test-Path -LiteralPath $senHarnessModulePath) {
     Import-Module -Name $senHarnessModulePath -Global -Force
 }
 
+$senGovernanceModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Governance.psm1"
+if (Test-Path -LiteralPath $senGovernanceModulePath) {
+    Import-Module -Name $senGovernanceModulePath -Global -Force
+}
+
 Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack

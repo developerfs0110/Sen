@@ -1,6 +1,6 @@
 # Danh Sách Việc Cần Làm (Backlog & Lộ Trình Nâng Cấp) — Sen (`sen-method`)
 
-- **Cập nhật lần cuối:** 2026-11-06 (`v0.3.0` — Hoàn tất toàn bộ 10/10 hạng mục)
+- **Cập nhật lần cuối:** 2026-11-08 (`v0.5.0` — Hoàn tất toàn bộ 25/25 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
 - **Mục đích:** Lưu trữ có cấu trúc mọi công việc, ý tưởng và hạng mục cải tiến được Boss chỉ đạo `"lưu vào task cần làm"` trong quá trình trao đổi, đảm bảo không thất thoát giữa các phiên làm việc.
 - **Trạng thái ký hiệu:** `[ ]` Chờ triển khai · `[~]` Đang thực hiện · `[x]` Đã hoàn thành
 
@@ -107,3 +107,34 @@
 - [x] **TASK-22 (P0): Bộ Thăm dò Sự sống 3 Tín hiệu & Thu dọn Chọn lọc (`3-Signal Liveness Probe & Selective Teardown` trong `Test-SenHungTasks` / `Clear-SenHungTasks`) — Bảo vệ Tuyệt đối Task Chạy Lâu Đang Hoạt động (`ActiveLongRunningIds`), Bắt Tức thì Stdin Deadlock (`DeadlockedItems`) và Thu dọn Zombie Idle (`IdleSubagents`)**
   - **Nguồn:** Phản biện chuyên sâu của anh Gấu về việc phân biệt tác vụ chạy lâu thực sự với tác vụ bị treo chết để không bao giờ giết nhầm tiến trình đang làm việc (2026-11-07).
   - **Kết quả (`v0.4.0`):** Đã nâng cấp `Test-SenHungTasks` kiểm tra 3 tín hiệu sự sống (`heartbeatAt`, thay đổi file thực tế trong `allowedPaths`, hoặc `lastStepTime` của subagent) để đưa các tác vụ chạy lâu hợp lệ vào danh sách được bảo vệ `ActiveLongRunningIds`; bắt tức thì lỗi kẹt nhắc lệnh tương tác stdin (`Supply values for the following parameters:`, `[Y/n]`, `Overwrite?`) vào `DeadlockedItems`; phân loại rõ `StaleSubagents` và `IdleSubagents`; và nâng cấp `Clear-SenHungTasks` + `rules/AGENTS.md` sang cơ chế **Selective Teardown** (`ProtectedLongRunningIds`) tuyệt đối không chạm vào tác vụ đang tiến triển.
+
+---
+
+## Nhóm `v0.5.0` — Truy Vết Yêu Cầu 7 Mắt Xích (RTM Engine), Bằng Chứng Sống (Stale Evidence), Phân Tích Tác Động Thay Đổi & Cổng Ghi Chú Phát Hành Song Ngữ (Đã hoàn tất trong `v0.5.0`)
+
+- [x] **TASK-23 (P0): Động cơ Truy vết Yêu cầu Toàn trình 7 Mắt xích (`Register-SenRequirement`, `Get-SenRequirementTraceability`) & Động cơ Bằng chứng Sống (`Register-SenEvidence`, `Test-SenEvidenceValidity`)**
+  - **Nguồn:** Tổng hợp đánh giá chuyên sâu từ 3 báo cáo độc lập (ChatGPT EPIC 01/02/03, Claude, Grok) và chỉ đạo của anh Gấu (2026-11-08).
+  - **Kết quả (`v0.5.0`):** Đã triển khai trong `scripts/Sen.Governance.psm1` và tích hợp vào `Test-SenDeliveryGate`: quản lý đầy đủ chuỗi `REQ -> DESIGN -> TASK -> CODE -> TEST -> EVIDENCE -> ACCEPTANCE` (`.agents/office/requirements.json`, `.agents/office/evidence.json`), khử trùng lặp yêu cầu, phát hiện xung đột (`conflictWith`), chặn bàn giao khi còn `NEEDS_CLARIFICATION` hoặc thiếu kiểm thử, và tự động vô hiệu hóa bằng chứng (`status = "STALE"`, `verified = $false`) ngay khi file mã nguồn liên quan bị sửa sau mốc thời gian tạo bằng chứng.
+
+- [x] **TASK-24 (P0): Máy Trạng thái Công việc Bất biến (`Invoke-SenTaskTransition`), Khóa Named Mutex Đa Tiến trình (`Save-SenTasks`), Phân tích Tác động Thay đổi DAG (`Invoke-SenChangeImpactAnalysis`) & Phục hồi Sau Sự cố (`Invoke-SenCheckpointResume`)**
+  - **Nguồn:** Báo cáo ChatGPT (EPIC 04/05/06) và Claude P0 (2026-11-08).
+  - **Kết quả (`v0.5.0`):** Đã bọc `Save-SenTasks` trong Named Mutex liên tiến trình (`Local\SenTasksMutex_*`) kèm hợp nhất task mới phát sinh song song; kiểm soát chuyển đổi trạng thái hợp lệ với nhật ký bất biến (`history`) và hạn khóa (`lockExpiresAt`); tự động lan truyền trạng thái `stale` cho toàn bộ task và bằng chứng phụ thuộc phía sau khi một yêu cầu/task thay đổi; và phục hồi sau crash kết hợp `git status --porcelain` (`UncommittedFiles`, `ExpiredLocks`, `PreventDuplicateIds`).
+
+- [x] **TASK-25 (P0): Bảo vệ Đường dẫn Nhạy cảm/Symlink (`Test-SenSafeWorkspacePath`, `Resolve-SenWorkspaceRoot`), Chống Sửa Xóa Test (`Test-SenSuiteIntegrity`), Tự động Nâng Cấp Độ Giữa Chừng (`Test-SenMidTaskEscalation`), Chế độ Cấp 2 Nhanh (`ExpressMode`) & Cổng Ghi chú Phát hành Song ngữ Bắt buộc (`New-SenReleaseNote`, `Test-SenReleaseNoteGate`)**
+  - **Nguồn:** Báo cáo Claude (P0/P1/P2), Grok (`ExpressMode`, `Set-SenEdition`, `Measure-SenTokenEstimate`), ChatGPT (EPIC 07) và chỉ đạo trực tiếp của anh Gấu về Ghi chú Phát hành Song ngữ (2026-11-08).
+  - **Kết quả (`v0.5.0`):** Đã bổ sung `read_file` vào `PreToolUse` hook; chặn truy cập `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `id_rsa` và thoát khỏi workspace qua Symlink/Junction (`ReparsePoint`); tự động tìm gốc workspace từ thư mục con (`Resolve-SenWorkspaceRoot`); kiểm tra toàn vẹn số lượng `Assert-` (`Test-SenSuiteIntegrity`); nâng cấp `Invoke-SenVnLawScan` lên 3 trạng thái (`PASS`/`FAIL`/`UNKNOWN` kèm `LegalDisclaimer`); bổ sung `ExpressMode` (`ComplexityLevel` `C1`–`C4`), `Set-SenEdition` (`core`/`full`), `Uninstall-SenSelf` (`uninstall.ps1`/`.sh`, `register-schedule.sh`), và cổng kiểm duyệt Ghi chú Phát hành Song ngữ bắt buộc (`docs/releases/v0.5.0.vi.md`, `v0.5.0.en.md`, `RELEASE-NOTES.vi.md`, `RELEASE-NOTES.en.md`).
+
+---
+
+## Danh Sách Chờ Xác Nhận / Bảo Lưu (Deferred & Pending Review — `.agents/office/deferred-items.json`)
+
+> Các hạng mục dưới đây được ghi nhận từ báo cáo đánh giá của Claude và Grok nhưng có đánh đổi lớn về kiến trúc. Sen đã lưu trữ tại `.agents/office/deferred-items.json` (truy xuất qua `Get-SenDeferredItems`) để nhắc anh Gấu xem xét khi cần:
+
+- [ ] **W-09 (Claude Report): Thu gọn `rules/AGENTS.md` xuống ~800 từ bằng cách tách chi tiết sang tài liệu tham khảo phụ**
+  - **Lý do bảo lưu:** Giữ nguyên toàn bộ 13 mục quy tắc cốt lõi hiển thị trực tiếp (`<= 5,750 bytes`) để AI không phải gọi thêm tool đọc file phụ ở mỗi phiên; đã cung cấp `Measure-SenTokenEstimate` để giám sát chặt ngân sách token.
+- [ ] **W-26 (Claude Report): Tách kho lưu trữ thành 2 gói độc lập (`sen-core` và `sen-enterprise`)**
+  - **Lý do bảo lưu:** Giữ kiến trúc 1 repo duy nhất để đồng bộ kiểm thử 100%; đã triển khai `Set-SenEdition -Edition core|full` giúp bật/tắt tức thì chế độ rút gọn ngay trong cùng bộ cài.
+- [ ] **IMP-13 (Grok Report): Đưa Pester v5 thành phụ thuộc cứng bắt buộc khi chạy test**
+  - **Lý do bảo lưu:** Bảo toàn triết lý Zero-Dependency để `tests/run.ps1` chạy ngay lập tức trên mọi máy Windows/macOS/Linux không cần mạng hay quyền cài module ngoài.
+- [ ] **IMP-19 (Grok Report): Chuyển đổi toàn bộ bộ nhớ trạng thái JSON sang cơ sở dữ liệu SQLite nhúng**
+  - **Lý do bảo lưu:** Giữ định dạng JSON thuần văn bản dễ đọc và dễ kiểm tra qua Git; vấn đề tranh chấp ghi song song đã được giải quyết triệt để bằng Named Mutex trong `Save-SenTasks`.

@@ -213,12 +213,15 @@ function Invoke-SenVnLawScan {
     elseif ($found['COMMERCE']) { $level = 2 }
     elseif ($found['FORM'] -or $found['TRACKING'] -or $found['AUTH'] -or $found['AI'] -or $found['PERMISSIONS'] -or $found['SDK_TRACKING'] -or $found['ADS_SDK'] -or $found['BOT_FORWARDING']) { $level = 1 }
     $eval = Resolve-SenVnLawChecklistsAndRedFlags -Found $found -ConsentState $consentState -IsMobileApp $isMobileApp -HasAccountDelete $hasAccountDelete -HasBotConsent $hasBotConsent -Level $level
+    $verdict = if ($eval.RedFlags.Count -gt 0) { 'FAIL' } elseif ($eval.Checklists.Count -gt 0 -or $consentState -eq 'unknown') { 'UNKNOWN' } else { 'PASS' }
     return [pscustomobject]@{
         Path = $resolvedRoot; Level = [int]$level; AI = [bool]$found['AI']; ForeignHost = [bool]$found['FOREIGN_HOST']
         MobileApp = [bool]$isMobileApp; MobilePlatforms = $platforms; TrackingConsent = $consentState; AccountDelete = [bool]$hasAccountDelete
         BotForwarding = [bool]$found['BOT_FORWARDING']; BotConsent = [bool]$hasBotConsent
         Signals = [pscustomobject]$found; Evidence = [pscustomobject]$evidence
         RequiredChecklists = $eval.Checklists; CodeRedFlags = $eval.RedFlags; CompliantCodeLevel = ($eval.RedFlags.Count -eq 0)
+        Passed = ($eval.RedFlags.Count -eq 0); Verdict = $verdict; LawCatalogVersion = '2026.11'; EffectiveDate = '2026-01-01'
+        LegalDisclaimer = 'Static code scan only; does not replace human legal audit.'
     }
 }
 

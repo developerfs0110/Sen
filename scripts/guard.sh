@@ -34,9 +34,16 @@ try:
     tc = d.get("toolCall") or {}
     tname = tc.get("name") or ""
     args = tc.get("args") or {}
-    if tname in ("write_file", "edit_file"):
-        p = args.get("Path") or ""
-        ws_list = [w for w in (d.get("workspacePaths") or []) if w]
+    if tname in ("write_file", "edit_file", "read_file", "Write", "Edit", "MultiEdit", "Read"):
+        p = args.get("Path") or args.get("file_path") or args.get("target_file") or args.get("path") or ""
+        norm_raw = p.replace("\\", "/").lower()
+        if any(seg in norm_raw for seg in ("/.ssh/", "/.aws/", "/.gnupg/", "/.kube/", "id_rsa", "id_ed25519")):
+            print("DENY_SENS:" + p)
+            sys.exit(0)
+        if tname in ("read_file", "Read"):
+            print("SAFE_TOOL")
+            sys.exit(0)
+        ws_list = [w for w in (d.get("workspacePaths") or d.get("workspace_roots") or []) if w]
         if p and ws_list:
             rp = os.path.realpath(p)
             inside = False
@@ -76,6 +83,9 @@ except Exception:
 ' <<< "$RAW" 2>/dev/null || echo "FALLBACK")"
 
   case "$PY_CHECK" in
+    DENY_SENS:*)
+      out_decision "deny" "[SEN GUARD] Blocked: access to sensitive host credential path (${PY_CHECK#DENY_SENS:})."
+      ;;
     DENY_PATH:*)
       out_decision "deny" "[SEN GUARD] Blocked: file write outside active workspace (${PY_CHECK#DENY_PATH:})."
       ;;
@@ -160,6 +170,12 @@ if printf '%s' "$CMD" | grep -Eiq '\bgh[[:space:]]+repo[[:space:]]+delete\b'; th
 fi
 if printf '%s' "$CMD" | grep -Eiq '(\biex\b|\binvoke-expression\b)[[:space:]]*\(?[[:space:]]*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b)'; then
   deny "Remote script download and execution (IEX / IRM)"
+fi
+if printf '%s' "$CMD" | grep -Eiq '(\bcurl\b|\bwget\b)[^;]*\|[[:space:]]*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; then
+  deny "Piped remote script execution (curl/wget | sh/bash/pwsh)"
+fi
+if printf '%s' "$CMD" | grep -Eiq '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b)[^|;&]*(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519)'; then
+  deny "Reading sensitive host credential/key files via shell"
 fi
 if printf '%s' "$CMD" | grep -Eiq '\b(powershell|pwsh)(\.exe)?\b[^|;&]*[[:space:]]-(e|ec|enc|encodedcommand)[[:space:]]+[A-Za-z0-9+/=]{8,}'; then
   deny "Encoded PowerShell command execution"

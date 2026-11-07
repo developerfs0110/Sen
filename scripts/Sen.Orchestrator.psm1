@@ -8,46 +8,36 @@ function Save-SenTasks {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace, [AllowEmptyCollection()][Parameter(Mandatory = $true)][object[]]$Tasks, [switch]$Internal)
     $tasksPath = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
-    $finalList = [System.Collections.Generic.List[object]]::new()
-    if (-not $Internal -and (Test-Path -LiteralPath $tasksPath)) {
-        $diskObj = Read-SenSafeJson -Path $tasksPath
+    $mtxName = "Local\SenTasksMutex_" + [Math]::Abs($tasksPath.ToLowerInvariant().GetHashCode())
+    $mtx = [System.Threading.Mutex]::new($false, $mtxName)
+    $hasLock = $false
+    try {
+        try { $hasLock = $mtx.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
+        $finalList = [System.Collections.Generic.List[object]]::new()
+        $diskObj = if (-not $Internal -and (Test-Path -LiteralPath $tasksPath)) { Read-SenSafeJson -Path $tasksPath } else { $null }
         $diskArr = if ($null -ne $diskObj -and $diskObj.PSObject.Properties.Name -contains "tasks") { @($diskObj.tasks) } else { @() }
-        $diskMap = @{}
+        $diskMap = @{}; $seenIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
         foreach ($dt in $diskArr) { if ($dt -and $dt.id) { $diskMap[[string]$dt.id] = $dt } }
         foreach ($t in $Tasks) {
             if (-not $t) { continue }
-            $tid = [string]$t.id
+            $tid = [string]$t.id; [void]$seenIds.Add($tid)
             $tRev = if ($t.PSObject.Properties.Name -contains "_rev") { [int]$t._rev } else { 1 }
-            if ($diskMap.ContainsKey($tid)) {
-                $dt = $diskMap[$tid]
-                $dRev = if ($dt.PSObject.Properties.Name -contains "_rev") { [int]$dt._rev } else { 1 }
-                if ($dRev -gt $tRev) {
-                    $finalList.Add($dt)
-                    continue
-                }
-                if ([string]$t.status -ne [string]$dt.status) {
-                    $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($dRev + 1) -Force
-                }
-            }
+            $dt = if ($diskMap.ContainsKey($tid)) { $diskMap[$tid] } else { $null }
+            $dRev = if ($null -ne $dt -and $dt.PSObject.Properties.Name -contains "_rev") { [int]$dt._rev } else { 0 }
+            if ($null -ne $dt -and $dRev -gt $tRev) { $finalList.Add($dt); continue }
+            $newRev = if ($null -ne $dt -and [string]$t.status -ne [string]$dt.status) { $dRev + 1 } else { $tRev }
+            $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue $newRev -Force
             $finalList.Add($t)
         }
+        foreach ($dk in $diskMap.Keys) { if (-not $seenIds.Contains($dk)) { $finalList.Add($diskMap[$dk]) } }
+        $payload = [ordered]@{ version = 1; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); tasks = @($finalList.ToArray()) }
+        Write-SenAtomicJson -Path $tasksPath -InputObject $payload -Depth 8
+        return @($finalList.ToArray())
     }
-    else {
-        foreach ($t in $Tasks) {
-            if (-not $t) { continue }
-            if ($t.PSObject.Properties.Name -notcontains "_rev") {
-                $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue 1 -Force
-            }
-            $finalList.Add($t)
-        }
+    finally {
+        if ($hasLock) { try { $mtx.ReleaseMutex() } catch { <# Ignore mutex release error #> } }
+        $mtx.Dispose()
     }
-    $payload = [ordered]@{
-        version   = 1
-        updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-        tasks     = @($finalList.ToArray())
-    }
-    Write-SenAtomicJson -Path $tasksPath -InputObject $payload -Depth 8
-    return @($finalList.ToArray())
 }
 
 function Get-SenTasks {
@@ -537,122 +527,72 @@ function Test-SenDeliveryGate {
         $complianceObj = Test-SenProjectCompliance -Workspace $Workspace -ProjectPath $targetDir
         if (-not $complianceObj.Compliant) { $allowed = $false; $reasons.Add("Process Compliance missing steps ($($complianceObj.MissingSteps -join ', '))") }
     }
+    $rtmObj = $null
+    if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/requirements.json")) -and (Get-Command Get-SenRequirementTraceability -ErrorAction SilentlyContinue)) {
+        $rtmObj = Get-SenRequirementTraceability -Workspace $Workspace
+        if (-not $rtmObj.Accepted) { $allowed = $false; $reasons.Add("Requirement Traceability NOT_ACCEPTED (Unverified=$($rtmObj.UnverifiedRequirements -join ', '))") }
+    }
     $reason = if ($allowed) { "All $($active.Count) active task(s) verified and done." } else { "Delivery blocked: " + ($reasons -join "; ") + "." }
     return [pscustomobject]@{
         Allowed = $allowed; TotalActive = $active.Count; DoneCount = $doneCount; IncompleteIds = @($incomplete.ToArray())
-        HungTasks = $hungObj; CodeHealth = $codeHealthObj; VnLawScan = $vnLawObj; ProcessCompliance = $complianceObj; Reason = $reason
+        HungTasks = $hungObj; CodeHealth = $codeHealthObj; VnLawScan = $vnLawObj; ProcessCompliance = $complianceObj; RequirementTraceability = $rtmObj; Reason = $reason
     }
 }
 
 function Get-SenRecoveryState {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace)
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $inProgress = @($tasks | Where-Object { [string]$_.status -eq "in_progress" } | ForEach-Object { [string]$_.id })
-    $reviewing = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
-    $ready = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
-    $pending = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
-    $done = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
-    $backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
-    $failed = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
-
+    $reviewing  = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
+    $ready      = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
+    $pending    = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
+    $done       = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
+    $backlog    = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
+    $failed     = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
     return [pscustomobject][ordered]@{
-        needsRecovery = [bool](($inProgress.Count + $reviewing.Count + $failed.Count) -gt 0)
-        totalTasks    = $tasks.Count
-        doneIds       = $done
-        inProgressIds = $inProgress
-        reviewingIds  = $reviewing
-        readyIds      = $ready
-        pendingIds    = $pending
-        failedIds     = $failed
-        backlogIds    = $backlog
+        needsRecovery = [bool](($inProgress.Count + $reviewing.Count + $failed.Count) -gt 0); totalTasks = $tasks.Count
+        doneIds = $done; inProgressIds = $inProgress; reviewingIds = $reviewing; readyIds = $ready; pendingIds = $pending; failedIds = $failed; backlogIds = $backlog
     }
 }
 
 function Get-SenQualityMetrics {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace)
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })
     $backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" })
     $done = @($active | Where-Object { [string]$_.status -eq "done" })
     $inProg = @($active | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
     $ready = @($active | Where-Object { [string]$_.status -in @("ready", "pending") })
-
-    $totalActive = $active.Count
-    $doneCount = $done.Count
+    $totalActive = $active.Count; $doneCount = $done.Count
     $firstPassCount = @($done | Where-Object { [int]$_.reworkCount -eq 0 }).Count
     $reworkedCount = @($active | Where-Object { [int]$_.reworkCount -gt 0 }).Count
     $verifiedPassCount = @($done | Where-Object { $null -ne $_.evidence -and [int]$_.evidence.exitCode -eq 0 }).Count
-
     $successPct = if ($totalActive -gt 0) { [int][Math]::Round(($doneCount * 100.0) / $totalActive) } else { 100 }
     $firstPassPct = if ($doneCount -gt 0) { [int][Math]::Round(($firstPassCount * 100.0) / $doneCount) } else { 100 }
     $reworkPct = if ($totalActive -gt 0) { [int][Math]::Round(($reworkedCount * 100.0) / $totalActive) } else { 0 }
     $testPassPct = if ($doneCount -gt 0) { [int][Math]::Round(($verifiedPassCount * 100.0) / $doneCount) } else { 100 }
-
     return [pscustomobject][ordered]@{
-        totalTasks         = $tasks.Count
-        activeTasks        = $totalActive
-        doneTasks          = $doneCount
-        inProgressTasks    = $inProg.Count
-        readyTasks         = $ready.Count
-        backlogTasks       = $backlog.Count
-        taskSuccessRatePct = $successPct
-        firstPassRatePct   = $firstPassPct
-        reworkRatePct      = $reworkPct
-        testPassRatePct    = $testPassPct
+        totalTasks = $tasks.Count; activeTasks = $totalActive; doneTasks = $doneCount; inProgressTasks = $inProg.Count
+        readyTasks = $ready.Count; backlogTasks = $backlog.Count; taskSuccessRatePct = $successPct
+        firstPassRatePct = $firstPassPct; reworkRatePct = $reworkPct; testPassRatePct = $testPassPct
     }
 }
 
 function Add-SenBacklogItem {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Id,
-        [Parameter(Mandatory = $true)]
-        [string]$Title,
-        [string]$Priority = "P1",
-        [string]$Details = "",
-        [string]$Module = "Backlog"
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Id, [Parameter(Mandatory = $true)][string]$Title, [string]$Priority = "P1", [string]$Details = "", [string]$Module = "Backlog")
     $task = New-SenTask -Workspace $Workspace -Id $Id -Title $Title -Tier 2 -RiskLevel "medium" -Module $Module -Assignee "pm" -Status "backlog"
-
     $docsDir = Join-Path -Path $Workspace -ChildPath "docs"
-    if (-not (Test-Path -LiteralPath $docsDir)) {
-        [System.IO.Directory]::CreateDirectory($docsDir) | Out-Null
-    }
+    if (-not (Test-Path -LiteralPath $docsDir)) { [System.IO.Directory]::CreateDirectory($docsDir) | Out-Null }
     $todoPath = Join-Path -Path $docsDir -ChildPath "TODO.md"
-    $existingText = if (Test-Path -LiteralPath $todoPath) {
-        [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $todoPath).Path, [System.Text.Encoding]::UTF8)
-    }
-    else {
-        "# Project Backlog (TODO)`n`n"
-    }
-
+    $existingText = if (Test-Path -LiteralPath $todoPath) { [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $todoPath).Path, [System.Text.Encoding]::UTF8) } else { "# Project Backlog (TODO)`n`n" }
     if ($existingText -notmatch "(?<!\w)$([regex]::Escape($Id))(?!\w)") {
-        $entryLine = "- [ ] **${Id} (${Priority}): ${Title}**"
-        if (-not [string]::IsNullOrWhiteSpace($Details)) {
-            $entryLine += "`n  - " + $Details.Trim()
-        }
-        $updatedText = $existingText.TrimEnd() + "`n`n" + $entryLine + "`n"
-        [System.IO.File]::WriteAllText($todoPath, $updatedText, [System.Text.UTF8Encoding]::new($false))
+        $entryLine = "- [ ] **${Id} (${Priority}): ${Title}**" + $(if (-not [string]::IsNullOrWhiteSpace($Details)) { "`n  - " + $Details.Trim() } else { "" })
+        [System.IO.File]::WriteAllText($todoPath, ($existingText.TrimEnd() + "`n`n" + $entryLine + "`n"), [System.Text.UTF8Encoding]::new($false))
     }
-
-    return [pscustomobject]@{
-        Id       = $Id
-        Title    = $Title
-        Priority = $Priority
-        TodoPath = $todoPath
-        Task     = $task
-    }
+    return [pscustomobject]@{ Id = $Id; Title = $Title; Priority = $Priority; TodoPath = $todoPath; Task = $task }
 }
 
 function New-SenRestorePoint {
@@ -718,30 +658,26 @@ function Restore-SenRestorePoint {
 function Add-SenExecutionLesson {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Category,
-        [Parameter(Mandatory = $true)]
-        [string]$Problem,
-        [Parameter(Mandatory = $true)]
-        [string]$Solution,
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Category,
+        [Parameter(Mandatory = $true)][string]$Problem,
+        [Parameter(Mandatory = $true)][string]$Solution,
         [string]$RootCause = "",
-        [bool]$VerifiedByUser = $true
+        [bool]$VerifiedByUser = $true,
+        [string]$Stack = "general",
+        [double]$Confidence = 1.0,
+        [ValidateSet("active", "deprecated", "archived")][string]$Status = "active",
+        [string]$ExpiresAt = ""
     )
     $lessonsPath = Join-Path -Path $Workspace -ChildPath ".agents/office/lessons.json"
     $existing = [System.Collections.Generic.List[object]]::new()
-    foreach ($item in @(Read-SenSafeJson -Path $lessonsPath)) {
-        if ($item) { $existing.Add($item) }
-    }
+    foreach ($item in @(Read-SenSafeJson -Path $lessonsPath)) { if ($item) { $existing.Add($item) } }
     $entry = [pscustomobject][ordered]@{
-        id             = "LES-" + ([DateTime]::UtcNow.ToString("yyyyMMddHHmmss")) + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 4))
-        category       = $Category
-        problem        = $Problem
-        rootCause      = $RootCause
-        solution       = $Solution
-        verifiedByUser = $VerifiedByUser
-        createdAt      = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        id = "LES-" + ([DateTime]::UtcNow.ToString("yyyyMMddHHmmss")) + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 4))
+        category = $Category; stack = $Stack; problem = $Problem; rootCause = $RootCause; solution = $Solution
+        confidence = $Confidence; status = $Status; verifiedByUser = $VerifiedByUser
+        expiresAt = if ($ExpiresAt) { $ExpiresAt } else { [DateTime]::UtcNow.AddDays(180).ToString("yyyy-MM-ddTHH:mm:ssZ") }
+        createdAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
     $existing.Add($entry)
     Write-SenAtomicJson -Path $lessonsPath -InputObject @($existing.ToArray()) -Depth 5
@@ -750,10 +686,7 @@ function Add-SenExecutionLesson {
 
 function Get-SenExecutionLessons {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace)
     $loaded = Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/lessons.json")
     if ($null -eq $loaded) { return @() }
     return @($loaded)
@@ -761,25 +694,12 @@ function Get-SenExecutionLessons {
 
 function Get-SenMemorySnapshot {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace)
     $lessons = @(Get-SenExecutionLessons -Workspace $Workspace)
     return [pscustomobject][ordered]@{
-        userMemory      = [ordered]@{
-            present = (Test-Path -LiteralPath (Join-Path $Workspace ".agents/profile.md"))
-            path    = ".agents/profile.md"
-        }
-        projectMemory   = [ordered]@{
-            hasAgentsMd  = (Test-Path -LiteralPath (Join-Path $Workspace "AGENTS.md"))
-            hasContextMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/CONTEXT.md"))
-            hasTodoMd    = (Test-Path -LiteralPath (Join-Path $Workspace "docs/TODO.md"))
-        }
-        executionMemory = [ordered]@{
-            lessonCount = $lessons.Count
-            lessons     = $lessons
-        }
+        userMemory      = [ordered]@{ present = (Test-Path -LiteralPath (Join-Path $Workspace ".agents/profile.md")); path = ".agents/profile.md" }
+        projectMemory   = [ordered]@{ hasAgentsMd = (Test-Path -LiteralPath (Join-Path $Workspace "AGENTS.md")); hasContextMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/CONTEXT.md")); hasTodoMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/TODO.md")) }
+        executionMemory = [ordered]@{ lessonCount = $lessons.Count; lessons = $lessons }
     }
 }
 

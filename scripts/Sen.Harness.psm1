@@ -1,15 +1,15 @@
-# scripts/Sen.Harness.psm1 - Sen v0.4.0 Multi-Harness Adapter & Two-Way Sync
+# scripts/Sen.Harness.psm1 - Sen Multi-Harness Adapter & Sync
 $ErrorActionPreference = "Stop"
 
 function Get-SenSupportedHarnesses {
   [CmdletBinding()] param()
   return @(
-    [pscustomobject][ordered]@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true },
-    [pscustomobject][ordered]@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true },
-    [pscustomobject][ordered]@{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true },
-    [pscustomobject][ordered]@{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true },
-    [pscustomobject][ordered]@{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true },
-    [pscustomobject][ordered]@{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true }
+    [pscustomobject][ordered]@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full" },
+    [pscustomobject][ordered]@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true; CapabilityLevel = "full" },
+    [pscustomobject][ordered]@{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full" },
+    [pscustomobject][ordered]@{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true; CapabilityLevel = "rules-only" },
+    [pscustomobject][ordered]@{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial" },
+    [pscustomobject][ordered]@{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial" }
   )
 }
 
@@ -99,128 +99,116 @@ function Remove-SenManagedBlock {
 
 function Build-SenHarnessBridgeText {
   param([string]$Workspace, [string]$HarnessId)
-  $pluginRulesPath = Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"
-  $rulesPath = Join-Path $Workspace ".agents/rules/AGENTS.md"
-  if (Test-Path -LiteralPath $pluginRulesPath) {
-    $pDir = [System.IO.Path]::GetDirectoryName($rulesPath)
+  $pRules = Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"
+  $rPath = Join-Path $Workspace ".agents/rules/AGENTS.md"
+  if (Test-Path -LiteralPath $pRules) {
+    $pDir = [System.IO.Path]::GetDirectoryName($rPath)
     if ($pDir -and -not (Test-Path -LiteralPath $pDir)) { [System.IO.Directory]::CreateDirectory($pDir) | Out-Null }
-    Copy-Item -LiteralPath $pluginRulesPath -Destination $rulesPath -Force
+    Copy-Item -LiteralPath $pRules -Destination $rPath -Force
   }
-  elseif (-not (Test-Path -LiteralPath $rulesPath)) { $rulesPath = Join-Path $Workspace "rules/AGENTS.md" }
-  $coreText = if (Test-Path -LiteralPath $rulesPath) { [System.IO.File]::ReadAllText($rulesPath, [System.Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
-  $profilePath = Join-Path $Workspace ".agents/rules/profile.md"
-  $profileText = if (Test-Path -LiteralPath $profilePath) { "`n`n" + [System.IO.File]::ReadAllText($profilePath, [System.Text.Encoding]::UTF8).Trim() } else { "" }
-  $bridgeInfo = "## Multi-Harness Bridge ($HarnessId)`n- **Single Source of Truth:** `.agents/` holds rules, skills (`.agents/plugins/sen-method/skills/` and `.agents/skills/`), state (`.agents/office/tasks.json`), and 3D AI Office.`n- **Two-Way Sync:** Saving `docs/superpowers/plans/*.md` or `docs/TODO.md` auto-syncs tasks into `.agents/office/tasks.json`; completing tasks via `Complete-SenTaskReview` auto-ticks `[x]` in Markdown."
-  return ($coreText + $profileText + "`n`n" + $bridgeInfo)
+  elseif (-not (Test-Path -LiteralPath $rPath)) { $rPath = Join-Path $Workspace "rules/AGENTS.md" }
+  $core = if (Test-Path -LiteralPath $rPath) { [System.IO.File]::ReadAllText($rPath, [System.Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
+  $profP = Join-Path $Workspace ".agents/rules/profile.md"
+  $prof = if (Test-Path -LiteralPath $profP) { "`n`n" + [System.IO.File]::ReadAllText($profP, [System.Text.Encoding]::UTF8).Trim() } else { "" }
+  $info = "## Multi-Harness Bridge ($HarnessId)`n- **Single Source of Truth:** `.agents/` holds rules, skills (`.agents/plugins/sen-method/skills/` and `.agents/skills/`), state (`.agents/office/tasks.json`), and 3D AI Office.`n- **Two-Way Sync:** Saving `docs/superpowers/plans/*.md` or `docs/TODO.md` auto-syncs tasks into `.agents/office/tasks.json`; completing tasks via `Complete-SenTaskReview` auto-ticks `[x]` in Markdown."
+  return ($core + $prof + "`n`n" + $info)
 }
 
 function Install-SenHarnessHookFile {
   param([string]$Workspace, [string]$HarnessId, [string]$HookRelPath)
   if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
-  $fullHookPath = Join-Path $Workspace $HookRelPath
-  $guardRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts/guard.ps1" } else { "scripts/guard.ps1" }
-  $postRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/office-post.ps1")) { ".agents/plugins/sen-method/scripts/office-post.ps1" } else { "scripts/office-post.ps1" }
-  $guardCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $guardRel"
-  $postCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $postRel"
+  $fullP = Join-Path $Workspace $HookRelPath
+  $gRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts/guard.ps1" } else { "scripts/guard.ps1" }
+  $pRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/office-post.ps1")) { ".agents/plugins/sen-method/scripts/office-post.ps1" } else { "scripts/office-post.ps1" }
+  $gCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $gRel"
+  $pCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $pRel"
   if ($HarnessId -eq "antigravity") {
-    if (-not (Test-Path -LiteralPath $fullHookPath)) {
-      $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file"; hooks = @([ordered]@{ type = "command"; command = $guardCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $postCmd; timeout = 5 }) }) } }
-      Write-SenAtomicJson -Path $fullHookPath -InputObject $agObj -Depth 8
+    if (-not (Test-Path -LiteralPath $fullP)) {
+      $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
+      Write-SenAtomicJson -Path $fullP -InputObject $agObj -Depth 8
     }
-    return $fullHookPath
+    return $fullP
   }
-  $existingObj = Read-SenSafeJson -Path $fullHookPath
-  $rootHash = if ($null -ne $existingObj) { ConvertTo-SenHashtable -InputObject $existingObj } else { @{} }
-  if ($rootHash -isnot [hashtable]) { $rootHash = @{} }
-  if (-not $rootHash.ContainsKey("hooks") -or $rootHash["hooks"] -isnot [hashtable]) { $rootHash["hooks"] = @{} }
-  $rootHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|run_command|write_file|edit_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $guardCmd; timeout = 10 }) })
-  $rootHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $postCmd; timeout = 5 }) })
-  Write-SenAtomicJson -Path $fullHookPath -InputObject $rootHash -Depth 10
-  return $fullHookPath
+  $exObj = Read-SenSafeJson -Path $fullP
+  $rHash = if ($null -ne $exObj) { ConvertTo-SenHashtable -InputObject $exObj } else { @{} }
+  if ($rHash -isnot [hashtable]) { $rHash = @{} }
+  if (-not $rHash.ContainsKey("hooks") -or $rHash["hooks"] -isnot [hashtable]) { $rHash["hooks"] = @{} }
+  $rHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|run_command|write_file|edit_file|read_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) })
+  $rHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) })
+  Write-SenAtomicJson -Path $fullP -InputObject $rHash -Depth 10
+  return $fullP
 }
 
 function Resolve-SenRequestedHarnesses {
   param([string[]]$Harness)
-  $catalog = @(Get-SenSupportedHarnesses)
-  if ($null -eq $Harness -or $Harness.Count -eq 0 -or ($Harness -contains "all")) { return $catalog }
-  $lower = @($Harness | ForEach-Object { ([string]$_).ToLowerInvariant().Trim() })
-  return @($catalog | Where-Object { $lower -contains $_.Id })
+  $cat = @(Get-SenSupportedHarnesses)
+  if ($null -eq $Harness -or $Harness.Count -eq 0 -or ($Harness -contains "all")) { return $cat }
+  $low = @($Harness | ForEach-Object { ([string]$_).ToLowerInvariant().Trim() })
+  return @($cat | Where-Object { $low -contains $_.Id })
 }
 
 function Install-SenHarness {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @("all"))
-  $selected = @(Resolve-SenRequestedHarnesses -Harness $Harness)
-  $installed = [System.Collections.Generic.List[string]]::new(); $filesCreated = [System.Collections.Generic.List[string]]::new()
-  foreach ($h in $selected) {
-    $bridgeText = Build-SenHarnessBridgeText -Workspace $Workspace -HarnessId $h.Id
-    $ruleFullPath = Join-Path -Path $Workspace -ChildPath $h.RuleTarget
+  [CmdletBinding()] param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @("all"))
+  $sel = @(Resolve-SenRequestedHarnesses -Harness $Harness)
+  $inst = [System.Collections.Generic.List[string]]::new(); $created = [System.Collections.Generic.List[string]]::new()
+  foreach ($h in $sel) {
+    $bTxt = Build-SenHarnessBridgeText -Workspace $Workspace -HarnessId $h.Id
+    $rFull = Join-Path $Workspace $h.RuleTarget
     if ($h.Id -eq "antigravity") {
-      $rDir = [System.IO.Path]::GetDirectoryName($ruleFullPath)
+      $rDir = [System.IO.Path]::GetDirectoryName($rFull)
       if ($rDir -and -not (Test-Path -LiteralPath $rDir)) { [System.IO.Directory]::CreateDirectory($rDir) | Out-Null }
-      if (-not (Test-Path -LiteralPath $ruleFullPath)) { [System.IO.File]::WriteAllText($ruleFullPath, $bridgeText, [System.Text.UTF8Encoding]::new($false)) }
+      if (-not (Test-Path -LiteralPath $rFull)) { [System.IO.File]::WriteAllText($rFull, $bTxt, [System.Text.UTF8Encoding]::new($false)) }
     }
     else {
       $fm = if ($h.Id -eq "cursor") { "---`ndescription: Sen Methodology Core Rule & Multi-Harness Bridge`nalwaysApply: true`n---" } else { "" }
-      [void](Update-SenManagedBlock -Path $ruleFullPath -Content $bridgeText -FrontMatter $fm)
+      [void](Update-SenManagedBlock -Path $rFull -Content $bTxt -FrontMatter $fm)
     }
-    $filesCreated.Add($h.RuleTarget)
-    if ($h.SupportsHooks -and -not [string]::IsNullOrWhiteSpace($h.HookTarget)) {
-      [void](Install-SenHarnessHookFile -Workspace $Workspace -HarnessId $h.Id -HookRelPath $h.HookTarget); $filesCreated.Add($h.HookTarget)
-    }
-    $installed.Add($h.Id)
+    $created.Add($h.RuleTarget)
+    if ($h.SupportsHooks -and $h.HookTarget) { [void](Install-SenHarnessHookFile -Workspace $Workspace -HarnessId $h.Id -HookRelPath $h.HookTarget); $created.Add($h.HookTarget) }
+    $inst.Add($h.Id)
   }
   $lock = Read-SenLock -Workspace $Workspace
-  $existingH = if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { @($lock["harnesses"]) } else { @() }
-  $mergedH = [System.Collections.Generic.List[string]]::new()
-  foreach ($eh in $existingH) { if ($eh -and -not $mergedH.Contains([string]$eh)) { $mergedH.Add([string]$eh) } }
-  foreach ($ih in $installed) { if (-not $mergedH.Contains($ih)) { $mergedH.Add($ih) } }
-  $lock["harnesses"] = @($mergedH.ToArray()); Write-SenLock -Workspace $Workspace -Lock $lock
-  return [pscustomobject][ordered]@{ Workspace = $Workspace; Installed = @($installed.ToArray()); FilesCreated = @($filesCreated.ToArray()); UpdatedLock = $true }
+  $exH = if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { @($lock["harnesses"]) } else { @() }
+  $mH = [System.Collections.Generic.List[string]]::new()
+  foreach ($eh in $exH) { if ($eh -and -not $mH.Contains([string]$eh)) { $mH.Add([string]$eh) } }
+  foreach ($ih in $inst) { if (-not $mH.Contains($ih)) { $mH.Add($ih) } }
+  $lock["harnesses"] = @($mH.ToArray()); Write-SenLock -Workspace $Workspace -Lock $lock
+  return [pscustomobject][ordered]@{ Workspace = $Workspace; Installed = @($inst.ToArray()); FilesCreated = @($created.ToArray()); UpdatedLock = $true }
 }
 
 function Uninstall-SenHarness {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @())
-  $selected = @(Resolve-SenRequestedHarnesses -Harness $Harness)
-  $removed = [System.Collections.Generic.List[string]]::new(); $filesUpdated = [System.Collections.Generic.List[string]]::new()
-  foreach ($h in $selected) {
+  [CmdletBinding()] param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @())
+  $sel = @(Resolve-SenRequestedHarnesses -Harness $Harness)
+  $rem = [System.Collections.Generic.List[string]]::new(); $upd = [System.Collections.Generic.List[string]]::new()
+  foreach ($h in $sel) {
     if ($h.Id -eq "antigravity") { continue }
-    $ruleFullPath = Join-Path -Path $Workspace -ChildPath $h.RuleTarget
-    if (Remove-SenManagedBlock -Path $ruleFullPath) { $filesUpdated.Add($h.RuleTarget) }
-    if ($h.SupportsHooks -and -not [string]::IsNullOrWhiteSpace($h.HookTarget)) {
-      $hookFullPath = Join-Path -Path $Workspace -ChildPath $h.HookTarget
-      $existingObj = Read-SenSafeJson -Path $hookFullPath
-      if ($null -ne $existingObj) {
-        $rootHash = ConvertTo-SenHashtable -InputObject $existingObj
-        if ($rootHash -is [hashtable] -and $rootHash.ContainsKey("hooks")) {
-          $rootHash.Remove("hooks"); Write-SenAtomicJson -Path $hookFullPath -InputObject $rootHash -Depth 8; $filesUpdated.Add($h.HookTarget)
-        }
+    if (Remove-SenManagedBlock -Path (Join-Path $Workspace $h.RuleTarget)) { $upd.Add($h.RuleTarget) }
+    if ($h.SupportsHooks -and $h.HookTarget) {
+      $hFull = Join-Path $Workspace $h.HookTarget
+      $exObj = Read-SenSafeJson -Path $hFull
+      if ($null -ne $exObj) {
+        $rHash = ConvertTo-SenHashtable -InputObject $exObj
+        if ($rHash -is [hashtable] -and $rHash.ContainsKey("hooks")) { $rHash.Remove("hooks"); Write-SenAtomicJson -Path $hFull -InputObject $rHash -Depth 8; $upd.Add($h.HookTarget) }
       }
     }
-    $removed.Add($h.Id)
+    $rem.Add($h.Id)
   }
   $lock = Read-SenLock -Workspace $Workspace
   if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) {
-    $lock["harnesses"] = @($lock["harnesses"] | Where-Object { $removed -notcontains [string]$_ }); Write-SenLock -Workspace $Workspace -Lock $lock
+    $lock["harnesses"] = @($lock["harnesses"] | Where-Object { $rem -notcontains [string]$_ }); Write-SenLock -Workspace $Workspace -Lock $lock
   }
-  return [pscustomobject][ordered]@{ Workspace = $Workspace; Uninstalled = @($removed.ToArray()); FilesUpdated = @($filesUpdated.ToArray()) }
+  return [pscustomobject][ordered]@{ Workspace = $Workspace; Uninstalled = @($rem.ToArray()); FilesUpdated = @($upd.ToArray()) }
 }
 
 function Test-SenHarnessStatus {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $true)][string]$Workspace)
-  $results = [System.Collections.Generic.List[object]]::new()
+  [CmdletBinding()] param([Parameter(Mandatory = $true)][string]$Workspace)
+  $res = [System.Collections.Generic.List[object]]::new()
   foreach ($h in @(Get-SenSupportedHarnesses)) {
-    $rulePath = Join-Path -Path $Workspace -ChildPath $h.RuleTarget
-    $ruleExists = Test-Path -LiteralPath $rulePath
-    $hookOk = if ($h.SupportsHooks -and -not [string]::IsNullOrWhiteSpace($h.HookTarget)) { Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath $h.HookTarget) } else { $true }
-    $results.Add([pscustomobject][ordered]@{
-        Id = $h.Id; DisplayName = $h.DisplayName; Installed = [bool]($ruleExists -and $hookOk)
-        RuleExists = [bool]$ruleExists; HookConfigured = [bool]$hookOk; RulePath = $h.RuleTarget; HookPath = $h.HookTarget
-      })
+    $rOk = Test-Path -LiteralPath (Join-Path $Workspace $h.RuleTarget)
+    $hOk = if ($h.SupportsHooks -and $h.HookTarget) { Test-Path -LiteralPath (Join-Path $Workspace $h.HookTarget) } else { $true }
+    $res.Add([pscustomobject][ordered]@{ Id = $h.Id; DisplayName = $h.DisplayName; CapabilityLevel = $h.CapabilityLevel; Installed = [bool]($rOk -and $hOk); RuleExists = [bool]$rOk; HookConfigured = [bool]$hOk; RulePath = $h.RuleTarget; HookPath = $h.HookTarget })
   }
-  return @($results.ToArray())
+  return @($res.ToArray())
 }
 
 function Sync-SenPlanToTasks {
@@ -500,10 +488,10 @@ function Invoke-SenDialecticalAudit {
   $tasks = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
   $badEvidence = @($tasks | Where-Object { [string]$_.status -eq "done" -and ($null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 -or ([string]$_.evidence.command -notmatch '[A-Za-z0-9]{3,}')) })
   $vectors = @(
-    [pscustomobject]@{ Id = "V1-DIALECTICAL-SPEC"; Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $sDir)); Detail = "Spec contains Thesis (Best-of-the-Best + Cost) and Antithesis (Critique)" },
-    [pscustomobject]@{ Id = "V2-BOUNDARY-HEALTH"; Passed = [bool]$ch.Healthy; Detail = "CodeHealth Score=$($ch.Score)" },
-    [pscustomobject]@{ Id = "V3-SOCRATIC-EVIDENCE"; Passed = ($badEvidence.Count -eq 0); Detail = "Unverified done tasks=$($badEvidence.Count)" },
-    [pscustomobject]@{ Id = "V4-LEGAL-PARTITION"; Passed = [bool]$vl.CompliantCodeLevel; Detail = "VnLaw RedFlags=$($vl.CodeRedFlags.Count)" }
+    [pscustomobject]@{ Id = "V1-DIALECTICAL-SPEC"; Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $sDir)); Detail = "Thesis + Antithesis" },
+    [pscustomobject]@{ Id = "V2-BOUNDARY-HEALTH"; Passed = [bool]$ch.Healthy; Detail = "Score=$($ch.Score)" },
+    [pscustomobject]@{ Id = "V3-SOCRATIC-EVIDENCE"; Passed = ($badEvidence.Count -eq 0); Detail = "Bad=$($badEvidence.Count)" },
+    [pscustomobject]@{ Id = "V4-LEGAL-PARTITION"; Passed = [bool]$vl.CompliantCodeLevel; Detail = "Red=$($vl.CodeRedFlags.Count)" }
   )
   $passedCount = @($vectors | Where-Object { $_.Passed }).Count
   $resObj = [pscustomobject][ordered]@{ Workspace = $Workspace; Passed = ($passedCount -eq $vectors.Count); Score = [int][Math]::Round(($passedCount * 100.0) / $vectors.Count); Vectors = $vectors; verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
@@ -512,9 +500,8 @@ function Invoke-SenDialecticalAudit {
 }
 
 function Test-SenCapabilityParity {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $false)][string]$SenRoot = "")
-  $root = if (-not [string]::IsNullOrWhiteSpace($SenRoot)) { $SenRoot } else { (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path }
+  [CmdletBinding()] param([Parameter(Mandatory = $false)][string]$SenRoot = "")
+  $root = if ($SenRoot) { $SenRoot } else { (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path }
   $missing = [System.Collections.Generic.List[string]]::new()
   $rulePath = Join-Path $root "rules/AGENTS.md"
   $ruleTxt = if (Test-Path -LiteralPath $rulePath) { [System.IO.File]::ReadAllText($rulePath, [System.Text.Encoding]::UTF8) } else { "" }
@@ -559,6 +546,10 @@ function Test-SenCapabilityParity {
       $dp = Join-Path $root $df
       if ((Test-Path -LiteralPath $dp) -and ([System.IO.File]::ReadAllText($dp, [System.Text.Encoding]::UTF8) -notmatch [regex]::Escape([string]$plugJson.version))) { $missing.Add("L5-DocSync:VERSION_DOC_SYNC:$df") }
     }
+    if ((Test-Path -LiteralPath (Join-Path $root "docs/releases")) -and (Get-Command Test-SenReleaseNoteGate -ErrorAction SilentlyContinue)) {
+      $rnGate = Test-SenReleaseNoteGate -Workspace $root -Version ([string]$plugJson.version)
+      if (-not $rnGate.Passed) { foreach ($m in $rnGate.Missing) { $missing.Add("L6-ReleaseNote:$m") } }
+    }
   }
   $todoF = Join-Path $root "docs/TODO.md"; $ctxF = Join-Path $root "docs/CONTEXT.md"
   if ((Test-Path -LiteralPath $todoF) -and (Test-Path -LiteralPath $ctxF)) {
@@ -572,7 +563,7 @@ function Test-SenCapabilityParity {
     $rp = Join-Path $root $rf
     if ((Test-Path -LiteralPath $rp) -and $exportedFns.Count -gt 0) {
       $rt = [System.IO.File]::ReadAllText($rp, [System.Text.Encoding]::UTF8)
-      if ($rt -notmatch "\b$($exportedFns.Count)\b" -or $rt -match '(?i)\b(68|69|71)\s*(exported\s+)?cmdlets\b|\b(68|69|71)/\1\b') { $missing.Add("L6-DocsParity:StaleCmdletCount:$rf") }
+      if ($rt -notmatch "\b$($exportedFns.Count)\b" -or $rt -match '(?i)\b(68|69|71|73)\s*(exported\s+)?cmdlets\b|\b(68|69|71|73)/\1\b') { $missing.Add("L6-DocsParity:StaleCmdletCount:$rf") }
     }
   }
   foreach ($gf in @("docs/huong-dan.md", "docs/guide.md")) {
