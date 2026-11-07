@@ -409,11 +409,11 @@ Test "Get-SenRemoteCiStatus and Invoke-SenCiPushLoop inspect remote CI runs and 
     }
 }
 
-Test "Test-SenCapabilityParity verifies 5-Layer Zero-Amnesia Isomorphism and guard.ps1 enforces Pre-Edit Restore Point Gate" {
+Test "Test-SenCapabilityParity verifies 6-Layer Zero-Amnesia Isomorphism and guard.ps1 enforces Pre-Edit Restore Point Gate" {
     $senRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
     $parity = Test-SenCapabilityParity -SenRoot $senRoot
-    Assert-True $parity.Passed "5-Layer Zero-Amnesia Capability Parity must pass (Missing: $($parity.MissingItems -join ', '))"
-    Assert-Equal 5 $parity.CheckedLayers "Must verify all 5 layers"
+    Assert-True $parity.Passed "6-Layer Zero-Amnesia Capability Parity must pass (Missing: $($parity.MissingItems -join ', '))"
+    Assert-Equal 6 $parity.CheckedLayers "Must verify all 6 layers"
     Assert-Equal 0 $parity.MissingItems.Count "Zero missing capability parity items"
 
     $ws = New-HarnessTestWorkspace
@@ -435,12 +435,13 @@ Test "Test-SenCapabilityParity verifies 5-Layer Zero-Amnesia Isomorphism and gua
 
         $fakeRoot = Join-Path $ws "fake-sen"
         [System.IO.Directory]::CreateDirectory((Join-Path $fakeRoot "docs")) | Out-Null
-        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "README.md"), "# v0.4.0 A")
-        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "README.vi.md"), "# v0.4.0 B")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "README.md"), "# v0.4.0 A with 68 cmdlets")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "README.vi.md"), "# v0.4.0 B with 68 cmdlets")
         [System.IO.File]::WriteAllText((Join-Path $fakeRoot "plugin.json"), '{"version":"0.4.0"}')
         [System.IO.File]::WriteAllText((Join-Path $fakeRoot "CHANGELOG.md"), "# 0.3.0 only")
         [System.IO.File]::WriteAllText((Join-Path $fakeRoot "docs/TODO.md"), "- [x] **TASK-99: New item**")
         [System.IO.File]::WriteAllText((Join-Path $fakeRoot "docs/CONTEXT.md"), "# Context v0.4.0 without task 99")
+        [System.IO.File]::WriteAllText((Join-Path $fakeRoot "docs/guide.md"), "Tier 2 waits for your approval once with 7 sen-* skills")
         [System.IO.Directory]::CreateDirectory((Join-Path $fakeRoot "scripts")) | Out-Null
         Copy-Item -LiteralPath (Join-Path $senRoot "scripts/process-manifest.json") -Destination (Join-Path $fakeRoot "scripts/process-manifest.json") -Force
         Copy-Item -LiteralPath (Join-Path $senRoot "scripts/Sen.Harness.psm1") -Destination (Join-Path $fakeRoot "scripts/Sen.Harness.psm1") -Force
@@ -449,6 +450,9 @@ Test "Test-SenCapabilityParity verifies 5-Layer Zero-Amnesia Isomorphism and gua
         Assert-True ($badParity.MissingItems -contains "L5-DocSync:README_SYNC") "Must flag README_SYNC drift"
         Assert-True ($badParity.MissingItems -contains "L5-DocSync:VERSION_DOC_SYNC:CHANGELOG.md") "Must flag VERSION_DOC_SYNC drift"
         Assert-True ($badParity.MissingItems -contains "L5-DocSync:TODO_CONTEXT_SYNC:TASK-99") "Must flag TODO_CONTEXT_SYNC drift"
+        Assert-True ($badParity.MissingItems -contains "L6-DocsParity:StaleCmdletCount:README.md") "Must flag stale cmdlet count in README.md"
+        Assert-True ($badParity.MissingItems -contains "L6-DocsParity:StaleGuideFlow:docs/guide.md") "Must flag stale guide flow in docs/guide.md"
+        Assert-True ($badParity.MissingItems -contains "L6-DocsParity:ChangelogMissingOfficeAction") "Must flag missing officeAction in CHANGELOG.md"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

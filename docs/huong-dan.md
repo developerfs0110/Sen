@@ -86,7 +86,7 @@ Mọi yêu cầu trong Sen đều được phân vào một trong 3 cấp độ 
   > `Thêm chức năng lọc sản phẩm theo giá`
 - **Bạn sẽ thấy gì:**
   1. AI mở đầu bằng nhãn **`[Cấp 2 - Xác nhận phương án]`**.
-  2. **Lượt 1 (Chứng minh + Thực thi Song song Lạc quan):** AI trình bày bảng thẩm định chuyên gia (*Best-of-the-Best* + Phản biện + cột **Tài nguyên tiêu tốn**) kèm danh sách các file dự kiến sẽ sửa, tự động chụp điểm khôi phục (`New-SenRestorePoint`) và **giao việc ngay cho Dev subagent chạy song song** trong lúc bạn đọc phương án.
+  2. **Lượt 1 (Chứng minh + Thực thi Song song Lạc quan & Tự động Mở Văn phòng 3D):** Theo cơ chế *"Trình bày trước — Làm luôn — Báo kết quả"*, AI trình bày bảng thẩm định chuyên gia (*Best-of-the-Best* + Phản biện + cột **Tài nguyên tiêu tốn**) kèm danh sách các file dự kiến sẽ sửa, tự động khởi động/đề xuất mở Văn phòng 3D (`officeAction: auto_start / offer_enable` qua `start-office.ps1`), chụp điểm khôi phục (`New-SenRestorePoint`) và **giao việc ngay cho Dev subagent chạy song song** trong lúc bạn đọc phương án.
   3. **Lượt 2 (Nghiệm thu & Hoàn tác 1-chạm):** AI vượt qua các cổng kiểm duyệt (`Measure-SenCodeHealth`, `Invoke-SenVnLawScan`, `Test-SenHungTasks`, `Test-SenDeliveryGate`) và gửi **Báo cáo nghiệm thu (`sen-delivery-report`)** kèm lệnh hoàn tác tức thì (`Restore-SenRestorePoint`).
 - **Bạn cần làm gì:**
   - Xem bảng phương án và báo cáo nghiệm thu. Nếu muốn đổi ý hoặc quay lại trạng thái cũ, bạn chỉ cần bảo hoàn tác (`Restore-SenRestorePoint`).
@@ -96,11 +96,11 @@ Mọi yêu cầu trong Sen đều được phân vào một trong 3 cấp độ 
   > `Làm một website bán hàng mới cho tiệm bánh`
 - **Bạn sẽ thấy gì:**
   1. AI mở đầu bằng nhãn **`[Cấp 3 - Thiết kế & kế hoạch]`**.
-  2. **Bước Thiết kế, Mô phỏng Output Phase 1 & Phản biện 7 mũi nhọn:** AI viết bản **Thiết kế (Design Spec)** lưu trong `docs/superpowers/specs/` (được kiểm tra dấu thời gian đúng phiên hiện tại qua cổng `SessionStartedAtUtc` — `TASK-20`), ghi **Mô phỏng Output Giai đoạn 1** bằng `Write-SenOfficeShowcase -Phase 1` (cơ chế *Read-Merge-Write* không ghi đè mất dữ liệu), chạy phản biện 7 mũi nhọn (`Invoke-SenDialecticalAudit`) và vẽ sơ đồ trực quan Mermaid.
+  2. **Bước Thiết kế, Mô phỏng Output Phase 1 & Phản biện 7 mũi nhọn:** AI tự động bật/đề xuất Văn phòng 3D ở Turn 1 (`officeAction: auto_start / offer_enable`), viết bản **Thiết kế (Design Spec)** lưu trong `docs/superpowers/specs/` (được kiểm tra dấu thời gian đúng phiên hiện tại qua cổng `SessionStartedAtUtc` — `TASK-20`), ghi **Mô phỏng Output Giai đoạn 1** bằng `Write-SenOfficeShowcase -Phase 1` (cơ chế *Read-Merge-Write* không ghi đè mất dữ liệu), chạy phản biện 7 mũi nhọn (`Invoke-SenDialecticalAudit`) và vẽ sơ đồ trực quan Mermaid.
   3. **Bước lập kế hoạch & Đồng bộ 2 chiều:** AI viết **Kế hoạch triển khai (Implementation Plan)** tự động đồng bộ vào `.agents/office/tasks.json` (`Sync-SenPlanToTasks`), và chọn chế độ thực thi phù hợp:
      - **Native (1 Dev subagent):** khi ít task (dưới ~5 task) hoặc các task phụ thuộc chặt vào nhau.
      - **Subagent-driven (Đội agent phụ song song):** khi có nhiều task độc lập hoặc đụng phần nhạy cảm (thanh toán, dữ liệu), kèm ghi chú ước tính chi phí token khoảng **2–3 lần** so với Native.
-  4. **Bước Thực thi, Thăm dò Sự sống 3 Tín hiệu & Bàn giao:** AI điều phối các vai trò (BA, Trinh sát, Dev, Tester, Kiểm định bảo mật/pháp lý bao gồm cả quét rò rỉ dữ liệu qua Bot/Backend `BOT_DATA_FORWARDING_WITHOUT_CONSENT`), bảo vệ các tác vụ chạy lâu bằng thăm dò sự sống 3 tín hiệu (`Test-SenHungTasks` & `Clear-SenHungTasks` — `TASK-21` & `TASK-22`), cập nhật **Mô phỏng Output Giai đoạn 2 (`Write-SenOfficeShowcase -Phase 2`)**, kiểm tra đồng bộ 5 tầng Logic ↔ Tài liệu (`Test-SenCapabilityParity`), cập nhật `docs/CONTEXT.md` và kết thúc bằng báo cáo nghiệm thu.
+  4. **Bước Thực thi, Thăm dò Sự sống 3 Tín hiệu & Bàn giao:** AI điều phối các vai trò (BA, Trinh sát, Dev, Tester, Kiểm định bảo mật/pháp lý bao gồm cả quét rò rỉ dữ liệu qua Bot/Backend `BOT_DATA_FORWARDING_WITHOUT_CONSENT`), bảo vệ các tác vụ chạy lâu bằng thăm dò sự sống 3 tín hiệu (`Test-SenHungTasks` & `Clear-SenHungTasks` — `TASK-21` & `TASK-22`), cập nhật **Mô phỏng Output Giai đoạn 2 (`Write-SenOfficeShowcase -Phase 2`)**, kiểm tra đồng bộ 6 tầng Logic ↔ Tài liệu (`Test-SenCapabilityParity` kèm `L6-DocsParity`), cập nhật `docs/CONTEXT.md` và kết thúc bằng báo cáo nghiệm thu.
 - **Bạn cần làm gì:**
   - Xem Thiết kế, Kế hoạch, đối chiếu Mô phỏng Output Phase 1 vs. Phase 2 trên Văn phòng 3D và đọc báo cáo nghiệm thu cuối cùng.
 

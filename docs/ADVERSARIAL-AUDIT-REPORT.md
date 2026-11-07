@@ -207,10 +207,10 @@ Bộ thử nghiệm đối kháng đã phát hiện và tái lập thực nghi�
    - Bổ sung bộ đếm độ sâu ngoặc nhọn `{...}` và độ dài hàm dựa trên mẫu khai báo hàm (`function`, `def`, `func`, `=>`) cho các tệp `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.cs`, `.go`.
 2. **Viết bổ sung Unit Test trực tiếp cho toàn bộ hàm xuất khẩu (`1c`):**
    - Đưa độ phủ gọi trực tiếp (Direct Export Coverage) từ `81.82% (54/66)` lên **100% (`73/73`)** trên `12` bộ kiểm thử (`237/237` bài test).
-3. **Cổng Bằng chứng Theo Phiên (`TASK-20`), Thăm dò Sự sống 3 Tín hiệu (`TASK-21` & `TASK-22`) & Đồng bộ 5 Tầng (`Test-SenCapabilityParity`):**
-   - **Session-Scoped Evidence & Timestamp Gate (`TASK-20`):** Từ chối tài liệu Spec/Plan cũ từ phiên trước qua mốc `SessionStartedAtUtc`, quét hành vi Bot/Backend tự động đẩy biên lai/dữ liệu cá nhân nhạy cảm khi chưa tách bạch đồng ý (`BOT_DATA_FORWARDING_WITHOUT_CONSENT`), và áp dụng cơ chế *Read-Merge-Write* không mất dữ liệu trong `Write-SenOfficeShowcase -Phase 1|2`.
+3. **Cổng Bằng chứng Theo Phiên (`TASK-20`), Thăm dò Sự sống 3 Tín hiệu (`TASK-21` & `TASK-22`), Tự động Mở/Đề xuất Văn phòng 3D ở Turn 1 (`officeAction`) & Đồng bộ 6 Tầng (`Test-SenCapabilityParity`):**
+   - **Session-Scoped Evidence, Turn 1 Office Orchestration & Timestamp Gate (`TASK-20`):** Từ chối tài liệu Spec/Plan cũ từ phiên trước qua mốc `SessionStartedAtUtc`, cấu hình `officeAction = "auto_start" | "offer_enable"` cho việc Cấp 2–3 trong `Initialize-SenProcessAudit`, quét hành vi Bot/Backend tự động đẩy biên lai/dữ liệu cá nhân nhạy cảm khi chưa tách bạch đồng ý (`BOT_DATA_FORWARDING_WITHOUT_CONSENT`), và áp dụng cơ chế *Read-Merge-Write* không mất dữ liệu trong `Write-SenOfficeShowcase -Phase 1|2`.
    - **3-Signal Liveness Probe & Selective Teardown (`TASK-21` & `TASK-22`: `Test-SenHungTasks` & `Clear-SenHungTasks`):** Bảo vệ tuyệt đối các tác vụ chạy lâu đang có tiến triển thật (`ActiveLongRunningIds` qua heartbeat/sửa file/subagent đang chạy), bắt tức thì lỗi kẹt chờ nhập bàn phím (`DeadlockedItems`), và dọn dẹp chọn lọc các tác vụ treo (`StaleTaskIds`) cùng subagent nhàn rỗi (`IdleSubagents`).
-   - **Logic $\leftrightarrow$ Documentation 5-Layer Parity Gate (`Test-SenCapabilityParity`):** Đảm bảo đồng bộ 100% giữa `5/5` tầng (`73/73` hàm xuất khẩu, `README_SYNC`, `VERSION_DOC_SYNC`, `TODO_CONTEXT_SYNC`).
+   - **Logic $\leftrightarrow$ Documentation 6-Layer Parity Gate (`Test-SenCapabilityParity`):** Đảm bảo đồng bộ 100% giữa `6/6` tầng (`73/73` hàm xuất khẩu, `README_SYNC`, `VERSION_DOC_SYNC`, `TODO_CONTEXT_SYNC`, `L6-DocsParity`).
 
 ---
 
@@ -246,7 +246,7 @@ Sau khi thực thi toàn bộ 5 Trụ cột Kỹ thuật, phương án $S^*$ và
 
 | Hạng mục Kiểm định | Trước Khắc phục (Baseline) | Sau Khắc phục (`v0.4.0` — `TASK-01` $\rightarrow$ `TASK-22`) | Trạng thái |
 |---|---|---|---|
-| **1. Chứng minh Hình thức (`1a` – `1d`) & 5-Layer Parity** | `4/4` Claims (`15/15` checks) | **`4/4` Claims (`15/15` checks + `5/5` Parity Layers)** | **PASS (100%)** |
+| **1. Chứng minh Hình thức (`1a` – `1d`) & 6-Layer Parity** | `4/4` Claims (`15/15` checks) | **`4/4` Claims (`15/15` checks + `6/6` Parity Layers)** | **PASS (100%)** |
 | **2. Độ phủ Unit Test Trực tiếp (`1C-EXPORT-COV`)** | `54/66` hàm (`81.82%`) | **`73/73` hàm (`100.00%`)** | **PASS (100%)** |
 | **3. Phản biện Thực nghiệm 7 Mũi nhọn (`2a` – `2g`) & 22 Tasks** | `22/22` lỗ hổng bị đánh sập (`Falsified = 22`) | **`0/22` lỗ hổng (`Falsified = 0` \| `22/22` Tasks)** | **100% REMEDIATED** |
 | **4. Ma trận Bác bỏ Popper (`H1` – `H8`)** | `8/8` giả thuyết bị bác bỏ (`Falsified = 8/8`) | **`0/8` bị bác bỏ (`8/8 [CORROBORATED]`)** | **100% CORROBORATED** |

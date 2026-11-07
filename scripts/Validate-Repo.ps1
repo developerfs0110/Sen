@@ -215,7 +215,7 @@ if ((Test-Path -LiteralPath $readmeMain) -and (Test-Path -LiteralPath $readmeVi)
     }
 }
 
-# 8. Validate 5-Layer Zero-Amnesia Capability Parity when Sen module and manifest are present
+# 8. Validate 6-Layer Zero-Amnesia Capability Parity when Sen module and manifest are present
 $senModPath = Join-Path -Path $resolvedRoot -ChildPath "scripts/Sen.psm1"
 $senManifestPath = Join-Path -Path $resolvedRoot -ChildPath "scripts/process-manifest.json"
 if ((Test-Path -LiteralPath $senModPath) -and (Test-Path -LiteralPath $senManifestPath)) {

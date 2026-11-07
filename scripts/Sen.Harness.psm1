@@ -544,9 +544,11 @@ function Test-SenCapabilityParity {
   }
   $testFiles = if (Test-Path -LiteralPath (Join-Path $root "tests")) { @(Get-ChildItem -LiteralPath (Join-Path $root "tests") -Filter "*.Tests.ps1" -File) } else { @() }
   $testCorpus = ($testFiles | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8) }) -join "`n"
+  $exportedFns = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
   foreach ($mf in @(Get-ChildItem -LiteralPath (Join-Path $root "scripts") -Filter "*.psm1" -File)) {
     $expLine = [regex]::Match([System.IO.File]::ReadAllText($mf.FullName, [System.Text.Encoding]::UTF8), '(?m)^Export-ModuleMember\s+-Function\s+([^\r\n]+)').Groups[1].Value
     foreach ($fn in @($expLine -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+      [void]$exportedFns.Add($fn)
       if ($testCorpus -notmatch "\b$([regex]::Escape($fn))\b") { $missing.Add("L4-UntestedExport:$fn") }
     }
   }
@@ -572,7 +574,23 @@ function Test-SenCapabilityParity {
     $lastId = if ($allIds.Count -gt 0) { $allIds[$allIds.Count - 1] } else { "" }
     if ($openTodo -eq 0 -and $lastId -and ($ctxTxt -notmatch "\b$([regex]::Escape($lastId))\b")) { $missing.Add("L5-DocSync:TODO_CONTEXT_SYNC:$lastId") }
   }
-  return [pscustomobject][ordered]@{ Passed = ($missing.Count -eq 0); MissingItems = @($missing.ToArray()); CheckedLayers = 5 }
+  foreach ($rf in @("README.md", "README.vi.md", "README.en.md")) {
+    $rp = Join-Path $root $rf
+    if ((Test-Path -LiteralPath $rp) -and $exportedFns.Count -gt 0) {
+      $rt = [System.IO.File]::ReadAllText($rp, [System.Text.Encoding]::UTF8)
+      if ($rt -notmatch "\b$($exportedFns.Count)\b" -or $rt -match '(?i)\b(68|69|71)\s*(exported\s+)?cmdlets\b|\b(68|69|71)/\1\b') { $missing.Add("L6-DocsParity:StaleCmdletCount:$rf") }
+    }
+  }
+  foreach ($gf in @("docs/huong-dan.md", "docs/guide.md")) {
+    $gp = Join-Path $root $gf
+    if (Test-Path -LiteralPath $gp) {
+      $gt = [System.IO.File]::ReadAllText($gp, [System.Text.Encoding]::UTF8)
+      if ($gt -match '(?i)\b7\s+(sen-\*\s+)?skills?\b|waits for your approval once|duy.t ph..ng .n ..ng m.t l.n' -or $gt -notmatch 'New-SenRestorePoint') { $missing.Add("L6-DocsParity:StaleGuideFlow:$gf") }
+    }
+  }
+  $chgP = Join-Path $root "CHANGELOG.md"
+  if ((Test-Path -LiteralPath $chgP) -and ([System.IO.File]::ReadAllText($chgP, [System.Text.Encoding]::UTF8) -notmatch 'officeAction')) { $missing.Add("L6-DocsParity:ChangelogMissingOfficeAction") }
+  return [pscustomobject][ordered]@{ Passed = ($missing.Count -eq 0); MissingItems = @($missing.ToArray()); CheckedLayers = 6 }
 }
 
 Export-ModuleMember -Function Get-SenSupportedHarnesses, ConvertFrom-SenHookPayload, Update-SenManagedBlock, Remove-SenManagedBlock, Install-SenHarness, Uninstall-SenHarness, Test-SenHarnessStatus, Sync-SenPlanToTasks, Sync-SenTasksToMarkdown, Get-SenProcessCatalog, Initialize-SenProcessAudit, Test-SenStageGate, Test-SenProjectCompliance, Get-SenRemoteCiStatus, Invoke-SenCiPushLoop, Invoke-SenDialecticalAudit, Test-SenCapabilityParity
