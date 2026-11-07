@@ -24,7 +24,7 @@ $result = [ordered]@{
 $ok = $true
 
 try {
-    Import-Module -Name (Join-Path $PSScriptRoot "Sen.psm1") -Force
+    Import-Module -Name (Join-Path $PSScriptRoot "Sen.psm1") -Global -Force
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
     if ([string]::IsNullOrEmpty($SenSource)) { $SenSource = $repoRoot }
 

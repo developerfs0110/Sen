@@ -217,11 +217,18 @@ function Install-SenCreativePack {
             throw "Unknown creative pack '$reqPack'. Valid packs: media-image, media-video, media-3d, all"
         }
     }
-    $selected = if ($Pack -contains "all") {
-        @($catalog.ToArray())
+    $selected = [System.Collections.Generic.List[object]]::new()
+    foreach ($item in $catalog) {
+        if (($Pack -contains "all") -or ($Pack -contains [string]$item.pack) -or ($Pack -contains [string]$item.id)) {
+            $selected.Add($item)
+        }
     }
-    else {
-        @($catalog | Where-Object { ($Pack -contains [string]$_.pack) -or ($Pack -contains [string]$_.id) })
+
+    if (-not (Get-Command -Name "Get-SenToolStatus" -ErrorAction SilentlyContinue)) {
+        $senRootMod = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
+        if (Test-Path -LiteralPath $senRootMod) {
+            Import-Module -Name $senRootMod -Global -Force -ErrorAction SilentlyContinue
+        }
     }
 
     $lock = Read-SenLock -Workspace $Workspace
