@@ -1,4 +1,4 @@
-📘 **[Tiếng Việt](README.md)** | 🌐 **English** | 🖥️ **[Interactive Pitch Deck Tab (`sen-pitch-deck.html`)](docs/sen-pitch-deck.html)** | 🎓 **[IT Freshman Step-by-Step Guide](docs/SINH-VIEN-IT-STEP-BY-STEP.md)** | 📊 **[Showcase Script](docs/SEN-SHOWCASE-PITCH.md)** | 🛡️ **[Adversarial Red-Team Report](docs/ADVERSARIAL-AUDIT-REPORT.md)**
+📘 **[Readme](README.md)** | 🖥️ **[Sen-Tổng quan](https://raw.githack.com/developerfs0110/Sen/main/docs/sen-pitch-deck.html)** | 🏢 **[Sen-Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)** | 🌐 **English**
 
 # Sen
 
@@ -57,7 +57,7 @@ flowchart LR
 
 <!-- office screenshot: added with sen-office -->
 
-🏢 **3D Chibi AI Office (`sen-office` `v0.4.0` built-in):** Say `"open office"` anytime to launch the 3D isometric command center featuring 9 Chibi AI roles + Boss on the red velvet sofa, zero-token hook telemetry (`Eco mode`), 6-counter Inspector Drawer, Replay Scrubber, live `state.vscdb` quota reader, and **Dual-Phase Output Visualizer** (Design Blueprint vs. Verified Delivery). Open [`office/index.html`](office/index.html) directly to preview.
+🏢 **3D Chibi AI Office (`sen-office` `v0.4.0` built-in):** Say `"open office"` anytime to launch the 3D isometric command center featuring 9 Chibi AI roles + Boss on the red velvet sofa, zero-token hook telemetry (`Eco mode`), 6-counter Inspector Drawer, Replay Scrubber, live `state.vscdb` quota reader, and **Dual-Phase Output Visualizer** (Design Blueprint vs. Verified Delivery). Open **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)** directly to preview.
 
 ## Quick Start
 
@@ -69,10 +69,11 @@ flowchart LR
 3. **Follow the guided setup:** Pick a drive for your workspace, answer 4 quick questions to create your `profile.md`, and type `"onboard me"` to try your first Tier 1 task.
 
 👉 **Complete Documentation & Interactive Presentation Hub:**
-- 📘 **[Full Beginner Guide (`docs/guide.md`)](docs/guide.md)**
-- 🎓 **[IT Freshman Step-by-Step Capstone Guide (`docs/SINH-VIEN-IT-STEP-BY-STEP.md`)](docs/SINH-VIEN-IT-STEP-BY-STEP.md)**
-- 🖥️ **[Interactive 3-Tab Pitch Deck (`docs/sen-pitch-deck.html`)](docs/sen-pitch-deck.html)** & **[Executive Showcase Script (`docs/SEN-SHOWCASE-PITCH.md`)](docs/SEN-SHOWCASE-PITCH.md)**
-- 🛡️ **[Formal Verification & Adversarial Red-Team Report (`docs/ADVERSARIAL-AUDIT-REPORT.md`)](docs/ADVERSARIAL-AUDIT-REPORT.md)** *(`228/228` tests passing, `68/68` direct export coverage `100%`, `0/22` adversarial findings falsified)*
+- 🖥️ **[Sen-Tổng quan](https://raw.githack.com/developerfs0110/Sen/main/docs/sen-pitch-deck.html)** & 🏢 **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)**
+- 📘 **[Full Beginner Guide](docs/guide.md)**
+- 🎓 **[IT Freshman Step-by-Step Capstone Guide](docs/SINH-VIEN-IT-STEP-BY-STEP.md)**
+- 📊 **[Executive Showcase & Pitch Script](docs/SEN-SHOWCASE-PITCH.md)**
+- 🛡️ **[Formal Verification & Adversarial Red-Team Report](docs/ADVERSARIAL-AUDIT-REPORT.md)** *(`229/229` tests passing, `69/69` direct export coverage `100%`, `0/22` adversarial findings falsified)*
 
 ## What Sen Uses
 

@@ -1,4 +1,4 @@
-📘 **README (Tiếng Việt)** | 🖥️ **[Tab Slide Thuyết Trình (`sen-pitch-deck.html`)](docs/sen-pitch-deck.html)** | 🎓 **[Cẩm Nang Sinh Viên IT Năm 1 (Step-by-Step)](docs/SINH-VIEN-IT-STEP-BY-STEP.md)** | 📊 **[Tài Liệu Showcase](docs/SEN-SHOWCASE-PITCH.md)** | 🛡️ **[Báo Cáo Phản Biện Red-Team](docs/ADVERSARIAL-AUDIT-REPORT.md)** | 🌐 **[English](README.en.md)**
+📘 **Readme** | 🖥️ **[Sen-Tổng quan](https://raw.githack.com/developerfs0110/Sen/main/docs/sen-pitch-deck.html)** | 🏢 **[Sen-Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)** | 🌐 **[English](README.en.md)**
 
 # Sen
 
@@ -57,7 +57,7 @@ flowchart LR
 
 <!-- office screenshot: added with sen-office -->
 
-🏢 **Văn phòng 3D Chibi (`sen-office` `v0.4.0` tích hợp sẵn):** Gõ `"mở văn phòng"` bất kỳ lúc nào để mở sàn 3D trực quan theo dõi 9 nhân vật Chibi AI + Boss trên ghế sofa đỏ, bộ đàm bằng chứng thực thi (`0 token` ở chế độ Tiết kiệm), ngăn kéo 6 ô đếm, thanh tua lại lịch sử, đồng hồ hạn mức trực tiếp từ `state.vscdb` và khung **Đầu ra 2 Giai đoạn** (Đối chiếu Thiết kế vs. Nghiệm thu). Xem trực tiếp tại [`office/index.html`](office/index.html).
+🏢 **Văn phòng 3D Chibi (`sen-office` `v0.4.0` tích hợp sẵn):** Gõ `"mở văn phòng"` bất kỳ lúc nào để mở sàn 3D trực quan theo dõi 9 nhân vật Chibi AI + Boss trên ghế sofa đỏ, bộ đàm bằng chứng thực thi (`0 token` ở chế độ Tiết kiệm), ngăn kéo 6 ô đếm, thanh tua lại lịch sử, đồng hồ hạn mức trực tiếp từ `state.vscdb` và khung **Đầu ra 2 Giai đoạn** (Đối chiếu Thiết kế vs. Nghiệm thu). Xem trực tiếp tại **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)**.
 
 ## Bắt đầu nhanh
 
@@ -69,10 +69,11 @@ flowchart LR
 3. **Làm theo hướng dẫn trên màn hình:** Chọn ổ đĩa đặt workspace, trả lời 4 câu ngắn để tạo hồ sơ cá nhân (`profile.md`), rồi gõ `"hướng dẫn tôi"` để trải nghiệm việc Cấp 1 đầu tiên.
 
 👉 **Hệ thống Tài liệu & Trình chiếu Trực quan:**
-- 📘 **[Hướng dẫn đầy đủ cho người mới bắt đầu (`docs/huong-dan.md`)](docs/huong-dan.md)**
-- 🎓 **[Cẩm nang Sinh viên Năm 1 IT: Giải bài toán khó Step-by-Step (`docs/SINH-VIEN-IT-STEP-BY-STEP.md`)](docs/SINH-VIEN-IT-STEP-BY-STEP.md)**
-- 🖥️ **[Slide Thuyết trình Tương tác 3 Tab (`docs/sen-pitch-deck.html`)](docs/sen-pitch-deck.html)** & **[Kịch bản Showcase (`docs/SEN-SHOWCASE-PITCH.md`)](docs/SEN-SHOWCASE-PITCH.md)**
-- 🛡️ **[Báo cáo Kiểm chứng Hình thức & Phản biện Đối kháng Red-Team (`docs/ADVERSARIAL-AUDIT-REPORT.md`)](docs/ADVERSARIAL-AUDIT-REPORT.md)** *(Đạt `228/228` tests, `68/68` hàm phủ Unit Test `100%`, `0/22` lỗi sau phản biện)*
+- 🖥️ **[Sen-Tổng quan](https://raw.githack.com/developerfs0110/Sen/main/docs/sen-pitch-deck.html)** & 🏢 **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)**
+- 📘 **[Hướng dẫn đầy đủ cho người mới bắt đầu](docs/huong-dan.md)**
+- 🎓 **[Cẩm nang Sinh viên Năm 1 IT: Giải bài toán khó Step-by-Step](docs/SINH-VIEN-IT-STEP-BY-STEP.md)**
+- 📊 **[Tài liệu Showcase & Thuyết trình Chiến lược](docs/SEN-SHOWCASE-PITCH.md)**
+- 🛡️ **[Báo cáo Kiểm chứng Hình thức & Phản biện Đối kháng Red-Team](docs/ADVERSARIAL-AUDIT-REPORT.md)** *(Đạt `229/229` tests, `69/69` hàm phủ Unit Test `100%`, `0/22` lỗi sau phản biện)*
 
 ## Sen dùng những gì
 

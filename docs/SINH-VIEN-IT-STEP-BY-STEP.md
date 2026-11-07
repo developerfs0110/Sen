@@ -4,8 +4,8 @@
 > Bạn mới học `C/C++` hoặc `Python` cơ bản, mới biết `if/else`, vòng lặp `for`, chưa rành về "Kiến trúc hệ thống", "Cơ sở dữ liệu", "Bảo mật" hay "Triển khai (Deploy)". Nhưng học kỳ này bạn phải làm một **Đề án Phần mềm thực tế** để chấm điểm hoặc thi Hackathon.  
 > Tài liệu này sẽ chỉ cho bạn thấy **tại sao dùng AI thông thường vẫn khiến 80% sinh viên "vỡ trận" đêm trước ngày nộp bài**, và **cách SEN biến bạn thành một "Giám đốc Dự án" có cả một đội ngũ Kỹ sư Đàn anh kèm cặp từng bước**.
 
-- **Xem dạng Slide & Tab tương tác trực quan:** [sen-pitch-deck.html](./sen-pitch-deck.html)
-- **Quay lại Trang chủ:** [README.md](../README.md)
+- **Xem dạng Slide & Tab tương tác trực quan:** **[Sen-Tổng quan](https://raw.githack.com/developerfs0110/Sen/main/docs/sen-pitch-deck.html)** & **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)**
+- **Quay lại Trang chủ:** **[Readme](../README.md)**
 
 ---
 
@@ -265,5 +265,5 @@ Sau khi chốt cách làm, Sen tạo ra 3 thứ cực kỳ trực quan trong th�
 +===================================================================================+
 ```
 
-👉 **Bắt đầu ngay trong 1 phút:** Quay lại mục **[Bắt đầu nhanh trong README](../README.md)** hoặc xem **[Hướng dẫn cài đặt chi tiết cho người mới (`docs/huong-dan.md`)](./huong-dan.md)**.
+👉 **Bắt đầu ngay trong 1 phút:** Quay lại mục **[Bắt đầu nhanh trong README](../README.md)** hoặc xem **[Hướng dẫn cài đặt chi tiết cho người mới](./huong-dan.md)**.
 
