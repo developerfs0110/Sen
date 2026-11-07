@@ -312,12 +312,13 @@ function Test-SenStuckLoop {
 function Write-SenOfficeShowcase {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace,
         [Parameter(Mandatory = $false)][hashtable]$Showcase = $null,
         [string]$TaskId = "", [string]$Title = "", [int]$Phase = 0,
-        [string]$Blueprint = "", [string]$Summary = "",
+        [string]$Blueprint = "", [string]$Summary = "", [string]$Domain = "",
         [string[]]$ExpectedOutputs = @(), [string[]]$VerifiedOutputs = @(),
-        [hashtable]$Gates = $null, [hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
+        [hashtable]$Gates = $null, [hashtable]$Metrics = $null,
+        [hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
         [int]$Tier = 2
     )
     $existing = Read-SenOfficeShowcase -Workspace $Workspace
@@ -331,13 +332,15 @@ function Write-SenOfficeShowcase {
     else {
         if ($Title) { $merged["projectTitle"] = $Title }
         elseif (-not $merged["projectTitle"]) { $merged["projectTitle"] = if ($TaskId) { $TaskId } else { (Split-Path $Workspace -Leaf) } }
+        if ($Domain) { $merged["domain"] = $Domain }
+        if ($null -ne $Metrics) { $merged["metrics"] = $Metrics }
         if ($PSBoundParameters.ContainsKey("Tier") -or (-not $merged["tier"])) { $merged["tier"] = $Tier }
         $txt = if ($Summary) { $Summary } elseif ($Blueprint) { $Blueprint } elseif ($Title) { $Title } else { "Output Showcase" }
         if ($null -ne $Phase1Data) { $merged["phase1"] = $Phase1Data }
         if ($null -ne $Phase2Data) { $merged["phase2"] = $Phase2Data }
         if ($Phase -eq 2 -and $null -eq $Phase2Data) {
             $g = if ($null -ne $Gates) { $Gates } else { @{ tests = "PASS"; build = "PASS"; security = "PASS"; legal = "PASS" } }
-            $vo = if ($VerifiedOutputs.Count -gt 0) { $VerifiedOutputs } elseif ($TaskId) { @($TaskId) } else { @("docs/CONTEXT.md") }
+            $vo = if ($VerifiedOutputs.Count -gt 0) { $VerifiedOutputs } elseif ($null -ne $Metrics -and $Metrics.Count -gt 0) { @($Metrics.Keys | ForEach-Object { "$($_): $($Metrics[$_])" }) } elseif ($TaskId) { @($TaskId) } else { @("docs/CONTEXT.md") }
             $merged["phase2"] = @{ summary = $txt; verifiedOutputs = $vo; gates = $g; updatedAt = $nowIso }
         }
         elseif (($Phase -eq 1 -or ($Phase -eq 0 -and $null -eq $Phase2Data)) -and $null -eq $Phase1Data) {

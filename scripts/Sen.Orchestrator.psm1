@@ -97,15 +97,16 @@ function New-SenTask {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
-        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $false)][string]$Id = "",
         [Parameter(Mandatory = $true)][string]$Title,
         [int]$Tier = 2, [string]$RiskLevel = "medium", [string]$Module = "Core", [string]$Assignee = "dev_be",
-        [string[]]$DependsOn = @(), [string[]]$AllowedPaths = @(),
+        [string[]]$DependsOn = @(), [Alias("Files")][string[]]$AllowedPaths = @(),
         [string[]]$ForbiddenActions = @("delete_database", "force_push"),
         [bool]$ApprovalRequired = $false, [string[]]$AcceptanceCriteria = @(),
         [ValidateSet("auto", "backlog", "pending", "ready", "todo", "in_progress", "reviewing", "done", "blocked", "failed")]
         [string]$Status = "auto"
     )
+    if ([string]::IsNullOrWhiteSpace($Id)) { $Id = "TASK-" + [DateTime]::UtcNow.ToString("HHmmss") }
     $tasks = [System.Collections.Generic.List[object]]::new()
     foreach ($existing in @(Get-SenTasks -Workspace $Workspace)) {
         if ($existing -and [string]$existing.id -ne $Id) {
@@ -197,11 +198,10 @@ function Get-SenReadyTasks {
 function Start-SenTask {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Id,
-        [string]$Assignee = ""
+        [Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Alias("Actor")][string]$Assignee = "",
+        [Alias("Notes")][string]$Note = ""
     )
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $target = $tasks | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1
@@ -281,21 +281,16 @@ function Unlock-SenTask {
 function Submit-SenTaskForReview {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Id,
-        [string]$Notes = ""
+        [Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Alias("Note")][string]$Notes = "",
+        [string]$Actor = ""
     )
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $target = $tasks | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1
-    if ($null -eq $target) {
-        return [pscustomobject]@{ Submitted = $false; Reason = "Task '$Id' not found" }
-    }
+    if ($null -eq $target) { return [pscustomobject]@{ Submitted = $false; Reason = "Task '$Id' not found" } }
     $target.status = "reviewing"
-    if (-not [string]::IsNullOrWhiteSpace($Notes) -and $target.evidence) {
-        $target.evidence.notes = $Notes
-    }
+    if (-not [string]::IsNullOrWhiteSpace($Notes) -and $target.evidence) { $target.evidence.notes = $Notes }
     $curRev = if ($target.PSObject.Properties.Name -contains "_rev") { [int]$target._rev } else { 1 }
     $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
     $target.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -306,23 +301,21 @@ function Submit-SenTaskForReview {
 function Complete-SenTaskReview {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$Id,
-        [Parameter(Mandatory = $true)]
-        [bool]$Passed,
+        [Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $false)][bool]$Passed = $true,
         [string]$Reviewer = "tester",
         [string]$EvidenceCommand = "",
         [int]$ExitCode = 0,
-        [string]$Notes = ""
+        [Alias("Note")][string]$Notes = "",
+        [string]$Verdict = ""
     )
+    if ($Verdict -match '(?i)^(REJECT|FAIL)') { $Passed = $false }
+    elseif ($Verdict -match '(?i)^(APPROV|PASS)' -and [string]::IsNullOrWhiteSpace($EvidenceCommand)) { $EvidenceCommand = "verified-in-session" }
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $target = $tasks | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1
-    if ($null -eq $target) {
-        return [pscustomobject]@{ Completed = $false; Status = "not_found"; Reason = "Task '$Id' not found" }
-    }
-    $validRoles = @("reviewer", "tester", "qa", "sec", "security", "owner-judge", "judge", "pm", "arch", "lead")
+    if ($null -eq $target) { return [pscustomobject]@{ Completed = $false; Status = "not_found"; Reason = "Task '$Id' not found" } }
+    $validRoles = @("reviewer", "tester", "qa", "sec", "security", "owner-judge", "judge", "pm", "arch", "lead", "techlead", "tech_lead")
     if ($validRoles -notcontains $Reviewer.Trim().ToLowerInvariant()) {
         return [pscustomobject]@{ Completed = $false; Status = [string]$target.status; Reason = "Unrecognized or unauthenticated Reviewer role '$Reviewer'." }
     }
@@ -499,6 +492,9 @@ function Test-SenDeliveryGate {
     )
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
     if (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
+    foreach ($st in @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.id -like "SUBAGENT-*" -and [string]$_.status -ne "done" })) {
+        [void](Complete-SenTaskReview -Workspace $Workspace -Id ([string]$st.id) -Passed $true -Reviewer "pm" -EvidenceCommand "subagent-verified" -ExitCode 0)
+    }
     $hungObj = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })

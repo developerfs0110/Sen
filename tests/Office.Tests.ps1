@@ -247,10 +247,65 @@ Test "start-office.ps1 -DryRun returns valid server metadata and office/index.ht
             "quotaPill",
             "selectActor",
             "denied-card",
-            "khanh020905/my-office"
+            "khanh020905/my-office",
+            "DEMO_IDLE",
+            "LIVE_STREAMING",
+            "HIBERNATED_SNAPSHOT",
+            "liveMissionBar",
+            "syncRealTelemetry"
         )) {
             Assert-True ($html.Contains($marker)) "office/index.html must contain marker: $marker"
         }
     } finally { Remove-OfficeTempDir $ws }
 }
+
+Test "office-post.ps1 tracks invoke_subagent as in_progress SUBAGENT-LIVE and completes it on send_message" {
+    $ws = New-OfficeTempDir
+    try {
+        $postScript = Join-Path -Path $repoRoot -ChildPath "scripts/office-post.ps1"
+        Set-SenOfficeConfig -Workspace $ws -Mode "eco" | Out-Null
+
+        $payloadSpawn = @{
+            toolCall = @{
+                name = "invoke_subagent"
+                args = @{
+                    TypeName = "self"
+                    Role     = "Frontend Engineer"
+                    Prompt   = "Upgrade 3D Office live streaming and hibernation"
+                    Model    = "pro"
+                }
+            }
+            workspacePaths = @($ws)
+        } | ConvertTo-Json -Compress -Depth 6
+        $payloadSpawn | & powershell -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
+
+        $evs1 = @(Read-SenOfficeEvents -Workspace $ws)
+        Assert-Equal 1 $evs1.Count "invoke_subagent event recorded"
+        Assert-Equal "pm" $evs1[0].from "invoke_subagent originates from pm"
+        Assert-Equal "fe" $evs1[0].to "Frontend Engineer role maps to fe"
+        Assert-Equal "Subagent" $evs1[0].lane "lane is Subagent"
+
+        $tks1 = @(Get-SenTasks -Workspace $ws)
+        $subTask1 = $tks1 | Where-Object { $_.id -eq "SUBAGENT-LIVE" } | Select-Object -First 1
+        Assert-True ($null -ne $subTask1) "SUBAGENT-LIVE task auto-created"
+        Assert-Equal "in_progress" $subTask1.status "SUBAGENT-LIVE starts as in_progress"
+
+        $payloadReport = @{
+            toolCall = @{
+                name = "send_message"
+                args = @{
+                    Recipient = "parent-id"
+                    Message   = "Completed 3-Phase State Machine and verified all tests"
+                }
+            }
+            workspacePaths = @($ws)
+        } | ConvertTo-Json -Compress -Depth 6
+        $payloadReport | & powershell -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
+
+        $tks2 = @(Get-SenTasks -Workspace $ws)
+        $subTask2 = $tks2 | Where-Object { $_.id -eq "SUBAGENT-LIVE" } | Select-Object -First 1
+        Assert-Equal "done" $subTask2.status "SUBAGENT-LIVE transitions to done on send_message"
+    } finally { Remove-OfficeTempDir $ws }
+}
+
 

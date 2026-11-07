@@ -1,12 +1,8 @@
-# scripts/Sen.Harness.psm1
-# Pure ASCII PowerShell module for Sen v0.4.0 Multi-Harness Adapter (Antigravity, Claude Code,
-# Cursor, GitHub Copilot, Windsurf, Codex/OpenCode) and Two-Way Plan/TODO Synchronization.
-
+# scripts/Sen.Harness.psm1 - Sen v0.4.0 Multi-Harness Adapter & Two-Way Sync
 $ErrorActionPreference = "Stop"
 
 function Get-SenSupportedHarnesses {
-  [CmdletBinding()]
-  param()
+  [CmdletBinding()] param()
   return @(
     [pscustomobject][ordered]@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true },
     [pscustomobject][ordered]@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true },
@@ -21,17 +17,13 @@ function Get-SenPropValue {
   param($Obj, [string[]]$Names)
   if ($null -eq $Obj) { return "" }
   foreach ($n in $Names) {
-    if ($Obj.PSObject.Properties.Name -contains $n) {
-      $val = $Obj.$n
-      if ($null -ne $val -and -not [string]::IsNullOrWhiteSpace([string]$val)) { return [string]$val }
-    }
+    if ($Obj.PSObject.Properties.Name -contains $n -and $null -ne $Obj.$n -and -not [string]::IsNullOrWhiteSpace([string]$Obj.$n)) { return [string]$Obj.$n }
   }
   return ""
 }
 
 function ConvertFrom-SenHookPayload {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $true)]$InputObject)
+  [CmdletBinding()] param([Parameter(Mandatory = $true)]$InputObject)
   $rawTool = ""; $argsObj = $null
   if ($InputObject.PSObject.Properties.Name -contains "toolCall" -and $null -ne $InputObject.toolCall) {
     $rawTool = Get-SenPropValue -Obj $InputObject.toolCall -Names @("name", "toolName")
@@ -39,17 +31,19 @@ function ConvertFrom-SenHookPayload {
   }
   if ([string]::IsNullOrWhiteSpace($rawTool)) { $rawTool = Get-SenPropValue -Obj $InputObject -Names @("tool_name", "toolName", "name", "hook_event_name") }
   if ($null -eq $argsObj) {
-    if ($InputObject.PSObject.Properties.Name -contains "tool_input" -and $null -ne $InputObject.tool_input) { $argsObj = $InputObject.tool_input }
-    elseif ($InputObject.PSObject.Properties.Name -contains "toolArgs" -and $null -ne $InputObject.toolArgs) { $argsObj = $InputObject.toolArgs }
-    else { $argsObj = $InputObject }
+    $argsObj = if ($InputObject.PSObject.Properties.Name -contains "tool_input" -and $null -ne $InputObject.tool_input) { $InputObject.tool_input }
+    elseif ($InputObject.PSObject.Properties.Name -contains "toolArgs" -and $null -ne $InputObject.toolArgs) { $InputObject.toolArgs } else { $InputObject }
   }
-  $canonical = $rawTool
-  switch -Regex ($rawTool) {
-    '^(?i)(run_command|bash|run_terminal_cmd|shell|exec|execute_command)$' { $canonical = "run_command"; break }
-    '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { $canonical = "write_file"; break }
-    '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { $canonical = "edit_file"; break }
-    '^(?i)(read_file|read|view_file)$' { $canonical = "read_file"; break }
-    '^(?i)(grep_search|find_by_name|grep|glob|codebase_search|file_search)$' { $canonical = "grep_search"; break }
+  $canonical = switch -Regex ($rawTool) {
+    '^(?i)(run_command|bash|run_terminal_cmd|shell|exec|execute_command)$' { "run_command"; break }
+    '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { "write_file"; break }
+    '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { "edit_file"; break }
+    '^(?i)(read_file|read|view_file)$' { "read_file"; break }
+    '^(?i)(grep_search|find_by_name|grep|glob|codebase_search|file_search)$' { "grep_search"; break }
+    '^(?i)(invoke_subagent|task|dispatch_agent|spawn_agent)$' { "invoke_subagent"; break }
+    '^(?i)(send_message|message_agent)$' { "send_message"; break }
+    '^(?i)(manage_subagents|manage_task)$' { "manage_subagents"; break }
+    default { $rawTool }
   }
   $cmdLine = Get-SenPropValue -Obj $argsObj -Names @("CommandLine", "command", "cmd")
   $targetPath = Get-SenPropValue -Obj $argsObj -Names @("Path", "file_path", "target_file", "path", "SearchPath", "notebook_path")
@@ -130,7 +124,7 @@ function Install-SenHarnessHookFile {
   $postCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $postRel"
   if ($HarnessId -eq "antigravity") {
     if (-not (Test-Path -LiteralPath $fullHookPath)) {
-      $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file"; hooks = @([ordered]@{ type = "command"; command = $guardCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name"; hooks = @([ordered]@{ type = "command"; command = $postCmd; timeout = 5 }) }) } }
+      $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file"; hooks = @([ordered]@{ type = "command"; command = $guardCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $postCmd; timeout = 5 }) }) } }
       Write-SenAtomicJson -Path $fullHookPath -InputObject $agObj -Depth 8
     }
     return $fullHookPath
@@ -140,7 +134,7 @@ function Install-SenHarnessHookFile {
   if ($rootHash -isnot [hashtable]) { $rootHash = @{} }
   if (-not $rootHash.ContainsKey("hooks") -or $rootHash["hooks"] -isnot [hashtable]) { $rootHash["hooks"] = @{} }
   $rootHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|run_command|write_file|edit_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $guardCmd; timeout = 10 }) })
-  $rootHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $postCmd; timeout = 5 }) })
+  $rootHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $postCmd; timeout = 5 }) })
   Write-SenAtomicJson -Path $fullHookPath -InputObject $rootHash -Depth 10
   return $fullHookPath
 }

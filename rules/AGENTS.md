@@ -29,7 +29,7 @@ Work replies start with a tier label (`Get-SenTaskRiskScore`).
 ## 5. Roles, models & task state
 - Tier 1: execute directly. Tier 2: spawn 1 Dev subagent (`invoke_subagent`) in Turn 1.
 - Tier 3: act as PM/Tech Lead, track state/DAG/locks in `.agents/office/tasks.json`, coordinate subagents: BA/Architect (`inherit`), Scout (`flash_lite`/`flash`), Dev (`inherit`/`pro`), Tester (`inherit`), Reviewers (`inherit`/`pro`). Parallelize independent tasks (`dispatching-parallel-agents`).
-- **Anti-Hang & Selective Teardown:** Pass `-Workspace` explicitly; never kill active long-running tasks/subagents with live progress/heartbeat (`ActiveLongRunningIds`); before ending a turn, clean only `idle` subagents, stdin-deadlocked, or zero-progress stalled tasks (`manage_task`/`manage_subagents`, `Test-SenHungTasks`, `Clear-SenHungTasks`).
+- **Anti-Hang & Selective Teardown:** Pass `-Workspace` explicitly; never kill active or completed (`idle`) subagents (keep completed subagents green); only kill stdin-deadlocked or zero-progress stalled tasks (`manage_task`/`manage_subagents`, `Test-SenHungTasks`, `Clear-SenHungTasks`).
 
 ## 6. Tier 3 execution choice
 After writing the plan, announce in one line:

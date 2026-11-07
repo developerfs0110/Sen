@@ -6,639 +6,138 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sen Office 3D (v0.2.0) — Trung tâm Chỉ huy Đội AI & Mô phỏng Đầu ra</title>
 <style>
-  :root {
-    --bg: #0b0f16;
-    --panel: #121720;
-    --card: #161b22;
-    --border: #30363d;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --accent: #58a6ff;
-    --green: #3fb950;
-    --red: #ff7b72;
-    --amber: #d29922;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 12px 16px 28px;
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  /* Top Camera Header */
-  .o-top {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 14px;
-    background: #0d1117;
-    border: 2px solid var(--border);
-    border-radius: 12px;
-    margin-bottom: 10px;
-    font: 600 12.5px ui-monospace, Consolas, monospace;
-  }
-  .top-left, .top-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .rec { color: #ff4d4f; font-weight: 700; }
-  .rec::before { content: '●'; margin-right: 5px; animation: bl 1.2s infinite; }
-  @keyframes bl { 50% { opacity: .2; } }
-  .conn-pill {
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-size: 11.5px;
-    border: 1px solid var(--border);
-    background: #161b22;
-  }
-  .conn-pill.live { color: var(--green); border-color: #238636; }
-  .conn-pill.demo { color: var(--accent); border-color: #1f6feb; }
-  .quota-pill {
-    padding: 3px 10px;
-    border-radius: 999px;
-    font-size: 11.5px;
-    border: 1px solid #238636;
-    background: rgba(35,134,54,.14);
-    color: #7ee787;
-    cursor: pointer;
-    position: relative;
-  }
-  .quota-pop {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    width: 260px;
-    background: #161b22;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px;
-    z-index: 50;
-    display: none;
-    box-shadow: 0 8px 24px rgba(0,0,0,.5);
-    color: var(--text);
-    font-family: system-ui, sans-serif;
-  }
-  .quota-pill:hover .quota-pop { display: block; }
-  .clock {
-    color: #f0f6fc;
-    background: #21262d;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 9px;
-  }
-  .modes {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .modes button {
-    background: #161b22;
-    color: var(--muted);
-    border: 0;
-    padding: 4px 10px;
-    font: 600 12px system-ui;
-    cursor: pointer;
-    border-right: 1px solid var(--border);
-  }
-  .modes button:last-child { border-right: 0; }
-  .modes button.sel[data-m="off"] { background: #30363d; color: var(--text); }
-  .modes button.sel[data-m="eco"] { background: #238636; color: #fff; }
-  .modes button.sel[data-m="full"] { background: #9e6a03; color: #fff; }
-  .modes button.sel[data-v] { background: #1f6feb; color: #fff; }
-
-  /* Control Bar */
-  .o-ctrl {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    margin-bottom: 10px;
-  }
-  .ctrl-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .o-ctrl button {
-    background: #21262d;
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 5px 10px;
-    font: 600 12.5px system-ui;
-    cursor: pointer;
-  }
-  .o-ctrl button.p { background: #1f6feb; border-color: #388bfd; color: #fff; }
-  .o-ctrl button.active-tog { background: #9e6a03; border-color: #d29922; color: #fff; }
-  .o-ctrl label {
-    color: var(--muted);
-    font-size: 12.5px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: #21262d;
-    padding: 3px 9px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-  }
-
-  /* Main Workspace Grid */
-  .o-wrap {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 330px 340px;
-    gap: 12px;
-  }
-  @media (max-width: 1380px) { .o-wrap { grid-template-columns: minmax(0, 1fr) 340px; } }
-  @media (max-width: 960px) { .o-wrap { grid-template-columns: 1fr; } }
-
-  /* 3D Camera Stage */
-  .o-cam {
-    background: #0b0f16;
-    border: 2px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-  .o-stage {
-    background: radial-gradient(ellipse at center, #1b2433 0%, #0b0f16 76%);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 195px;
-    position: relative;
-    min-height: 480px;
-  }
-  .o-stage.night {
-    background: radial-gradient(ellipse at center, #0e1525 0%, #05070b 82%);
-  }
-  @media (max-width: 760px) { .o-stage { grid-template-columns: 1fr; } }
-  .o-stage svg {
-    width: 100%;
-    height: auto;
-    display: block;
-    aspect-ratio: 1000 / 670;
-    align-self: center;
-  }
-  .o-lanes {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 10px;
-    border-left: 1px solid #21262d;
-    background: rgba(13,17,23,.65);
-    overflow-y: auto;
-  }
-  .o-lanes h5 {
-    margin: 0 0 4px;
-    font: 700 11.5px system-ui;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: .05em;
-  }
-  .lane {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 5px 8px;
-    font: 600 12px ui-monospace, monospace;
-    color: var(--muted);
-    background: var(--card);
-    position: relative;
-  }
-  .lane.on { color: var(--accent); border-color: #1f6feb; box-shadow: 0 0 8px rgba(31,111,235,.32); }
-  .lane.ok { color: var(--green); border-color: #238636; }
-  .lane small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; font-size: 11px; }
-
-  /* Replay Scrubber Bar */
-  .replay-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 12px;
-    background: #0d1117;
-    border-top: 1px solid #21262d;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .replay-bar input[type="range"] { flex: 1; accent-color: var(--accent); }
-
-  /* Agent & Place Inspector Drawer (6 Quick Counters) */
-  .o-insp {
-    background: var(--card);
-    border: 2px solid var(--border);
-    border-radius: 14px;
-    display: flex;
-    flex-direction: column;
-    padding: 12px;
-    gap: 10px;
-  }
-  .insp-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-  }
-  .insp-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
-  .insp-counts {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .insp-counts li {
-    background: #0d1117;
-    border: 1px solid #21262d;
-    border-radius: 7px;
-    padding: 6px;
-    text-align: center;
-  }
-  .insp-counts b { display: block; font: 700 13.5px ui-monospace, monospace; color: #f0f6fc; }
-  .insp-counts span { font-size: 10.5px; color: var(--muted); }
-  .insp-box {
-    background: #0d1117;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 9px 10px;
-    font-size: 12.5px;
-    flex: 1;
-    overflow-y: auto;
-    max-height: 290px;
-  }
-  .insp-box code { color: #79c0ff; font-family: ui-monospace, monospace; word-break: break-all; }
-
-  /* Walkie-Talkie Comms Feed & Denied Command Card */
-  .o-feed {
-    background: var(--card);
-    border: 2px solid var(--border);
-    border-radius: 14px;
-    display: flex;
-    flex-direction: column;
-    max-height: 620px;
-    min-height: 420px;
-  }
-  .o-feed h4 {
-    margin: 0;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    font-size: 13.5px;
-    background: #0d1117;
-    border-radius: 12px 12px 0 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .log {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    font-size: 12.5px;
-  }
-  .it {
-    background: #0d1117;
-    border: 1px solid #21262d;
-    border-left: 4px solid var(--c);
-    border-radius: 7px;
-    padding: 7px 9px;
-  }
-  .it.denied-card {
-    background: rgba(229,83,75,.12);
-    border-color: #e5534b;
-    border-left-width: 5px;
-  }
-  .it b { color: var(--c); font-family: ui-monospace, monospace; font-size: 12px; display: block; }
-  .it .ln { float: right; color: var(--muted); font-size: 11px; }
-  .it .md {
-    display: inline-block;
-    font: 600 10.5px ui-monospace, monospace;
-    padding: 1px 6px;
-    border-radius: 4px;
-    margin-left: 6px;
-    background: #21262d;
-    color: var(--muted);
-  }
-  .it .md.ev-hook { background: rgba(63,185,80,.15); color: #7ee787; }
-  .it .md.ev-ai { background: rgba(210,153,34,.18); color: #e3b341; }
-  .it .tm { margin-top: 4px; font: 11.5px ui-monospace, monospace; color: var(--muted); }
-  .it .tm .live { color: var(--accent); }
-  .it .tm .end { color: var(--green); }
-  .copy-btn {
-    margin-top: 5px;
-    background: #21262d;
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 2px 8px;
-    font-size: 11px;
-    cursor: pointer;
-  }
-
-  /* 2D Compact Table View */
-  .view-2d {
-    display: none;
-    background: var(--card);
-    border: 2px solid var(--border);
-    border-radius: 14px;
-    padding: 12px;
-    margin-top: 12px;
-  }
-  .view-2d.show { display: block; }
-  .tbl-2d {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .tbl-2d th, .tbl-2d td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #21262d;
-    text-align: left;
-  }
-  .tbl-2d th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; }
-
-  /* Dual-Phase Domain Output Visualizer */
-  .dual-phase {
-    display: none;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-top: 12px;
-  }
-  .dual-phase.show { display: grid; }
-  @media (max-width: 960px) { .dual-phase { grid-template-columns: 1fr; } }
-  .phase-card {
-    background: var(--card);
-    border: 2px solid var(--border);
-    border-radius: 14px;
-    padding: 14px;
-  }
-  .phase-card h3 {
-    margin: 0 0 8px;
-    font-size: 15px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .gate-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    margin: 10px 0;
-  }
-  .gate-pill {
-    background: #0d1117;
-    border: 1px solid #238636;
-    border-radius: 8px;
-    padding: 8px;
-    text-align: center;
-  }
-  .gate-pill b { display: block; color: var(--green); font-size: 13px; }
-  .gate-pill span { font-size: 11px; color: var(--muted); }
-
-  /* Streamer Redact Mode */
-  body.streamer-redact .redactable {
-    filter: blur(4px);
-    user-select: none;
-  }
-
-  /* Camera Off Overlay & Token Warning Modal */
-  .off-ov {
-    position: absolute;
-    inset: 0;
-    background: rgba(11,15,22,.9);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 6px;
-    color: var(--muted);
-    font: 600 15px system-ui;
-    z-index: 10;
-  }
-  .off-ov.show { display: flex; }
-  .mdl {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.65);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  .mdl.show { display: flex; }
-  .mdl .bx {
-    background: var(--card);
-    border: 2px solid var(--amber);
-    border-radius: 12px;
-    padding: 18px 20px;
-    max-width: 430px;
-    color: var(--text);
-    font-size: 14px;
-  }
-  .mdl h4 { margin: 0 0 8px; color: var(--amber); font-size: 16px; }
-  .mdl .act { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
-  .mdl button {
-    border-radius: 6px;
-    padding: 6px 14px;
-    border: 1px solid var(--border);
-    background: #21262d;
-    color: var(--text);
-    cursor: pointer;
-  }
-  .mdl button.warn { background: #9e6a03; border-color: var(--amber); color: #fff; }
-
-  /* Animations & Links */
-  .link { fill: none; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .85s ease-out; }
-  .link.live { animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
-  .glow { fill: none; stroke-width: 12; stroke-linecap: round; opacity: .18; transition: stroke-dashoffset .85s ease-out; }
-  .bub rect { fill: #f0f6fc; }
-  .bub text { fill: #0d1117; font: 500 11.5px system-ui; }
-  .bob { animation: bob .52s ease-in-out infinite alternate; }
-  @keyframes bob { to { transform: translateY(-3.5px); } }
-  .breathe { animation: breathe 2.2s ease-in-out infinite alternate; }
-  @keyframes breathe { to { transform: translateY(-1.5px); } }
-  .blink-eye { transform-origin: center; animation: blink 4.5s infinite; }
-  @keyframes blink { 0%, 94%, 98%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
-  .steam { animation: steamUp 2s ease-in-out infinite; }
-  @keyframes steamUp { 0% { opacity: .15; transform: translateY(2px); } 50% { opacity: .75; } 100% { opacity: 0; transform: translateY(-6px); } }
-  .actor-hit { cursor: pointer; }
-  .actor-hit:hover .hover-ring { opacity: 1 !important; }
-  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
-  .legend span { display: inline-flex; align-items: center; gap: 5px; }
-  .legend i { width: 11px; height: 11px; border-radius: 3px; background: var(--c); display: inline-block; }
+:root{--bg:#0b0f16;--panel:#121720;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--red:#ff7b72;--amber:#d29922}
+*{box-sizing:border-box}
+body{margin:0;padding:12px 16px 28px;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.o-top{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;padding:8px 14px;background:#0d1117;border:2px solid var(--border);border-radius:12px;margin-bottom:10px;font:600 12.5px ui-monospace,Consolas,monospace}
+.top-left,.top-right{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.rec{color:#ff4d4f;font-weight:700}.rec::before{content:'●';margin-right:5px;animation:bl 1.2s infinite}@keyframes bl{50%{opacity:.2}}
+.conn-pill{padding:3px 9px;border-radius:999px;font-size:11.5px;border:1px solid var(--border);background:#161b22}
+.conn-pill.live{color:var(--green);border-color:#238636;background:rgba(63,185,80,.12)}
+.conn-pill.hib{color:#f2cc60;border-color:#d29922;background:rgba(210,153,34,.14)}
+.conn-pill.demo{color:var(--accent);border-color:#1f6feb}
+.quota-pill{padding:3px 10px;border-radius:999px;font-size:11.5px;border:1px solid #238636;background:rgba(35,134,54,.14);color:#7ee787;cursor:pointer;position:relative}
+.quota-pop{position:absolute;top:calc(100% + 6px);right:0;width:260px;background:#161b22;border:1px solid var(--border);border-radius:10px;padding:10px;z-index:50;display:none;box-shadow:0 8px 24px rgba(0,0,0,.5);color:var(--text);font-family:system-ui,sans-serif}
+.quota-pill:hover .quota-pop{display:block}
+.clock{color:#f0f6fc;background:#21262d;border:1px solid var(--border);border-radius:6px;padding:3px 9px}
+.modes{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.modes button{background:#161b22;color:var(--muted);border:0;padding:4px 10px;font:600 12px system-ui;cursor:pointer;border-right:1px solid var(--border)}
+.modes button:last-child{border-right:0}
+.modes button.sel[data-m="off"]{background:#30363d;color:var(--text)}.modes button.sel[data-m="eco"]{background:#238636;color:#fff}.modes button.sel[data-m="full"]{background:#9e6a03;color:#fff}.modes button.sel[data-v]{background:#1f6feb;color:#fff}
+.o-ctrl{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:10px}
+.ctrl-group{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.o-ctrl button{background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font:600 12.5px system-ui;cursor:pointer}
+.o-ctrl button.p{background:#1f6feb;border-color:#388bfd;color:#fff}.o-ctrl button.live-btn{background:#238636;border-color:#3fb950;color:#fff}.o-ctrl button.active-tog{background:#9e6a03;border-color:#d29922;color:#fff}
+.o-ctrl label{color:var(--muted);font-size:12.5px;display:inline-flex;align-items:center;gap:5px;background:#21262d;padding:3px 9px;border-radius:6px;border:1px solid var(--border)}
+.o-wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px 340px;gap:12px}
+@media (max-width:1380px){.o-wrap{grid-template-columns:minmax(0,1fr) 340px}}@media (max-width:960px){.o-wrap{grid-template-columns:1fr}}
+.o-cam{background:#0b0f16;border:2px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.o-stage{background:radial-gradient(ellipse at center,#1b2433 0%,#0b0f16 76%);display:grid;grid-template-columns:minmax(0,1fr) 195px;position:relative;min-height:480px}
+.o-stage.night{background:radial-gradient(ellipse at center,#0e1525 0%,#05070b 82%)}@media (max-width:760px){.o-stage{grid-template-columns:1fr}}
+.o-stage svg{width:100%;height:auto;display:block;aspect-ratio:1000/670;align-self:center}
+.o-lanes{display:flex;flex-direction:column;gap:6px;padding:10px;border-left:1px solid #21262d;background:rgba(13,17,23,.65);overflow-y:auto}
+.o-lanes h5{margin:0 0 4px;font:700 11.5px system-ui;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.lane{border:1px solid var(--border);border-radius:6px;padding:5px 8px;font:600 12px ui-monospace,monospace;color:var(--muted);background:var(--card);position:relative}
+.lane.on{color:var(--accent);border-color:#1f6feb;box-shadow:0 0 8px rgba(31,111,235,.32)}.lane.ok{color:var(--green);border-color:#238636}
+.lane small{display:block;color:var(--muted);font-weight:400;margin-top:2px;font-size:11px}
+.replay-bar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:#0d1117;border-top:1px solid #21262d;font-size:12px;color:var(--muted)}
+.replay-bar input[type="range"]{flex:1;accent-color:var(--accent)}
+.o-insp{background:var(--card);border:2px solid var(--border);border-radius:14px;display:flex;flex-direction:column;padding:12px;gap:10px}
+.insp-head{display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.insp-dot{width:13px;height:13px;border-radius:50%;flex-shrink:0}
+.insp-counts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;list-style:none;padding:0;margin:0}
+.insp-counts li{background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:6px;text-align:center}
+.insp-counts b{display:block;font:700 13.5px ui-monospace,monospace;color:#f0f6fc}.insp-counts span{font-size:10.5px;color:var(--muted)}
+.insp-box{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:9px 10px;font-size:12.5px;flex:1;overflow-y:auto;max-height:290px}
+.insp-box code{color:#79c0ff;font-family:ui-monospace,monospace;word-break:break-all}
+.o-feed{background:var(--card);border:2px solid var(--border);border-radius:14px;display:flex;flex-direction:column;max-height:620px;min-height:420px}
+.o-feed h4{margin:0;padding:10px 12px;border-bottom:1px solid var(--border);font-size:13.5px;background:#0d1117;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:center}
+.log{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:7px;font-size:12.5px}
+.it{background:#0d1117;border:1px solid #21262d;border-left:4px solid var(--c);border-radius:7px;padding:7px 9px}
+.it.denied-card{background:rgba(229,83,75,.12);border-color:#e5534b;border-left-width:5px}
+.it b{color:var(--c);font-family:ui-monospace,monospace;font-size:12px;display:block}.it .ln{float:right;color:var(--muted);font-size:11px}
+.it .md{display:inline-block;font:600 10.5px ui-monospace,monospace;padding:1px 6px;border-radius:4px;margin-left:6px;background:#21262d;color:var(--muted)}
+.it .md.ev-hook{background:rgba(63,185,80,.15);color:#7ee787}.it .md.ev-ai{background:rgba(210,153,34,.18);color:#e3b341}
+.it .tm{margin-top:4px;font:11.5px ui-monospace,monospace;color:var(--muted)}.it .tm .live{color:var(--accent)}.it .tm .end{color:var(--green)}
+.copy-btn{margin-top:5px;background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:11px;cursor:pointer}
+.view-2d{display:none;background:var(--card);border:2px solid var(--border);border-radius:14px;padding:12px;margin-top:12px}.view-2d.show{display:block}
+.mission-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px;padding:10px 12px;background:#0d1117;border:1px solid #30363d;border-radius:10px;font-size:12.5px}
+.mission-item{display:flex;flex-direction:column;gap:3px}.mission-item small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.mission-item b{color:#f0f6fc;font-size:13px;word-break:break-word}
+.localhost-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;background:rgba(31,111,235,.18);border:1px solid #388bfd;color:#79c0ff;text-decoration:none;font:600 12px ui-monospace,monospace;width:fit-content}.localhost-btn:hover{background:#1f6feb;color:#fff}
+.tbl-2d{width:100%;border-collapse:collapse;font-size:13px}.tbl-2d th,.tbl-2d td{padding:8px 10px;border-bottom:1px solid #21262d;text-align:left}.tbl-2d th{color:var(--muted);font-size:11.5px;text-transform:uppercase}
+.dual-phase{display:none;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}.dual-phase.show{display:grid}@media (max-width:960px){.dual-phase{grid-template-columns:1fr}}
+.phase-card{background:var(--card);border:2px solid var(--border);border-radius:14px;padding:14px}.phase-card h3{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+.gate-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}.gate-pill{background:#0d1117;border:1px solid #238636;border-radius:8px;padding:8px;text-align:center}.gate-pill b{display:block;color:var(--green);font-size:13px}.gate-pill span{font-size:11px;color:var(--muted)}
+body.streamer-redact .redactable{filter:blur(4px);user-select:none}
+.off-ov{position:absolute;inset:0;background:rgba(11,15,22,.9);display:none;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--muted);font:600 15px system-ui;z-index:10}.off-ov.show{display:flex}
+.mdl{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:100}.mdl.show{display:flex}
+.mdl .bx{background:var(--card);border:2px solid var(--amber);border-radius:12px;padding:18px 20px;max-width:430px;color:var(--text);font-size:14px}.mdl h4{margin:0 0 8px;color:var(--amber);font-size:16px}.mdl .act{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.mdl button{border-radius:6px;padding:6px 14px;border:1px solid var(--border);background:#21262d;color:var(--text);cursor:pointer}.mdl button.warn{background:#9e6a03;border-color:var(--amber);color:#fff}
+.link{fill:none;stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset .85s ease-out}.link.live{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.glow{fill:none;stroke-width:12;stroke-linecap:round;opacity:.18;transition:stroke-dashoffset .85s ease-out}.bub rect{fill:#f0f6fc}.bub text{fill:#0d1117;font:500 11.5px system-ui}
+.bob{animation:bob .52s ease-in-out infinite alternate}@keyframes bob{to{transform:translateY(-3.5px)}}.breathe{animation:breathe 2.2s ease-in-out infinite alternate}@keyframes breathe{to{transform:translateY(-1.5px)}}
+.blink-eye{transform-origin:center;animation:blink 4.5s infinite}@keyframes blink{0%,94%,98%,100%{transform:scaleY(1)}96%{transform:scaleY(0.1)}}
+.steam{animation:steamUp 2s ease-in-out infinite}@keyframes steamUp{0%{opacity:.15;transform:translateY(2px)}50%{opacity:.75}100%{opacity:0;transform:translateY(-6px)}}
+.actor-hit{cursor:pointer}.actor-hit:hover .hover-ring{opacity:1!important}.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12.5px;color:var(--muted)}.legend span{display:inline-flex;align-items:center;gap:5px}.legend i{width:11px;height:11px;border-radius:3px;background:var(--c);display:inline-block}
 </style>
 </head>
 <body>
-
-<!-- Shared SVG Gradients for Chibi 3D Depth -->
-<svg width="0" height="0" style="position:absolute">
-  <defs>
-    <radialGradient id="skin3d" cx="38%" cy="32%" r="65%">
-      <stop offset="0%" stop-color="#ffe4cc"/><stop offset="55%" stop-color="#f4c29f"/><stop offset="100%" stop-color="#d3926a"/>
-    </radialGradient>
-    <radialGradient id="skinBoss" cx="35%" cy="30%" r="65%">
-      <stop offset="0%" stop-color="#f9d5b8"/><stop offset="60%" stop-color="#e5ae86"/><stop offset="100%" stop-color="#bd7e56"/>
-    </radialGradient>
-    <radialGradient id="hairDark" cx="35%" cy="25%" r="70%">
-      <stop offset="0%" stop-color="#4b5563"/><stop offset="35%" stop-color="#1f2937"/><stop offset="100%" stop-color="#090d14"/>
-    </radialGradient>
-    <radialGradient id="hairBrown" cx="35%" cy="25%" r="70%">
-      <stop offset="0%" stop-color="#7c4a2d"/><stop offset="45%" stop-color="#4a2a18"/><stop offset="100%" stop-color="#231209"/>
-    </radialGradient>
-    <radialGradient id="hairSilver" cx="35%" cy="25%" r="70%">
-      <stop offset="0%" stop-color="#9ca3af"/><stop offset="50%" stop-color="#4b5563"/><stop offset="100%" stop-color="#1f2937"/>
-    </radialGradient>
-    <linearGradient id="velvetBack" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#b91c1c"/><stop offset="55%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#450a0a"/>
-    </linearGradient>
-    <linearGradient id="velvetSeat" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#dc2626"/><stop offset="60%" stop-color="#991b1b"/><stop offset="100%" stop-color="#5f1414"/>
-    </linearGradient>
-    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fef08a"/><stop offset="50%" stop-color="#eab308"/><stop offset="100%" stop-color="#a16207"/>
-    </linearGradient>
-  </defs>
-</svg>
-
-<!-- Top Bar -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <radialGradient id="skin3d" cx="38%" cy="32%" r="65%"><stop offset="0%" stop-color="#ffe4cc"/><stop offset="55%" stop-color="#f4c29f"/><stop offset="100%" stop-color="#d3926a"/></radialGradient>
+  <radialGradient id="skinBoss" cx="35%" cy="30%" r="65%"><stop offset="0%" stop-color="#f9d5b8"/><stop offset="60%" stop-color="#e5ae86"/><stop offset="100%" stop-color="#bd7e56"/></radialGradient>
+  <radialGradient id="hairDark" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#4b5563"/><stop offset="35%" stop-color="#1f2937"/><stop offset="100%" stop-color="#090d14"/></radialGradient>
+  <radialGradient id="hairBrown" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#7c4a2d"/><stop offset="45%" stop-color="#4a2a18"/><stop offset="100%" stop-color="#231209"/></radialGradient>
+  <radialGradient id="hairSilver" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#9ca3af"/><stop offset="50%" stop-color="#4b5563"/><stop offset="100%" stop-color="#1f2937"/></radialGradient>
+  <linearGradient id="velvetBack" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#b91c1c"/><stop offset="55%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#450a0a"/></linearGradient>
+  <linearGradient id="velvetSeat" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#dc2626"/><stop offset="60%" stop-color="#991b1b"/><stop offset="100%" stop-color="#5f1414"/></linearGradient>
+  <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fef08a"/><stop offset="50%" stop-color="#eab308"/><stop offset="100%" stop-color="#a16207"/></linearGradient>
+</defs></svg>
 <div class="o-top">
-  <div class="top-left">
-    <span class="rec">CAM 01 · SEN OFFICE 3D (v0.3.0)</span>
-    <span class="conn-pill demo" id="connPill">🔵 DEMO MODE</span>
-    <span id="status">Sẵn sàng</span>
-  </div>
+  <div class="top-left"><span class="rec">CAM 01 · SEN OFFICE 3D (v0.3.0)</span><span class="conn-pill demo" id="connPill">🔵 DEMO MODE</span><span id="status">Sẵn sàng</span></div>
   <div class="top-right">
-    <!-- View Switcher: 3D | 2D | Task Manager | Dual-Phase | Split -->
-    <span class="modes" id="viewModes">
-      <button data-v="3d" class="sel" onclick="setView('3d')">🏢 Sàn 3D</button>
-      <button data-v="2d" onclick="setView('2d')">📋 2D Gọn</button>
-      <button data-v="tasks" onclick="setView('tasks')">📊 Quản lý Task & DAG</button>
-      <button data-v="dual" onclick="setView('dual')">🎯 Đầu ra (2 Giai đoạn)</button>
-      <button data-v="split" onclick="setView('split')">🔀 Chia đôi (Tất cả)</button>
-    </span>
-    <!-- Token Mode Switcher: Off | Eco | Full -->
-    <span class="modes" id="modes">
-      <button data-m="off" onclick="setMode('off')">Tắt</button>
-      <button data-m="eco" class="sel" onclick="setMode('eco')">Tiết kiệm</button>
-      <button data-m="full" onclick="setMode('full')">Chi tiết</button>
-    </span>
-    <!-- Read-only Antigravity Quota Pill -->
-    <span class="quota-pill" id="quotaPill">
-      ⚡ Hạn mức: <b id="quotaPct">92%</b>
-      <div class="quota-pop">
-        <b style="display:block;margin-bottom:6px;color:#58a6ff">⚡ Hạn mức Model (Chỉ-đọc)</b>
-        <div id="quotaRows" style="font-size:12px;line-height:1.6">
-          • Gemini Pro / Inherit: <b>92% còn lại</b><br>
-          • Gemini Flash / Scout: <b>98% còn lại</b>
-        </div>
-        <small style="display:block;margin-top:6px;color:var(--muted)">Đọc an toàn (read-only) từ trạng thái IDE cục bộ.</small>
-      </div>
-    </span>
+    <span class="modes" id="viewModes"><button data-v="3d" class="sel" onclick="setView('3d')">🏢 Sàn 3D</button><button data-v="2d" onclick="setView('2d')">📋 2D Gọn</button><button data-v="tasks" onclick="setView('tasks')">📊 Quản lý Task & DAG</button><button data-v="dual" onclick="setView('dual')">🎯 Đầu ra (2 Giai đoạn)</button><button data-v="split" onclick="setView('split')">🔀 Chia đôi (Tất cả)</button></span>
+    <span class="modes" id="modes"><button data-m="off" onclick="setMode('off')">Tắt</button><button data-m="eco" class="sel" onclick="setMode('eco')">Tiết kiệm</button><button data-m="full" onclick="setMode('full')">Chi tiết</button></span>
+    <span class="quota-pill" id="quotaPill">⚡ Hạn mức: <b id="quotaPct">92%</b><div class="quota-pop"><b style="display:block;margin-bottom:6px;color:#58a6ff">⚡ Hạn mức Model (Chỉ-đọc)</b><div id="quotaRows" style="font-size:12px;line-height:1.6">• Gemini Pro / Inherit: <b>92% còn lại</b><br>• Gemini Flash / Scout: <b>98% còn lại</b></div><small style="display:block;margin-top:6px;color:var(--muted)">Đọc an toàn (read-only) từ trạng thái IDE cục bộ.</small></div></span>
     <span class="clock" id="clock">--:--:--</span>
   </div>
 </div>
-
-<!-- Control Bar -->
 <div class="o-ctrl">
   <div class="ctrl-group">
-    <button class="p" onclick="run('multi')">▶ Đa luồng (Cấp 3)</button>
-    <button onclick="run('single')">▶ Đơn luồng (Cấp 2)</button>
-    <button onclick="run('tier1')">⚡ Cấp 1</button>
+    <button class="live-btn" id="btnResumeLive" onclick="resumeLiveSnapshot()" style="display:none">📡 Dữ liệu Thật (Live / Ngủ đông)</button>
+    <button class="p" onclick="run('multi', true)">▶ Đa luồng (Demo)</button><button onclick="run('single', true)">▶ Đơn luồng (Demo)</button><button onclick="run('tier1', true)">⚡ Cấp 1 (Demo)</button>
     <button onclick="triggerDeniedDemo()" title="Mô phỏng khiên bảo vệ chặn lệnh nguy hiểm">🛑 Thử Chặn Lệnh</button>
     <label>Xoay 3D <input type="range" min="-55" max="55" value="0" oninput="ang=+this.value;draw()"></label>
   </div>
-  <div class="ctrl-group">
-    <button id="btnStreamer" onclick="toggleStreamer()">🔒 Ẩn nhạy cảm</button>
-    <button id="btnNight" onclick="toggleNight()">🌙 Đêm</button>
-  </div>
+  <div class="ctrl-group"><button id="btnStreamer" onclick="toggleStreamer()">🔒 Ẩn nhạy cảm</button><button id="btnNight" onclick="toggleNight()">🌙 Đêm</button></div>
 </div>
-
-<!-- Main 3-Column Workspace (3D Stage | Inspector Drawer | Walkie-Talkie Comms) -->
 <div class="o-wrap" id="main3dWrap">
   <div class="o-cam">
     <div class="o-stage" id="stageBox">
-      <div class="off-ov" id="offov">
-        📷 Camera đang tắt
-        <small style="font-weight:400">Không ghi sự kiện, không tốn token. Bấm "Tiết kiệm" hoặc "Chi tiết" để bật lại.</small>
-      </div>
+      <div class="off-ov" id="offov">📷 Camera đang tắt<small style="font-weight:400">Không ghi sự kiện, không tốn token. Bấm "Tiết kiệm" hoặc "Chi tiết" để bật lại.</small></div>
       <svg id="svg" viewBox="0 0 1000 670" preserveAspectRatio="xMidYMid meet"></svg>
-      <div class="o-lanes" id="lanes">
-        <h5>Các bước / luồng</h5>
-        <span class="lane">Chưa có luồng nào</span>
-      </div>
+      <div class="o-lanes" id="lanes"><h5>Các bước / luồng</h5><span class="lane">Chưa có luồng nào</span></div>
     </div>
-    <!-- Replay Timeline Scrubber -->
-    <div class="replay-bar">
-      <span>⏪ Tua lại lịch sử phiên:</span>
-      <input type="range" id="replayRange" min="0" max="14" value="0" oninput="scrubReplay(+this.value)">
-      <span id="replayLabel">Bước 0/14</span>
-    </div>
+    <div class="replay-bar"><span>⏪ Tua lại lịch sử phiên:</span><input type="range" id="replayRange" min="0" max="14" value="0" oninput="scrubReplay(+this.value)"><span id="replayLabel">Bước 0/14</span></div>
   </div>
-
-  <!-- Agent & Place Inspector Drawer (6 Quick Counters) -->
   <aside class="o-insp" id="inspector">
-    <div class="insp-head">
-      <span class="insp-dot" id="insDot" style="background:#8957e5"></span>
-      <div>
-        <b id="insName" style="font-size:15px">PM / Tech Lead</b>
-        <div id="insSub" style="font-size:11.5px;color:var(--muted)">Điều phối viên · Bấm nhân vật hoặc đồ vật để khám</div>
-      </div>
-    </div>
-    <ul class="insp-counts">
-      <li><b id="insRead">18</b><span>Đọc file</span></li>
-      <li><b id="insEdit">4</b><span>Sửa file</span></li>
-      <li><b id="insCmd">6</b><span>Chạy lệnh</span></li>
-      <li><b id="insTime">02m15s</b><span>Thời gian</span></li>
-      <li><b id="insModel">inherit</b><span>Model</span></li>
-      <li><b id="insState" style="color:#58a6ff">Sẵn sàng</b><span>Trạng thái</span></li>
-    </ul>
-    <div class="insp-box">
-      <b style="color:#f0f6fc;display:block;margin-bottom:5px">🎯 Công việc & Đồ vật đang chọn:</b>
-      <div id="insTask" style="color:#c9d1d9;margin-bottom:10px">Điều phối đội Agent theo quy tắc 3 cấp độ của Sen</div>
-      <b style="color:#f0f6fc;display:block;margin-bottom:5px">✓ Bằng chứng Hệ thống (Hook):</b>
-      <div id="insFiles" class="redactable"></div>
-    </div>
+    <div class="insp-head"><span class="insp-dot" id="insDot" style="background:#8957e5"></span><div><b id="insName" style="font-size:15px">PM / Tech Lead</b><div id="insSub" style="font-size:11.5px;color:var(--muted)">Điều phối viên · Bấm nhân vật hoặc đồ vật để khám</div></div></div>
+    <ul class="insp-counts"><li><b id="insRead">18</b><span>Đọc file</span></li><li><b id="insEdit">4</b><span>Sửa file</span></li><li><b id="insCmd">6</b><span>Chạy lệnh</span></li><li><b id="insTime">02m15s</b><span>Thời gian</span></li><li><b id="insModel">inherit</b><span>Model</span></li><li><b id="insState" style="color:#58a6ff">Sẵn sàng</b><span>Trạng thái</span></li></ul>
+    <div class="insp-box"><b style="color:#f0f6fc;display:block;margin-bottom:5px">🎯 Công việc & Đồ vật đang chọn:</b><div id="insTask" style="color:#c9d1d9;margin-bottom:10px">Điều phối đội Agent theo quy tắc 3 cấp độ của Sen</div><b style="color:#f0f6fc;display:block;margin-bottom:5px">✓ Bằng chứng Hệ thống (Hook):</b><div id="insFiles" class="redactable"></div></div>
   </aside>
-
-  <!-- Walkie-Talkie Comms Feed -->
-  <div class="o-feed">
-    <h4>
-      <span>📻 Bộ đàm nội bộ & Bằng chứng</span>
-      <small style="color:var(--muted);font-weight:400" id="feedCount">0 sự kiện</small>
-    </h4>
-    <div class="log" id="log"></div>
-  </div>
+  <div class="o-feed"><h4><span>📻 Bộ đàm nội bộ & Bằng chứng</span><small style="color:var(--muted);font-weight:400" id="feedCount">0 sự kiện</small></h4><div class="log" id="log"></div></div>
 </div>
-
-<!-- 2D Compact Table View -->
 <section class="view-2d" id="view2d">
-  <h3 style="margin:0 0 10px;font-size:15px">📋 Danh sách Phiên & Nhân vật (Chế độ 2D Gọn nhẹ)</h3>
-  <table class="tbl-2d">
-    <thead>
-      <tr>
-        <th>Nhân vật / Khu vực</th>
-        <th>Vai trò</th>
-        <th>Trạng thái</th>
-        <th>Model</th>
-        <th>Đọc / Sửa / Lệnh</th>
-        <th>Công việc hiện tại</th>
-      </tr>
-    </thead>
-    <tbody id="tbody2d"></tbody>
-  </table>
-</section>
-
-<!-- Task Manager, DAG & Quality Metrics Control Center (v0.3.0) -->
-<section class="view-2d" id="taskManagerView" style="margin-top:12px">
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-    <h3 style="margin:0;font-size:15.5px">📊 Trung tâm Điều phối Task, Đồ thị Phụ thuộc (DAG) & Hợp đồng Thực thi (v0.3.0)</h3>
-    <span class="conn-pill live" id="tmScalePill">Quy mô: Standard · Khóa File (File Lock): BẬT</span>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="margin:0;font-size:15px">📋 Danh sách Phiên & Nhân vật (Chế độ 2D Gọn nhẹ — Dữ liệu Thời gian thực)</h3><span class="conn-pill demo" id="v2dPhasePill">🔵 DEMO MODE</span></div>
+  <div class="mission-bar" id="liveMissionBar">
+    <div class="mission-item"><small>⚡ Trạng thái Máy 3 Pha</small><b id="mbStateText" style="color:var(--accent)">🔵 DEMO MODE (Khởi động trắng)</b></div>
+    <div class="mission-item"><small>🎯 Task / Subagent hiện tại</small><b id="mbTaskText" class="redactable">Đang chờ Task thực tế...</b></div>
+    <div class="mission-item"><small>🔧 Thao tác & File mới nhất</small><b id="mbLatestAction" class="redactable">Chưa có sự kiện Hook</b></div>
+    <div class="mission-item"><small>🌐 Cổng Localhost Ứng dụng</small><div id="mbLocalhostWrap"><span style="color:var(--muted)">Tự động dò khi chạy server...</span></div></div>
   </div>
-  <!-- 7-Stage Pipeline Banner -->
+  <table class="tbl-2d"><thead><tr><th>Nhân vật / Khu vực</th><th>Vai trò</th><th>Trạng thái</th><th>Model</th><th>Đọc / Sửa / Lệnh</th><th>Công việc hiện tại</th></tr></thead><tbody id="tbody2d"></tbody></table>
+</section>
+<section class="view-2d" id="taskManagerView" style="margin-top:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px"><h3 style="margin:0;font-size:15.5px">📊 Trung tâm Điều phối Task, Đồ thị Phụ thuộc (DAG) & Hợp đồng Thực thi (v0.3.0)</h3><span class="conn-pill live" id="tmScalePill">Quy mô: Standard · Khóa File (File Lock): BẬT</span></div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:12px;font-size:11.5px;text-align:center">
     <div style="background:#0d1117;border:1px solid #30363d;border-radius:7px;padding:6px"><b>1. USER REQUEST</b><br><span style="color:var(--muted)">Yêu cầu / Backlog</span></div>
     <div style="background:#0d1117;border:1px solid #8957e5;border-radius:7px;padding:6px"><b>2. PM / RISK</b><br><span style="color:#d2a8ff">Chấm điểm rủi ro</span></div>
@@ -648,175 +147,39 @@
     <div style="background:#0d1117;border:1px solid #db61a2;border-radius:7px;padding:6px"><b>6. QA · SEC · LEGAL</b><br><span style="color:#ff9bce">Kiểm thử & Review</span></div>
     <div style="background:#0d1117;border:1px solid #2ea043;border-radius:7px;padding:6px"><b>7. DELIVERY GATE</b><br><span style="color:#56d364">Bằng chứng & Bàn giao</span></div>
   </div>
-  <!-- 4 Quality Metrics Cards -->
-  <div class="gate-grid" style="margin-bottom:12px">
-    <div class="gate-pill"><b id="mSuccessRate">100%</b><span>Task Success Rate</span></div>
-    <div class="gate-pill"><b id="mFirstPass">100%</b><span>First-Pass Rate (0 Rework)</span></div>
-    <div class="gate-pill"><b id="mReworkRate" style="color:#58a6ff">0%</b><span>Rework Rate</span></div>
-    <div class="gate-pill"><b id="mTestPass">100%</b><span>Verified Test Pass Rate</span></div>
-  </div>
-  <table class="tbl-2d">
-    <thead>
-      <tr>
-        <th>Mã Task</th>
-        <th>Tên Task & Module</th>
-        <th>Cấp / Rủi ro</th>
-        <th>Phụ trách</th>
-        <th>Phụ thuộc (DAG)</th>
-        <th>Khóa File (Allowed Paths)</th>
-        <th>Trạng thái</th>
-        <th>Bằng chứng Kiểm định (Gate 6)</th>
-      </tr>
-    </thead>
-    <tbody id="tbodyTasks"></tbody>
-  </table>
-  <div style="margin-top:10px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:9px 12px;font-size:12px">
-    <b style="color:#f0f6fc">🧠 Bộ nhớ 3 Lớp (User Memory · Project Memory · Execution Lessons):</b>
-    <div id="lessonsBox" class="redactable" style="margin-top:5px;color:#c9d1d9;line-height:1.55">
-      • <b>User Memory:</b> <code>.agents/profile.md</code> (Ngôn ngữ Tiếng Việt) · <b>Project Memory:</b> <code>AGENTS.md</code> + <code>docs/CONTEXT.md</code> + <code>docs/TODO.md</code> (Commit bằng tiếng Việt).
-    </div>
-  </div>
+  <div class="gate-grid" style="margin-bottom:12px"><div class="gate-pill"><b id="mSuccessRate">100%</b><span>Task Success Rate</span></div><div class="gate-pill"><b id="mFirstPass">100%</b><span>First-Pass Rate (0 Rework)</span></div><div class="gate-pill"><b id="mReworkRate" style="color:#58a6ff">0%</b><span>Rework Rate</span></div><div class="gate-pill"><b id="mTestPass">100%</b><span>Verified Test Pass Rate</span></div></div>
+  <table class="tbl-2d"><thead><tr><th>Mã Task</th><th>Tên Task & Module</th><th>Cấp / Rủi ro</th><th>Phụ trách</th><th>Phụ thuộc (DAG)</th><th>Khóa File (Allowed Paths)</th><th>Trạng thái</th><th>Bằng chứng Kiểm định (Gate 6)</th></tr></thead><tbody id="tbodyTasks"></tbody></table>
+  <div style="margin-top:10px;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:9px 12px;font-size:12px"><b style="color:#f0f6fc">🧠 Bộ nhớ 3 Lớp (User Memory · Project Memory · Execution Lessons):</b><div id="lessonsBox" class="redactable" style="margin-top:5px;color:#c9d1d9;line-height:1.55">• <b>User Memory:</b> <code>.agents/profile.md</code> (Ngôn ngữ Tiếng Việt) · <b>Project Memory:</b> <code>AGENTS.md</code> + <code>docs/CONTEXT.md</code> + <code>docs/TODO.md</code> (Commit bằng tiếng Việt).</div></div>
 </section>
-
-<!-- Dual-Phase Domain Output Visualizer -->
 <section class="dual-phase" id="dualPhase">
   <div class="phase-card">
-    <h3>
-      <span>📐 Giai đoạn 1: Sau Thiết kế & Kế hoạch (Kỳ vọng / Blueprint)</span>
-      <span class="conn-pill demo" id="p1Tier">Cấp 3 (Tier 3)</span>
-    </h3>
-    <p id="p1Summary" style="color:#c9d1d9;font-size:13.5px;margin:6px 0 10px">
-      Thiết kế kiến trúc Văn phòng AI 3D Chibi kết nối Hook 0-token, tích hợp 10 tinh hoa quản trị và bảng đối chiếu đầu ra 2 giai đoạn.
-    </p>
-    <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;font-size:12.5px">
-      <b style="color:var(--accent);display:block;margin-bottom:6px">📋 Đầu ra kỳ vọng đã cam kết với Boss:</b>
-      <ul id="p1Outputs" style="margin:0;padding-left:18px;line-height:1.65;color:#e6edf3">
-        <li>Sàn 3D Isometric xoay góc -55°..+55° với 10 nhân vật Chibi 3D không viền mặt</li>
-        <li>Click vào từng nhân vật & đồ vật hiện Ngăn Chi tiết 6 chỉ số (Đọc, Sửa, Lệnh, Thời gian, Model, Trạng thái)</li>
-        <li>Hook PreToolUse/PostToolUse tự động che mật khẩu, ngắt vòng lặp kẹt 3x và hiện thẻ Lệnh bị chặn</li>
-        <li>Công tắc Tắt / Tiết kiệm / Chi tiết lưu cấu hình thật vào <code>.agents/office/config.json</code></li>
-      </ul>
-    </div>
+    <h3><span>📐 Giai đoạn 1: Sau Thiết kế & Kế hoạch (Kỳ vọng / Blueprint)</span><span class="conn-pill demo" id="p1Tier">Cấp 3 (Tier 3)</span></h3>
+    <p id="p1Summary" style="color:#c9d1d9;font-size:13.5px;margin:6px 0 10px">Thiết kế kiến trúc Văn phòng AI 3D Chibi kết nối Hook 0-token, tích hợp 10 tinh hoa quản trị và bảng đối chiếu đầu ra 2 giai đoạn.</p>
+    <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;font-size:12.5px"><b style="color:var(--accent);display:block;margin-bottom:6px">📋 Đầu ra kỳ vọng đã cam kết với Boss:</b><ul id="p1Outputs" style="margin:0;padding-left:18px;line-height:1.65;color:#e6edf3"><li>Sàn 3D Isometric xoay góc -55°..+55° với 10 nhân vật Chibi 3D không viền mặt</li><li>Click vào từng nhân vật & đồ vật hiện Ngăn Chi tiết 6 chỉ số (Đọc, Sửa, Lệnh, Thời gian, Model, Trạng thái)</li><li>Hook PreToolUse/PostToolUse tự động che mật khẩu, ngắt vòng lặp kẹt 3x và hiện thẻ Lệnh bị chặn</li><li>Công tắc Tắt / Tiết kiệm / Chi tiết lưu cấu hình thật vào <code>.agents/office/config.json</code></li></ul></div>
   </div>
-
   <div class="phase-card">
-    <h3>
-      <span>✅ Giai đoạn 2: Sau Thực thi & Nghiệm thu (Kết quả thật)</span>
-      <span class="conn-pill live" id="p2Status">4/4 Cổng Đạt</span>
-    </h3>
-    <p id="p2Summary" style="color:#c9d1d9;font-size:13.5px;margin:6px 0 10px">
-      Bằng chứng kiểm định thực tế từ hệ thống sau khi đội AI hoàn thành nhiệm vụ.
-    </p>
-    <div class="gate-grid">
-      <div class="gate-pill"><b id="gTests">PASS</b><span>Tests</span></div>
-      <div class="gate-pill"><b id="gBuild">PASS</b><span>Validate/Build</span></div>
-      <div class="gate-pill"><b id="gSec">PASS</b><span>Bảo mật</span></div>
-      <div class="gate-pill"><b id="gLaw">PASS</b><span>Pháp lý</span></div>
-    </div>
-    <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;font-size:12.5px">
-      <b style="color:var(--green);display:block;margin-bottom:6px">📦 Sản phẩm bàn giao & Bằng chứng:</b>
-      <ul id="p2Deliverables" class="redactable" style="margin:0;padding-left:18px;line-height:1.65;color:#e6edf3">
-        <li><code>office/index.html</code> — Giao diện 3D Chibi + Inspector + 2D + Dual-Phase</li>
-        <li><code>scripts/Sen.psm1</code> & <code>scripts/office-post.ps1</code> — Telemetry 0-token & Secret Redaction</li>
-        <li><code>scripts/start-office.ps1</code> — Local Office Server (127.0.0.1)</li>
-      </ul>
-    </div>
+    <h3><span>✅ Giai đoạn 2: Sau Thực thi & Nghiệm thu (Kết quả thật)</span><span class="conn-pill live" id="p2Status">4/4 Cổng Đạt</span></h3>
+    <p id="p2Summary" style="color:#c9d1d9;font-size:13.5px;margin:6px 0 10px">Bằng chứng kiểm định thực tế từ hệ thống sau khi đội AI hoàn thành nhiệm vụ.</p>
+    <div class="gate-grid"><div class="gate-pill"><b id="gTests">PASS</b><span>Tests</span></div><div class="gate-pill"><b id="gBuild">PASS</b><span>Validate/Build</span></div><div class="gate-pill"><b id="gSec">PASS</b><span>Bảo mật</span></div><div class="gate-pill"><b id="gLaw">PASS</b><span>Pháp lý</span></div></div>
+    <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;font-size:12.5px"><b style="color:var(--green);display:block;margin-bottom:6px">📦 Sản phẩm bàn giao & Bằng chứng:</b><ul id="p2Deliverables" class="redactable" style="margin:0;padding-left:18px;line-height:1.65;color:#e6edf3"><li><code>office/index.html</code> — Giao diện 3D Chibi + Inspector + 2D + Dual-Phase</li><li><code>scripts/Sen.psm1</code> & <code>scripts/office-post.ps1</code> — Telemetry 0-token & Secret Redaction</li><li><code>scripts/start-office.ps1</code> — Local Office Server (127.0.0.1)</li></ul></div>
   </div>
 </section>
-
 <div class="legend" id="legend"></div>
-
-<!-- Token Warning Modal -->
-<div class="mdl" id="mdl">
-  <div class="bx">
-    <h4>⚠️ Chế độ Chi tiết tốn thêm nhiều token</h4>
-    Ở chế độ này, AI tự ghi thêm lời giải thích cho từng bước trao đổi. Ước tính tốn thêm khoảng <b>3.000–12.000 token cho mỗi việc Cấp 3</b>.<br><br>
-    Chế độ Tiết kiệm (mặc định) chỉ hiện thao tác thật từ Hook và <b>tốn 0 token LLM</b>.<br><br>
-    Thay đổi áp dụng từ việc tiếp theo.
-    <div class="act">
-      <button onclick="closeMdl()">Giữ Tiết kiệm</button>
-      <button class="warn" onclick="applyMode('full');closeMdl()">Vẫn bật Chi tiết</button>
-    </div>
-  </div>
-</div>
+<div class="mdl" id="mdl"><div class="bx"><h4>⚠️ Chế độ Chi tiết tốn thêm nhiều token</h4>Ở chế độ này, AI tự ghi thêm lời giải thích cho từng bước trao đổi. Ước tính tốn thêm khoảng <b>3.000–12.000 token cho mỗi việc Cấp 3</b>.<br><br>Chế độ Tiết kiệm (mặc định) chỉ hiện thao tác thật từ Hook và <b>tốn 0 token LLM</b>.<br><br>Thay đổi áp dụng từ việc tiếp theo.<div class="act"><button onclick="closeMdl()">Giữ Tiết kiệm</button><button class="warn" onclick="applyMode('full');closeMdl()">Vẫn bật Chi tiết</button></div></div></div>
 
 <script>
 const R = {
-  user: {
-    n: 'BOSS', role: 'Chủ dự án · Sofa Nhung Đỏ & Xì gà', c: '#d4a017', x: 640, y: 120, boss: true, strong: true,
-    model: 'Human', read: 0, edit: 0, cmd: 3, time: '05m10s',
-    task: 'Giao việc, duyệt phương án & nghiệm thu sản phẩm',
-    files: ['Chỉ thị: "Triển khai Sen Office v0.2.0"', 'Duyệt: Thiết kế Chibi 3D + 10 tinh hoa']
-  },
-  pm: {
-    n: 'PM', role: 'Tech Lead · Blazer Tím & Bộ đàm', c: '#8957e5', x: 380, y: 380, strong: true,
-    hair: 'parted', hairMat: 'hairDark', outfit: 'blazer', prop: 'tablet', screen: 'cmd',
-    model: 'inherit', read: 18, edit: 4, cmd: 6, time: '02m15s',
-    task: 'Điều phối đội Agent theo quy tắc 3 cấp độ của Sen',
-    files: ['Đọc: rules/AGENTS.md', 'Điều phối: Trinh sát -> BA -> Dev -> QA/Sec/Law']
-  },
-  ba: {
-    n: 'BA', role: 'Kiến trúc sư · Tóc Bob & Kính tròn', c: '#db61a2', x: 110, y: 370, female: true,
-    hair: 'bob', hairMat: 'hairBrown', outfit: 'cardigan', glasses: 'round', prop: 'blueprint', screen: 'doc',
-    model: 'inherit', read: 22, edit: 2, cmd: 0, time: '01m45s',
-    task: 'Thiết kế kiến trúc & Lập kế hoạch triển khai',
-    files: ['Ghi: docs/specs/2026-11-06-sen-office-design.md', 'Ghi: docs/specs/2026-11-06-sen-office-plan.md']
-  },
-  r1: {
-    n: 'Trinh sát 1', role: 'Scout 1 · Mũ Beret & Kính lúp', c: '#1f9bb8', x: 80, y: 120,
-    hair: 'cap', hairMat: 'hairDark', outfit: 'scout', prop: 'magnifier', screen: 'search',
-    model: 'flash_lite', read: 34, edit: 0, cmd: 2, time: '00m38s',
-    task: 'Quét nhanh mã nguồn & tìm kiếm theo từ khóa',
-    files: ['Quét: scripts/Sen.psm1', 'Quét: tests/Install.Tests.ps1']
-  },
-  r2: {
-    n: 'Trinh sát 2', role: 'Scout 2 · Kính Goggles & Radar', c: '#0ea5e9', x: 220, y: 120,
-    hair: 'spiky', hairMat: 'hairBrown', outfit: 'scout', glasses: 'goggles', prop: 'radar', screen: 'search',
-    model: 'flash', read: 27, edit: 0, cmd: 3, time: '00m41s',
-    task: 'Khảo sát tài liệu & cấu trúc dự án',
-    files: ['Đọc: CHANGELOG.md', 'Đọc: hooks.json']
-  },
-  fe: {
-    n: 'Dev Frontend', role: 'Kỹ sư UI/3D · Hoodie Xanh & Headphone', c: '#2f81f7', x: 90, y: 620,
-    hair: 'spiky', hairMat: 'hairDark', outfit: 'hoodie', headset: true, prop: 'code', screen: 'code',
-    model: 'inherit', read: 14, edit: 5, cmd: 3, time: '01m24s',
-    task: 'Xây dựng giao diện 3D Chibi, 2D & Bảng mô phỏng',
-    files: ['Ghi: office/index.html', 'Cập nhật: Chibi 3D shading & Floor rings']
-  },
-  be: {
-    n: 'Dev Backend', role: 'Kỹ sư Hệ thống · Tóc xoăn & Kính vuông', c: '#1a5fd0', x: 250, y: 620,
-    hair: 'curly', hairMat: 'hairBrown', outfit: 'hoodie', glasses: 'square', prop: 'coffee', screen: 'code',
-    model: 'pro', read: 19, edit: 6, cmd: 8, time: '02m10s',
-    task: 'Xây dựng State Engine, Hook Telemetry & Local Server',
-    files: ['Sửa: scripts/Sen.psm1', 'Ghi: scripts/office-post.ps1 & scripts/start-office.ps1']
-  },
-  qa: {
-    n: 'Tester', role: 'Kiểm thử viên · Tóc đuôi ngựa & Bìa hồ sơ', c: '#0fbf9f', x: 450, y: 620, female: true,
-    hair: 'ponytail', hairMat: 'hairBrown', outfit: 'qa', prop: 'clipboard', screen: 'test',
-    model: 'inherit', read: 9, edit: 2, cmd: 12, time: '01m50s',
-    task: 'Kiểm thử kịch bản người dùng & chạy Test Suite',
-    files: ['Chạy: tests/run.ps1', 'Kiểm tra: tests/Office.Tests.ps1']
-  },
-  sec: {
-    n: 'Bảo mật', role: 'Security Gate · Kính chắn & Khiên khóa', c: '#e5534b', x: 580, y: 620,
-    hair: 'parted', hairMat: 'hairDark', outfit: 'tactical', glasses: 'visor', prop: 'shield', screen: 'sec',
-    model: 'pro', read: 11, edit: 1, cmd: 4, time: '01m05s',
-    task: 'Canh gác PreToolUse Hook, Chặn vòng lặp & Che mật khẩu',
-    files: ['Canh gác: scripts/guard.ps1', 'Soát: Protect-SenRedactedText']
-  },
-  law: {
-    n: 'Pháp lý', role: 'Legal Gate · Suit Cổ điển & Sổ Luật', c: '#d1782a', x: 700, y: 620,
-    hair: 'parted', hairMat: 'hairSilver', outfit: 'suit', glasses: 'round', prop: 'lawbook', screen: 'doc',
-    model: 'inherit', read: 8, edit: 1, cmd: 1, time: '00m52s',
-    task: 'Soát giấy phép MIT License & tuân thủ pháp lý',
-    files: ['Xác nhận: LICENSE (MIT)', 'Xác nhận: Ghi công tác giả đầy đủ']
-  },
-  sys: {
-    n: 'Hệ thống', role: 'Phòng máy Server Racks & Bằng chứng', c: '#6e7681', x: 640, y: 400,
-    model: 'System', read: 0, edit: 0, cmd: 160, time: '00m18s',
-    task: 'Lưu trữ luồng sự kiện .agents/office/events.jsonl',
-    files: ['Validate-Repo.ps1: 0 errors', 'All automated tests passing']
-  }
+  user: { n: 'BOSS', role: 'Chủ dự án · Sofa Nhung Đỏ & Xì gà', c: '#d4a017', x: 640, y: 120, boss: true, strong: true, model: 'Human', read: 0, edit: 0, cmd: 3, time: '05m10s', task: 'Giao việc, duyệt phương án & nghiệm thu sản phẩm', files: ['Chỉ thị: "Triển khai Sen Office v0.2.0"', 'Duyệt: Thiết kế Chibi 3D + 10 tinh hoa'] },
+  pm: { n: 'PM', role: 'Tech Lead · Blazer Tím & Bộ đàm', c: '#8957e5', x: 380, y: 380, strong: true, hair: 'parted', hairMat: 'hairDark', outfit: 'blazer', prop: 'tablet', screen: 'cmd', model: 'inherit', read: 18, edit: 4, cmd: 6, time: '02m15s', task: 'Điều phối đội Agent theo quy tắc 3 cấp độ của Sen', files: ['Đọc: rules/AGENTS.md', 'Điều phối: Trinh sát -> BA -> Dev -> QA/Sec/Law'] },
+  ba: { n: 'BA', role: 'Kiến trúc sư · Tóc Bob & Kính tròn', c: '#db61a2', x: 110, y: 370, female: true, hair: 'bob', hairMat: 'hairBrown', outfit: 'cardigan', glasses: 'round', prop: 'blueprint', screen: 'doc', model: 'inherit', read: 22, edit: 2, cmd: 0, time: '01m45s', task: 'Thiết kế kiến trúc & Lập kế hoạch triển khai', files: ['Ghi: docs/specs/2026-11-06-sen-office-design.md', 'Ghi: docs/specs/2026-11-06-sen-office-plan.md'] },
+  r1: { n: 'Trinh sát 1', role: 'Scout 1 · Mũ Beret & Kính lúp', c: '#1f9bb8', x: 80, y: 120, hair: 'cap', hairMat: 'hairDark', outfit: 'scout', prop: 'magnifier', screen: 'search', model: 'flash_lite', read: 34, edit: 0, cmd: 2, time: '00m38s', task: 'Quét nhanh mã nguồn & tìm kiếm theo từ khóa', files: ['Quét: scripts/Sen.psm1', 'Quét: tests/Install.Tests.ps1'] },
+  r2: { n: 'Trinh sát 2', role: 'Scout 2 · Kính Goggles & Radar', c: '#0ea5e9', x: 220, y: 120, hair: 'spiky', hairMat: 'hairBrown', outfit: 'scout', glasses: 'goggles', prop: 'radar', screen: 'search', model: 'flash', read: 27, edit: 0, cmd: 3, time: '00m41s', task: 'Khảo sát tài liệu & cấu trúc dự án', files: ['Đọc: CHANGELOG.md', 'Đọc: hooks.json'] },
+  fe: { n: 'Dev Frontend', role: 'Kỹ sư UI/3D · Hoodie Xanh & Headphone', c: '#2f81f7', x: 90, y: 620, hair: 'spiky', hairMat: 'hairDark', outfit: 'hoodie', headset: true, prop: 'code', screen: 'code', model: 'inherit', read: 14, edit: 5, cmd: 3, time: '01m24s', task: 'Xây dựng giao diện 3D Chibi, 2D & Bảng mô phỏng', files: ['Ghi: office/index.html', 'Cập nhật: Chibi 3D shading & Floor rings'] },
+  be: { n: 'Dev Backend', role: 'Kỹ sư Hệ thống · Tóc xoăn & Kính vuông', c: '#1a5fd0', x: 250, y: 620, hair: 'curly', hairMat: 'hairBrown', outfit: 'hoodie', glasses: 'square', prop: 'coffee', screen: 'code', model: 'pro', read: 19, edit: 6, cmd: 8, time: '02m10s', task: 'Xây dựng State Engine, Hook Telemetry & Local Server', files: ['Sửa: scripts/Sen.psm1', 'Ghi: scripts/office-post.ps1 & scripts/start-office.ps1'] },
+  qa: { n: 'Tester', role: 'Kiểm thử viên · Tóc đuôi ngựa & Bìa hồ sơ', c: '#0fbf9f', x: 450, y: 620, female: true, hair: 'ponytail', hairMat: 'hairBrown', outfit: 'qa', prop: 'clipboard', screen: 'test', model: 'inherit', read: 9, edit: 2, cmd: 12, time: '01m50s', task: 'Kiểm thử kịch bản người dùng & chạy Test Suite', files: ['Chạy: tests/run.ps1', 'Kiểm tra: tests/Office.Tests.ps1'] },
+  sec: { n: 'Bảo mật', role: 'Security Gate · Kính chắn & Khiên khóa', c: '#e5534b', x: 580, y: 620, hair: 'parted', hairMat: 'hairDark', outfit: 'tactical', glasses: 'visor', prop: 'shield', screen: 'sec', model: 'pro', read: 11, edit: 1, cmd: 4, time: '01m05s', task: 'Canh gác PreToolUse Hook, Chặn vòng lặp & Che mật khẩu', files: ['Canh gác: scripts/guard.ps1', 'Soát: Protect-SenRedactedText'] },
+  law: { n: 'Pháp lý', role: 'Legal Gate · Suit Cổ điển & Sổ Luật', c: '#d1782a', x: 700, y: 620, hair: 'parted', hairMat: 'hairSilver', outfit: 'suit', glasses: 'round', prop: 'lawbook', screen: 'doc', model: 'inherit', read: 8, edit: 1, cmd: 1, time: '00m52s', task: 'Soát giấy phép MIT License & tuân thủ pháp lý', files: ['Xác nhận: LICENSE (MIT)', 'Xác nhận: Ghi công tác giả đầy đủ'] },
+  sys: { n: 'Hệ thống', role: 'Phòng máy Server Racks & Bằng chứng', c: '#6e7681', x: 640, y: 400, model: 'System', read: 0, edit: 0, cmd: 160, time: '00m18s', task: 'Lưu trữ luồng sự kiện .agents/office/events.jsonl', files: ['Validate-Repo.ps1: 0 errors', 'All automated tests passing'] }
 };
 
 const ZONES = [
@@ -850,198 +213,43 @@ function box(x, y, w, d, h, top, front, side, stroke = '#00000060', z0 = 0) {
 function ringOf(s) { return s === 'alert' ? '#ff7b72' : s === 'done' ? '#3fb950' : s === 'busy' ? '#58a6ff' : 'none'; }
 function tag(r, y) {
   const w = r.n.length * 6.8 + 20;
-  return `<g transform="translate(0,${y})">
-    <rect x="${-w/2}" y="0" width="${w}" height="18" rx="6" fill="#0d1117" stroke="${r.c}" stroke-width="1.5"/>
-    <circle cx="${-w/2 + 8}" cy="9" r="3" fill="${r.c}"/>
-    <text x="4" y="13" text-anchor="middle" fill="#f0f6fc" style="font:${r.strong?700:600} 11.5px system-ui">${r.n}</text>
-  </g>`;
+  return `<g transform="translate(0,${y})"><rect x="${-w/2}" y="0" width="${w}" height="18" rx="6" fill="#0d1117" stroke="${r.c}" stroke-width="1.5"/><circle cx="${-w/2+8}" cy="9" r="3" fill="${r.c}"/><text x="4" y="13" text-anchor="middle" fill="#f0f6fc" style="font:${r.strong?700:600} 11.5px system-ui">${r.n}</text></g>`;
 }
-
-// Chibi 3D Designer-Toy / Pixar Renderer (No face ring; floor status ring under feet)
 function person(k, s) {
-  const r = R[k], [sx, sy] = P(r.x, r.y), ring = ringOf(s), c = r.c;
-  const animClass = (s === 'busy' || s === 'alert') ? 'bob' : 'breathe';
-  const armL = s === 'busy' ? -22 : s === 'alert' ? -45 : -10;
-  const armR = s === 'busy' ? 18 : s === 'alert' ? 42 : 10;
-  const hairUrl = `url(#${r.hairMat || 'hairDark'})`;
-
-  let backHair = '';
-  if (r.hair === 'ponytail') {
-    backHair = `<path d="M9,-76 Q25,-70 21,-50 Q19,-40 23,-34 Q11,-39 10,-54 Z" fill="${hairUrl}"/>
-      <circle cx="11" cy="-74" r="3.8" fill="#f472b6" stroke="#be185d" stroke-width="0.8"/>`;
-  } else if (r.hair === 'bob') {
-    backHair = `<path d="M-15,-64 Q-16,-48 -11,-46 L11,-46 Q16,-48 15,-64 Z" fill="${hairUrl}"/>`;
-  }
-
-  let legs = '';
-  if (r.female && r.outfit === 'qa') {
-    legs = `<rect x="-7" y="-22" width="5.5" height="17" rx="2.5" fill="url(#skin3d)"/>
-      <rect x="1.5" y="-22" width="5.5" height="17" rx="2.5" fill="url(#skin3d)"/>
-      <path d="M-16,-19 Q0,-14 16,-19 L11,-36 L-11,-36 Z" fill="#0d9488" stroke="rgba(0,0,0,.25)"/>`;
-  } else {
-    const pantsCol = r.outfit === 'suit' ? '#1e293b' : '#262c3a';
-    legs = `<rect x="-8.5" y="-24" width="7.2" height="19" rx="3.2" fill="${pantsCol}"/>
-      <rect x="1.3" y="-24" width="7.2" height="19" rx="3.2" fill="${pantsCol}"/>`;
-  }
-  const sneakers = `
-    <g transform="translate(-5,-4)"><ellipse cx="0" cy="0" rx="5.5" ry="3.2" fill="#1f2937"/><path d="M-5.5,1 Q0,3.5 5.5,1 L5.5,3 Q0,5 -5.5,3 Z" fill="#f8fafc"/></g>
-    <g transform="translate(5,-4)"><ellipse cx="0" cy="0" rx="5.5" ry="3.2" fill="#1f2937"/><path d="M-5.5,1 Q0,3.5 5.5,1 L5.5,3 Q0,5 -5.5,3 Z" fill="#f8fafc"/></g>`;
-
+  const r = R[k], [sx, sy] = P(r.x, r.y), ring = ringOf(s), c = r.c, anim = (s === 'busy' || s === 'alert') ? 'bob' : 'breathe';
+  const armL = s === 'busy' ? -22 : s === 'alert' ? -45 : -10, armR = s === 'busy' ? 18 : s === 'alert' ? 42 : 10, hUrl = `url(#${r.hairMat || 'hairDark'})`;
+  const backH = r.hair === 'ponytail' ? `<path d="M9,-76 Q25,-70 21,-50 Q19,-40 23,-34 Q11,-39 10,-54 Z" fill="${hUrl}"/><circle cx="11" cy="-74" r="3.8" fill="#f472b6"/>` : r.hair === 'bob' ? `<path d="M-15,-64 Q-16,-48 -11,-46 L11,-46 Q16,-48 15,-64 Z" fill="${hUrl}"/>` : '';
+  const pCol = r.outfit === 'suit' ? '#1e293b' : '#262c3a';
+  const legs = (r.female && r.outfit === 'qa') ? `<rect x="-7" y="-22" width="5.5" height="17" rx="2.5" fill="url(#skin3d)"/><rect x="1.5" y="-22" width="5.5" height="17" rx="2.5" fill="url(#skin3d)"/><path d="M-16,-19 Q0,-14 16,-19 L11,-36 L-11,-36 Z" fill="#0d9488"/>` : `<rect x="-8.5" y="-24" width="7.2" height="19" rx="3.2" fill="${pCol}"/><rect x="1.3" y="-24" width="7.2" height="19" rx="3.2" fill="${pCol}"/>`;
+  const shoes = `<ellipse cx="-5" cy="-4" rx="5.5" ry="3.2" fill="#1f2937"/><ellipse cx="5" cy="-4" rx="5.5" ry="3.2" fill="#1f2937"/>`;
   let torso = `<path d="M-14,-23 L-12,-51 Q0,-57 12,-51 L14,-23 Q0,-19 -14,-23 Z" fill="${c}" stroke="rgba(0,0,0,.35)" stroke-width="0.9"/>`;
-  if (r.outfit === 'hoodie') {
-    torso += `<path d="M-11,-50 Q0,-45 11,-50" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="2.2"/>
-      <path d="M-8,-25 L-6,-34 L6,-34 L8,-25 Z" fill="rgba(0,0,0,.18)"/>
-      <line x1="-2.5" y1="-48" x2="-3" y2="-39" stroke="#f8fafc" stroke-width="1.3" stroke-linecap="round"/>
-      <line x1="2.5" y1="-48" x2="3" y2="-39" stroke="#f8fafc" stroke-width="1.3" stroke-linecap="round"/>`;
-  } else if (r.outfit === 'blazer' || r.outfit === 'suit') {
-    const tieCol = r.outfit === 'suit' ? '#f59e0b' : '#38bdf8';
-    torso += `<path d="M-5,-51 L0,-35 L5,-51 Z" fill="#f8fafc"/><path d="M-1.5,-49 L0,-34 L1.5,-49 Z" fill="${tieCol}"/>
-      <rect x="4" y="-42" width="5" height="3.5" rx="0.8" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.5"/>`;
-  } else if (r.outfit === 'cardigan') {
-    torso += `<path d="M-5,-51 L0,-23 L5,-51 Z" fill="#fdf2f8"/><circle cx="0" cy="-38" r="1.1" fill="#9d174d"/><circle cx="0" cy="-32" r="1.1" fill="#9d174d"/>`;
-  } else if (r.outfit === 'scout') {
-    torso += `<path d="M-12,-48 L12,-28" stroke="#0f172a" stroke-width="2.5"/><rect x="-4" y="-41" width="8" height="5" rx="1" fill="#e2e8f0" opacity=".85"/>`;
-  } else if (r.outfit === 'tactical') {
-    torso += `<path d="M-10,-48 L10,-48 L8,-26 L-8,-26 Z" fill="#111827" opacity=".55"/><path d="M0,-44 L4,-41 L3,-35 L0,-33 L-3,-35 L-4,-41 Z" fill="url(#goldGrad)"/>`;
-  } else if (r.outfit === 'qa') {
-    torso += `<path d="M-4,-52 L0,-46 L4,-52" fill="#fff"/>`;
-  }
-
-  let rightProp = '';
-  if (r.prop === 'clipboard') {
-    rightProp = `<rect x="11" y="-45" width="11" height="14" rx="1.5" fill="#fef3c7" stroke="#92400e"/><line x1="13" y1="-40" x2="19" y2="-40" stroke="#10b981" stroke-width="1.3"/><line x1="13" y1="-36" x2="19" y2="-36" stroke="#10b981" stroke-width="1.3"/><rect x="14" y="-47" width="5" height="3" fill="#78350f"/>`;
-  } else if (r.prop === 'magnifier') {
-    rightProp = `<line x1="15" y1="-35" x2="21" y2="-29" stroke="#78350f" stroke-width="2.5" stroke-linecap="round"/><circle cx="13" cy="-39" r="5.5" fill="rgba(125,211,252,.35)" stroke="#38bdf8" stroke-width="2"/>`;
-  } else if (r.prop === 'shield') {
-    rightProp = `<path d="M11,-46 L21,-43 L19,-32 L16,-28 L13,-32 Z" fill="#dc2626" stroke="#fef08a" stroke-width="1.4"/>`;
-  } else if (r.prop === 'lawbook') {
-    rightProp = `<rect x="10" y="-45" width="11" height="14" rx="1.5" fill="#7c2d12" stroke="#fcd34d" stroke-width="1"/>`;
-  } else if (r.prop === 'tablet') {
-    rightProp = `<rect x="10" y="-44" width="11" height="13" rx="2" fill="#0f172a" stroke="#a855f7" stroke-width="1.2"/>`;
-  } else if (r.prop === 'blueprint') {
-    rightProp = `<g transform="rotate(-20 15 -38)"><rect x="10" y="-44" width="13" height="5" rx="2.5" fill="#bae6fd" stroke="#0284c7"/></g>`;
-  } else if (r.prop === 'coffee') {
-    rightProp = `<rect x="12" y="-41" width="7" height="8" rx="1.2" fill="#f8fafc" stroke="#cbd5e1"/>`;
-  }
-
-  const arms = `
-    <g transform="rotate(${armL} -13 -48)"><rect x="-18" y="-49" width="6" height="18" rx="3" fill="${c}" stroke="rgba(0,0,0,.25)"/><circle cx="-15" cy="-30" r="3" fill="url(#skin3d)"/></g>
-    <g transform="rotate(${s === 'busy' && rightProp ? -12 : armR} 13 -48)"><rect x="12" y="-49" width="6" height="18" rx="3" fill="${c}" stroke="rgba(0,0,0,.25)"/><circle cx="15" cy="-30" r="3" fill="url(#skin3d)"/>${rightProp}</g>`;
-
-  const mouth = s === 'alert'
-    ? `<circle cx="0" cy="-57.5" r="2" fill="#991b1b"/>`
-    : `<path d="M-3,-58.5 Q0,-56 3,-58.5" stroke="#991b1b" stroke-width="1.35" fill="none" stroke-linecap="round"/>`;
-
-  const head = `
-    <rect x="-3" y="-55" width="6" height="6" rx="2" fill="url(#skin3d)"/>
-    <circle cx="-13.5" cy="-65" r="3.2" fill="url(#skin3d)"/><circle cx="13.5" cy="-65" r="3.2" fill="url(#skin3d)"/>
-    <ellipse cx="0" cy="-66" rx="13.8" ry="13" fill="url(#skin3d)" stroke="rgba(120,65,35,.35)" stroke-width="0.7"/>
-    <ellipse cx="-7.5" cy="-61.5" rx="2.6" ry="1.5" fill="#f43f5e" opacity=".38"/>
-    <ellipse cx="7.5" cy="-61.5" rx="2.6" ry="1.5" fill="#f43f5e" opacity=".38"/>
-    <g class="blink-eye">
-      <ellipse cx="-4.8" cy="-65" rx="2.1" ry="2.4" fill="#111827"/><circle cx="-5.4" cy="-65.9" r="0.85" fill="#fff"/>
-      <ellipse cx="4.8" cy="-65" rx="2.1" ry="2.4" fill="#111827"/><circle cx="4.2" cy="-65.9" r="0.85" fill="#fff"/>
-    </g>
-    <path d="M-7.2,-69.5 Q-4.8,-71 -2.5,-69.5" stroke="#27272a" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-    <path d="M2.5,-69.5 Q4.8,-71 7.2,-69.5" stroke="#27272a" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-    ${mouth}`;
-
-  let frontHair = '';
-  if (r.hair === 'spiky') {
-    frontHair = `<path d="M-14.5,-66 Q-15,-81 -6,-79 L-4,-83 L1,-79 L6,-83 L9,-78 Q15,-79 14.5,-66 Q10,-73 5,-71 L2,-74 L-3,-71 L-8,-74 Z" fill="${hairUrl}"/>`;
-  } else if (r.hair === 'curly') {
-    frontHair = `<path d="M-15,-65 C-17,-76 -8,-83 0,-82 C8,-83 17,-76 15,-65 C12,-72 6,-73 0,-72 C-6,-73 -12,-72 -15,-65 Z" fill="${hairUrl}"/>
-      <circle cx="-9" cy="-76" r="4" fill="${hairUrl}"/><circle cx="0" cy="-78" r="4.5" fill="${hairUrl}"/><circle cx="9" cy="-76" r="4" fill="${hairUrl}"/>`;
-  } else if (r.hair === 'bob') {
-    frontHair = `<path d="M-14.5,-62 Q-15,-80 0,-80 Q15,-80 14.5,-62 Q11,-72 3,-73 Q-5,-70 -14.5,-62 Z" fill="${hairUrl}"/>`;
-  } else if (r.hair === 'ponytail') {
-    frontHair = `<path d="M-14,-64 Q-15,-80 0,-80 Q15,-80 14,-64 Q10,-73 2,-73 Q-5,-69 -14,-64 Z" fill="${hairUrl}"/>`;
-  } else if (r.hair === 'cap') {
-    frontHair = `<path d="M-14.5,-68 Q-14,-81 0,-81 Q14,-81 14.5,-68 Z" fill="#0284c7"/><path d="M-15,-69 Q0,-73 18,-67 Q10,-65 -14,-67 Z" fill="#0369a1"/>`;
-  } else {
-    frontHair = `<path d="M-14.5,-65 Q-15,-80 0,-80 Q15,-80 14.5,-65 Q9,-74 -2,-73 Q-8,-70 -14.5,-65 Z" fill="${hairUrl}"/>`;
-  }
-
-  let faceGear = '';
-  if (r.glasses === 'round') {
-    faceGear += `<circle cx="-5" cy="-65" r="3.8" fill="rgba(255,255,255,.15)" stroke="#fbbf24" stroke-width="1.2"/><circle cx="5" cy="-65" r="3.8" fill="rgba(255,255,255,.15)" stroke="#fbbf24" stroke-width="1.2"/><line x1="-1.2" y1="-65" x2="1.2" y2="-65" stroke="#fbbf24" stroke-width="1.2"/>`;
-  } else if (r.glasses === 'square') {
-    faceGear += `<rect x="-9" y="-68" width="7.5" height="5.5" rx="1.2" fill="rgba(56,189,248,.15)" stroke="#0f172a" stroke-width="1.4"/><rect x="1.5" y="-68" width="7.5" height="5.5" rx="1.2" fill="rgba(56,189,248,.15)" stroke="#0f172a" stroke-width="1.4"/><line x1="-1.5" y1="-65.5" x2="1.5" y2="-65.5" stroke="#0f172a" stroke-width="1.4"/>`;
-  } else if (r.glasses === 'goggles') {
-    faceGear += `<rect x="-11" y="-76" width="9.5" height="5.5" rx="2" fill="#38bdf8" stroke="#0f172a" stroke-width="1.3"/><rect x="1.5" y="-76" width="9.5" height="5.5" rx="2" fill="#38bdf8" stroke="#0f172a" stroke-width="1.3"/>`;
-  } else if (r.glasses === 'visor') {
-    faceGear += `<path d="M-12,-68 Q0,-66 12,-68 L11,-62 Q0,-60 -11,-62 Z" fill="#111827" stroke="#ef4444" stroke-width="1.2"/>`;
-  }
-  if (r.headset) {
-    faceGear += `<path d="M-15,-65 A15,15 0 0,1 15,-65" fill="none" stroke="#38bdf8" stroke-width="2.4"/><rect x="-17.5" y="-69" width="4" height="9" rx="2" fill="#0284c7"/><rect x="13.5" y="-69" width="4" height="9" rx="2" fill="#0284c7"/>`;
-  }
-
-  return `<g class="actor-hit" onclick="selectActor('${k}')" transform="translate(${sx},${sy}) scale(1.15)">
-    <ellipse class="hover-ring" rx="26" ry="10.5" fill="none" stroke="#f0f6fc" stroke-width="1.8" stroke-dasharray="4 3" opacity="${selectedKey === k ? 0.95 : 0}"/>
-    ${ring !== 'none' ? `<ellipse rx="22" ry="8.8" fill="none" stroke="${ring}" stroke-width="2.4" opacity=".88"/>` : ''}
-    <ellipse rx="18" ry="7" fill="rgba(0,0,0,.45)"/>
-    <g class="${animClass}">${backHair}${legs}${sneakers}${torso}${arms}${head}${frontHair}${faceGear}</g>
-    ${tag(r, -102)}
-  </g>`;
+  if (r.outfit === 'hoodie') torso += `<path d="M-11,-50 Q0,-45 11,-50" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="2"/><path d="M-8,-25 L-6,-34 L6,-34 L8,-25 Z" fill="rgba(0,0,0,.18)"/>`;
+  else if (r.outfit === 'blazer' || r.outfit === 'suit') torso += `<path d="M-5,-51 L0,-35 L5,-51 Z" fill="#f8fafc"/><path d="M-1.5,-49 L0,-34 L1.5,-49 Z" fill="${r.outfit==='suit'?'#f59e0b':'#38bdf8'}"/>`;
+  else if (r.outfit === 'cardigan') torso += `<path d="M-5,-51 L0,-23 L5,-51 Z" fill="#fdf2f8"/>`;
+  else if (r.outfit === 'scout') torso += `<path d="M-12,-48 L12,-28" stroke="#0f172a" stroke-width="2.5"/>`;
+  else if (r.outfit === 'tactical') torso += `<path d="M-10,-48 L10,-48 L8,-26 L-8,-26 Z" fill="#111827" opacity=".55"/>`;
+  const props = { clipboard: `<rect x="11" y="-45" width="11" height="14" rx="1.5" fill="#fef3c7" stroke="#92400e"/>`, magnifier: `<circle cx="13" cy="-39" r="5.5" fill="rgba(125,211,252,.35)" stroke="#38bdf8" stroke-width="2"/>`, shield: `<path d="M11,-46 L21,-43 L19,-32 L16,-28 L13,-32 Z" fill="#dc2626" stroke="#fef08a"/>`, lawbook: `<rect x="10" y="-45" width="11" height="14" rx="1.5" fill="#7c2d12" stroke="#fcd34d"/>`, tablet: `<rect x="10" y="-44" width="11" height="13" rx="2" fill="#0f172a" stroke="#a855f7"/>`, blueprint: `<rect x="10" y="-44" width="13" height="5" rx="2.5" fill="#bae6fd" stroke="#0284c7"/>`, coffee: `<rect x="12" y="-41" width="7" height="8" rx="1.2" fill="#f8fafc" stroke="#cbd5e1"/>` };
+  const rp = props[r.prop] || '';
+  const arms = `<g transform="rotate(${armL} -13 -48)"><rect x="-18" y="-49" width="6" height="18" rx="3" fill="${c}"/><circle cx="-15" cy="-30" r="3" fill="url(#skin3d)"/></g><g transform="rotate(${s === 'busy' && rp ? -12 : armR} 13 -48)"><rect x="12" y="-49" width="6" height="18" rx="3" fill="${c}"/><circle cx="15" cy="-30" r="3" fill="url(#skin3d)"/>${rp}</g>`;
+  const mouth = s === 'alert' ? `<circle cx="0" cy="-57.5" r="2" fill="#991b1b"/>` : `<path d="M-3,-58.5 Q0,-56 3,-58.5" stroke="#991b1b" stroke-width="1.35" fill="none"/>`;
+  const head = `<rect x="-3" y="-55" width="6" height="6" rx="2" fill="url(#skin3d)"/><ellipse cx="0" cy="-66" rx="13.8" ry="13" fill="url(#skin3d)"/><g class="blink-eye"><ellipse cx="-4.8" cy="-65" rx="2.1" ry="2.4" fill="#111827"/><circle cx="-5.4" cy="-65.9" r="0.85" fill="#fff"/><ellipse cx="4.8" cy="-65" rx="2.1" ry="2.4" fill="#111827"/><circle cx="4.2" cy="-65.9" r="0.85" fill="#fff"/></g>${mouth}`;
+  const hairs = { spiky: `<path d="M-14.5,-66 Q-15,-81 -6,-79 L-4,-83 L1,-79 L6,-83 L9,-78 Q15,-79 14.5,-66 Q10,-73 5,-71 L2,-74 L-3,-71 L-8,-74 Z" fill="${hUrl}"/>`, curly: `<path d="M-15,-65 C-17,-76 -8,-83 0,-82 C8,-83 17,-76 15,-65 C12,-72 6,-73 0,-72 C-6,-73 -12,-72 -15,-65 Z" fill="${hUrl}"/>`, bob: `<path d="M-14.5,-62 Q-15,-80 0,-80 Q15,-80 14.5,-62 Q11,-72 3,-73 Q-5,-70 -14.5,-62 Z" fill="${hUrl}"/>`, ponytail: `<path d="M-14,-64 Q-15,-80 0,-80 Q15,-80 14,-64 Q10,-73 2,-73 Q-5,-69 -14,-64 Z" fill="${hUrl}"/>`, cap: `<path d="M-14.5,-68 Q-14,-81 0,-81 Q14,-81 14.5,-68 Z" fill="#0284c7"/><path d="M-15,-69 Q0,-73 18,-67 Q10,-65 -14,-67 Z" fill="#0369a1"/>` };
+  const frontH = hairs[r.hair] || `<path d="M-14.5,-65 Q-15,-80 0,-80 Q15,-80 14.5,-65 Q9,-74 -2,-73 Q-8,-70 -14.5,-65 Z" fill="${hUrl}"/>`;
+  const gears = { round: `<circle cx="-5" cy="-65" r="3.8" fill="none" stroke="#fbbf24" stroke-width="1.2"/><circle cx="5" cy="-65" r="3.8" fill="none" stroke="#fbbf24" stroke-width="1.2"/>`, square: `<rect x="-9" y="-68" width="7.5" height="5.5" rx="1.2" fill="none" stroke="#0f172a" stroke-width="1.4"/><rect x="1.5" y="-68" width="7.5" height="5.5" rx="1.2" fill="none" stroke="#0f172a" stroke-width="1.4"/>`, goggles: `<rect x="-11" y="-76" width="9.5" height="5.5" rx="2" fill="#38bdf8" stroke="#0f172a"/><rect x="1.5" y="-76" width="9.5" height="5.5" rx="2" fill="#38bdf8" stroke="#0f172a"/>`, visor: `<path d="M-12,-68 Q0,-66 12,-68 L11,-62 Q0,-60 -11,-62 Z" fill="#111827" stroke="#ef4444"/>` };
+  const gear = (gears[r.glasses] || '') + (r.headset ? `<path d="M-15,-65 A15,15 0 0,1 15,-65" fill="none" stroke="#38bdf8" stroke-width="2.4"/>` : '');
+  return `<g class="actor-hit" onclick="selectActor('${k}')" transform="translate(${sx},${sy}) scale(1.15)"><ellipse class="hover-ring" rx="26" ry="10.5" fill="none" stroke="#f0f6fc" stroke-width="1.8" stroke-dasharray="4 3" opacity="${selectedKey === k ? 0.95 : 0}"/>${ring !== 'none' ? `<ellipse rx="22" ry="8.8" fill="none" stroke="${ring}" stroke-width="2.4" opacity=".88"/>` : ''}<ellipse rx="18" ry="7" fill="rgba(0,0,0,.45)"/><g class="${anim}">${backH}${legs}${shoes}${torso}${arms}${head}${frontH}${gear}</g>${tag(r, -102)}</g>`;
 }
-
-// BOSS Scene: Red Velvet Sofa, Crossed Legs on Coffee Table, Aviator Sunglasses, Cigar
 function bossScene(s) {
-  let out = '';
-  out += poly([P(555,35),P(745,35),P(745,245),P(555,245)], 'rgba(127,29,29,.45)', '#d4a017', 'stroke-width="2.5"');
-  out += poly([P(570,50),P(730,50),P(730,230),P(570,230)], 'none', 'rgba(212,160,23,.5)', 'stroke-dasharray="4 4"');
-  const [lx, ly] = P(562, 52);
-  out += `<text x="${lx}" y="${ly}" fill="#d4a017" style="font:800 13px system-ui">★ GHẾ BOSS</text>`;
-  const [ox, oy] = P(645, 150), glow = ringOf(s);
-  out += `<g class="actor-hit" onclick="selectActor('user')" transform="translate(${ox},${oy}) scale(1.48)">
-    <ellipse cx="10" cy="6" rx="88" ry="16" fill="rgba(0,0,0,.5)"/>
-    ${glow !== 'none' ? `<ellipse cx="0" cy="2" rx="80" ry="14" fill="none" stroke="${glow}" stroke-width="2.5" opacity=".9"/>` : ''}
-    <rect x="-62" y="-80" width="110" height="52" rx="14" fill="url(#velvetBack)"/>
-    <rect x="-58" y="-78" width="102" height="10" rx="5" fill="#991b1b"/>
-    ${[-40,-18,4,26].map(x => `<circle cx="${x}" cy="-55" r="2" fill="#450a0a"/>`).join('')}
-    <rect x="-60" y="-34" width="104" height="26" rx="6" fill="url(#velvetSeat)"/>
-    <rect x="-60" y="-12" width="104" height="12" rx="3" fill="#450a0a"/>
-    <rect x="-74" y="-56" width="20" height="56" rx="9" fill="url(#velvetBack)"/><rect x="38" y="-56" width="20" height="56" rx="9" fill="url(#velvetBack)"/>
-    <rect x="-70" y="0" width="5" height="5" fill="url(#goldGrad)"/><rect x="50" y="0" width="5" height="5" fill="url(#goldGrad)"/>
-    <path d="M60,-8 L118,-8 L112,2 L54,2 Z" fill="#8b5e34"/><path d="M54,2 L112,2 L112,5 L54,5 Z" fill="#5b3d22"/>
-    <rect x="58" y="5" width="3" height="10" fill="#5b3d22"/><rect x="106" y="5" width="3" height="10" fill="#5b3d22"/>
-    <path d="M96,-20 L104,-20 L102,-9 L98,-9 Z" fill="rgba(255,255,255,.35)" stroke="#c9d1d9" stroke-width=".8"/><rect x="98" y="-16" width="4" height="6" fill="#d97706" opacity=".9"/>
-    <ellipse cx="88" cy="-10" rx="6" ry="2" fill="url(#goldGrad)"/><ellipse cx="88" cy="-12" rx="6" ry="2" fill="url(#goldGrad)"/><ellipse cx="88" cy="-14" rx="6" ry="2" fill="#ffd95a"/>
-    <path d="M-20,-30 C0,-32 14,-30 28,-28" stroke="#1f2937" stroke-width="10" stroke-linecap="round" fill="none"/>
-    <path d="M-6,-34 C10,-36 22,-38 32,-36" stroke="#111827" stroke-width="10" stroke-linecap="round" fill="none"/>
-    <path d="M28,-28 C44,-24 58,-20 68,-15" stroke="#1f2937" stroke-width="9" stroke-linecap="round" fill="none"/>
-    <path d="M32,-36 C46,-28 60,-24 72,-22" stroke="#111827" stroke-width="9" stroke-linecap="round" fill="none"/>
-    <ellipse cx="73" cy="-15" rx="7" ry="4" fill="#0a0a0a"/><ellipse cx="77" cy="-23" rx="7" ry="4" fill="#0a0a0a"/>
-    <path d="M-32,-32 L-30,-68 Q-12,-80 8,-68 L10,-32 Z" fill="#111827"/>
-    <path d="M-17,-73 L-11,-50 L-5,-73 Z" fill="#f8fafc"/>
-    <path d="M-12.5,-70 L-11,-48 L-9.5,-70 Z" fill="url(#goldGrad)"/>
-    <path d="M-30,-68 C-42,-72 -52,-76 -62,-77" stroke="#111827" stroke-width="8" stroke-linecap="round" fill="none"/><circle cx="-64" cy="-77" r="4.5" fill="url(#skinBoss)"/>
-    <path d="M7,-66 C14,-58 16,-50 15,-44 C20,-48 24,-53 26,-57" stroke="#111827" stroke-width="8" stroke-linecap="round" fill="none"/>
-    <circle cx="27" cy="-58" r="4.5" fill="url(#skinBoss)"/>
-    <line x1="29" y1="-60" x2="41" y2="-64" stroke="#7c4a1e" stroke-width="3" stroke-linecap="round"/><circle cx="41.5" cy="-64.2" r="1.6" fill="#ff7b29"/>
-    <path class="steam" d="M43,-67 q4,-5 0,-9 q-4,-4 1,-9" stroke="#9ca3af" stroke-width="1.4" fill="none"/>
-    <rect x="-15" y="-80" width="8" height="7" fill="url(#skinBoss)"/>
-    <circle cx="-11" cy="-90" r="13" fill="url(#skinBoss)"/>
-    <path d="M-24,-92 Q-24,-106 -10,-106 Q2,-106 1.5,-93 Q-2,-100 -9,-100 Q-18,-99 -24,-92 Z" fill="url(#hairDark)"/>
-    <path d="M-22,-93 Q-21,-85 -15.5,-85 Q-12,-86 -12,-92 Z" fill="#0b0b0b" stroke="#d4a017" stroke-width="0.9"/>
-    <path d="M-10,-92 Q-10,-86 -5,-85 Q0,-85 0.5,-93 Z" fill="#0b0b0b" stroke="#d4a017" stroke-width="0.9"/>
-    <line x1="-22.5" y1="-93" x2="0.5" y2="-93" stroke="#d4a017" stroke-width="1.2"/>
-    <path d="M-16,-80.5 Q-10,-78 -5,-81.5" stroke="#7a3b2e" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-  </g>
-  <g transform="translate(${ox-16},${oy-182})"><rect x="-34" y="0" width="68" height="19" rx="6" fill="#1c1c1c" stroke="#d4a017" stroke-width="1.5"/><text x="0" y="14" text-anchor="middle" fill="#ffd95a" style="font:800 13px system-ui">★ BOSS ★</text></g>`;
-  return out;
+  const [lx, ly] = P(562, 52), [ox, oy] = P(645, 150), glow = ringOf(s);
+  return poly([P(555,35),P(745,35),P(745,245),P(555,245)], 'rgba(127,29,29,.45)', '#d4a017', 'stroke-width="2.5"') + `<text x="${lx}" y="${ly}" fill="#d4a017" style="font:800 13px system-ui">★ GHẾ BOSS</text><g class="actor-hit" onclick="selectActor('user')" transform="translate(${ox},${oy}) scale(1.48)"><ellipse cx="10" cy="6" rx="88" ry="16" fill="rgba(0,0,0,.5)"/>${glow !== 'none' ? `<ellipse cx="0" cy="2" rx="80" ry="14" fill="none" stroke="${glow}" stroke-width="2.5"/>` : ''}<rect x="-62" y="-80" width="110" height="52" rx="14" fill="url(#velvetBack)"/><rect x="-60" y="-34" width="104" height="26" rx="6" fill="url(#velvetSeat)"/><rect x="-74" y="-56" width="20" height="56" rx="9" fill="url(#velvetBack)"/><rect x="38" y="-56" width="20" height="56" rx="9" fill="url(#velvetBack)"/><path d="M60,-8 L118,-8 L112,2 L54,2 Z" fill="#8b5e34"/><path d="M-32,-32 L-30,-68 Q-12,-80 8,-68 L10,-32 Z" fill="#111827"/><path d="M-12.5,-70 L-11,-48 L-9.5,-70 Z" fill="url(#goldGrad)"/><circle cx="-11" cy="-90" r="13" fill="url(#skinBoss)"/><path d="M-24,-92 Q-24,-106 -10,-106 Q2,-106 1.5,-93 Q-2,-100 -9,-100 Q-18,-99 -24,-92 Z" fill="url(#hairDark)"/></g><g transform="translate(${ox-16},${oy-182})"><rect x="-34" y="0" width="68" height="19" rx="6" fill="#1c1c1c" stroke="#d4a017" stroke-width="1.5"/><text x="0" y="14" text-anchor="middle" fill="#ffd95a" style="font:800 13px system-ui">★ BOSS ★</text></g>`;
 }
-
 function desk(k) {
-  const r = R[k];
-  if (r.boss || k === 'sys') return '';
-  const x = r.x - 32, y = r.y - 56, m = P(r.x - 4, y + 8, 32), cup = P(r.x + 19, y + 12, 20);
-  const st = state[k] || '';
+  const r = R[k]; if (r.boss || k === 'sys') return '';
+  const x = r.x - 32, y = r.y - 56, m = P(r.x - 4, y + 8, 32), cup = P(r.x + 19, y + 12, 20), st = state[k] || '';
   const scrCol = st === 'alert' ? '#ef4444' : st === 'done' ? '#10b981' : st === 'busy' ? '#38bdf8' : '#475569';
   const scrTxt = st === 'alert' ? '!' : r.screen === 'test' ? '✓_' : r.screen === 'search' ? '🔍' : '</>';
   return box(x, y, 64, 28, 16, '#6b5239', '#4a3828', '#3e2f22', '#2a1f15')
-    + `<g transform="translate(${m[0]},${m[1]})"><rect x="-14" y="-11" width="28" height="17" rx="2.5" fill="#0d1117" stroke="${scrCol}" stroke-width="1.4"/><text x="0" y="1" text-anchor="middle" fill="${scrCol}" style="font:700 8.5px ui-monospace,monospace">${scrTxt}</text></g>`
-    + `<g transform="translate(${cup[0]},${cup[1]})"><rect x="-3" y="-5" width="6" height="6.5" rx="1.2" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.7"/><path class="steam" d="M-1,-7 q2,-3 0,-6 M2,-7 q2,-3 0,-6" stroke="#e2e8f0" stroke-width="1" fill="none"/></g>`;
+    + `<g transform="translate(${m[0]},${m[1]})"><rect x="-14" y="-11" width="28" height="17" rx="2.5" fill="#0d1117" stroke="${scrCol}" stroke-width="1.4"/><text x="0" y="1" text-anchor="middle" fill="${scrCol}" style="font:700 8.5px ui-monospace,monospace">${scrTxt}</text></g><g transform="translate(${cup[0]},${cup[1]})"><rect x="-3" y="-5" width="6" height="6.5" rx="1.2" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.7"/><path class="steam" d="M-1,-7 q2,-3 0,-6 M2,-7 q2,-3 0,-6" stroke="#e2e8f0" stroke-width="1" fill="none"/></g>`;
 }
 
 const links = new Map(), bubbles = {};
@@ -1051,444 +259,295 @@ function curve(f, t) { const [a, b] = anchor(f), [c, d] = anchor(t), mx = (a + c
 
 function draw() {
   let s = '';
-  const floorFill = isNight ? '#111726' : '#1a2130';
-  const gridCol = isNight ? '#1e2738' : '#2a3346';
+  const floorFill = isNight ? '#111726' : '#1a2130', gridCol = isNight ? '#1e2738' : '#2a3346';
   s += poly([P(0,0),P(W,0),P(W,W),P(0,W)], floorFill, '#3b4660', 'stroke-width="3"');
   for (let i = 0; i <= W; i += 47.5) {
-    s += `<line x1="${P(i,0)[0]}" y1="${P(i,0)[1]}" x2="${P(i,W)[0]}" y2="${P(i,W)[1]}" stroke="${gridCol}"/>`
-       + `<line x1="${P(0,i)[0]}" y1="${P(0,i)[1]}" x2="${P(W,i)[0]}" y2="${P(W,i)[1]}" stroke="${gridCol}"/>`;
+    s += `<line x1="${P(i,0)[0]}" y1="${P(i,0)[1]}" x2="${P(i,W)[0]}" y2="${P(i,W)[1]}" stroke="${gridCol}"/><line x1="${P(0,i)[0]}" y1="${P(0,i)[1]}" x2="${P(W,i)[0]}" y2="${P(W,i)[1]}" stroke="${gridCol}"/>`;
   }
-  s += poly([P(0,0,0),P(W,0,0),P(W,0,70),P(0,0,70)], isNight ? '#151d2e' : '#202a3c', '#3b4660')
-     + poly([P(0,0,0),P(0,W,0),P(0,W,70),P(0,0,70)], isNight ? '#121928' : '#1c2536', '#3b4660');
-
+  s += poly([P(0,0,0),P(W,0,0),P(W,0,70),P(0,0,70)], isNight ? '#151d2e' : '#202a3c', '#3b4660') + poly([P(0,0,0),P(0,W,0),P(0,W,70),P(0,0,70)], isNight ? '#121928' : '#1c2536', '#3b4660');
   ZONES.forEach(([x,y,w,h,t,propKey]) => {
-    s += `<g class="actor-hit" onclick="selectActor('${propKey}')">`
-       + poly([P(x,y),P(x+w,y),P(x+w,y+h),P(x,y+h)], 'rgba(88,166,255,.04)', 'rgba(139,148,158,.4)', 'stroke-dasharray="6 5"')
-       + `<text x="${P(x+8,y+16)[0]}" y="${P(x+8,y+16)[1]}" fill="#8b949e" style="font:700 12px system-ui">${t}</text></g>`;
+    s += `<g class="actor-hit" onclick="selectActor('${propKey}')">` + poly([P(x,y),P(x+w,y),P(x+w,y+h),P(x,y+h)], 'rgba(88,166,255,.04)', 'rgba(139,148,158,.4)', 'stroke-dasharray="6 5"') + `<text x="${P(x+8,y+16)[0]}" y="${P(x+8,y+16)[1]}" fill="#8b949e" style="font:700 12px system-ui">${t}</text></g>`;
   });
-
-  // Clickable Server Racks in Server Room
-  s += `<g class="actor-hit" onclick="selectActor('sys')">`
-     + box(570,320,40,40,62,'#30363d','#262c36','#1c212a','#58a6ff')
-     + box(640,320,40,40,62,'#30363d','#262c36','#1c212a','#3fb950')
-     + `</g>`;
-
-  const items = Object.keys(R).filter(k => k !== 'sys').map(k => ({ k, d: R[k].boss ? P(645,150)[1] : P(R[k].x,R[k].y)[1] })).sort((a,b) => a.d - b.d);
-  items.forEach(({k}) => { s += R[k].boss ? bossScene(state.user || '') : desk(k) + person(k, state[k] || ''); });
-
+  s += `<g class="actor-hit" onclick="selectActor('sys')">` + box(570,320,40,40,62,'#30363d','#262c36','#1c212a','#58a6ff') + box(640,320,40,40,62,'#30363d','#262c36','#1c212a','#3fb950') + `</g>`;
+  Object.keys(R).filter(k => k !== 'sys').map(k => ({ k, d: R[k].boss ? P(645,150)[1] : P(R[k].x,R[k].y)[1] })).sort((a,b) => a.d - b.d).forEach(({k}) => { s += R[k].boss ? bossScene(state.user || '') : desk(k) + person(k, state[k] || ''); });
   links.forEach(L => {
     const col = L.kind === 'alert' ? '#ff7b72' : L.kind === 'ok' ? '#3fb950' : R[L.f].c, d = curve(L.f, L.t);
-    s += `<path class="glow" d="${d}" stroke="${col}" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${L.off}"/>`
-       + `<path class="link ${L.off === 0 && !L.closing ? 'live' : ''}" d="${d}" stroke="${col}" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${L.off}"/>`;
+    s += `<path class="glow" d="${d}" stroke="${col}" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${L.off}"/><path class="link ${L.off === 0 && !L.closing ? 'live' : ''}" d="${d}" stroke="${col}" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${L.off}"/>`;
   });
-
   Object.entries(bubbles).forEach(([k, txt]) => {
     const [a, b] = R[k].boss ? P(629, 150, 250) : P(R[k].x, R[k].y, 108);
-    const t = txt.length > 36 ? txt.slice(0, 35) + '…' : txt, w = Math.min(240, t.length * 6.4 + 16);
-    const safeT = String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const t = txt.length > 36 ? txt.slice(0, 35) + '…' : txt, w = Math.min(240, t.length * 6.4 + 16), safeT = String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     s += `<g class="bub ${R[k].strong ? 'strong' : ''}" transform="translate(${a},${b})"><rect x="${-w/2}" y="-26" width="${w}" height="24" rx="7"/><path d="M-6,-2 L0,6 L6,-2 Z" fill="#f0f6fc"/><text x="0" y="-10" text-anchor="middle">${safeT}</text></g>`;
   });
-
   document.getElementById('svg').innerHTML = s;
   render2dTable();
 }
 
-const STATE_META = {
-  alert: ['Cảnh báo', '🚨 Cảnh báo', '#ff7b72'],
-  done:  ['Hoàn tất', '✅ Hoàn tất', '#3fb950'],
-  busy:  ['Đang làm', '⚡ Đang làm', '#58a6ff'],
-  idle:  ['Sẵn sàng', '☕ Sẵn sàng', '#58a6ff']
-};
-
-function selectActor(k) {
-  selectedKey = k;
-  const r = R[k] || R.pm;
-  const [stLabel, , stColor] = STATE_META[state[k]] || STATE_META.idle;
-  document.getElementById('insDot').style.background = r.c;
-  document.getElementById('insName').textContent = r.n;
-  document.getElementById('insSub').textContent = r.role;
-  document.getElementById('insRead').textContent = r.read;
-  document.getElementById('insEdit').textContent = r.edit;
-  document.getElementById('insCmd').textContent = r.cmd;
-  document.getElementById('insTime').textContent = r.time;
-  document.getElementById('insModel').textContent = r.model;
-  document.getElementById('insState').textContent = stLabel;
-  document.getElementById('insState').style.color = stColor;
-  document.getElementById('insTask').textContent = r.task;
-  document.getElementById('insFiles').innerHTML = (r.files || []).map(f => `<div style="margin-bottom:4px">• <code>${f}</code></div>`).join('');
-  draw();
-}
-
-function render2dTable() {
-  const tb = document.getElementById('tbody2d');
-  if (!tb) return;
-  tb.innerHTML = Object.entries(R).map(([k, r]) => {
-    const [, stTxt] = STATE_META[state[k]] || STATE_META.idle;
-    return `<tr onclick="selectActor('${k}')" style="cursor:pointer">
-      <td><b style="color:${r.c}">${r.n}</b></td>
-      <td>${r.role}</td>
-      <td>${stTxt}</td>
-      <td><code>${r.model}</code></td>
-      <td><code>${r.read} / ${r.edit} / ${r.cmd}</code></td>
-      <td class="redactable">${r.task}</td>
-    </tr>`;
-  }).join('');
-}
-
-// Time & Comms Helpers
+const STATE_META = { alert: ['Cảnh báo', '🚨 Cảnh báo', '#ff7b72'], done: ['Hoàn tất', '✅ Hoàn tất', '#3fb950'], busy: ['Đang làm', '⚡ Đang làm', '#58a6ff'], idle: ['Sẵn sàng', '☕ Sẵn sàng', '#58a6ff'] };
+const DEMO_R = {}; Object.keys(R).forEach(k => { DEMO_R[k] = { read: R[k].read, edit: R[k].edit, cmd: R[k].cmd, time: R[k].time, model: R[k].model, task: R[k].task, files: [...(R[k].files || [])] }; });
+const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const pad = n => String(n).padStart(2, '0');
 const hms = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 const dur = ms => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${pad(s % 60)}s`; };
+
+function selectActor(k) {
+  selectedKey = k; const r = R[k] || R.pm, [stLabel, , stColor] = STATE_META[state[k]] || STATE_META.idle;
+  document.getElementById('insDot').style.background = r.c;
+  document.getElementById('insName').textContent = r.n; document.getElementById('insSub').textContent = r.role;
+  document.getElementById('insRead').textContent = r.read; document.getElementById('insEdit').textContent = r.edit; document.getElementById('insCmd').textContent = r.cmd;
+  document.getElementById('insTime').textContent = r.time; document.getElementById('insModel').textContent = r.model;
+  document.getElementById('insState').textContent = stLabel; document.getElementById('insState').style.color = stColor;
+  document.getElementById('insTask').textContent = r.task;
+  document.getElementById('insFiles').innerHTML = (r.files || []).map(f => `<div style="margin-bottom:4px">• <code>${escapeHtml(f)}</code></div>`).join('');
+  draw();
+}
+function render2dTable() {
+  const tb = document.getElementById('tbody2d'); if (!tb) return;
+  tb.innerHTML = Object.entries(R).map(([k, r]) => `<tr onclick="selectActor('${k}')" style="cursor:pointer"><td><b style="color:${r.c}">${escapeHtml(r.n)}</b></td><td>${escapeHtml(r.role)}</td><td>${(STATE_META[state[k]] || STATE_META.idle)[1]}</td><td><code>${escapeHtml(r.model)}</code></td><td><code>${r.read} / ${r.edit} / ${r.cmd}</code></td><td class="redactable">${escapeHtml(r.task)}</td></tr>`).join('');
+}
 setInterval(() => {
-  const d = new Date();
-  document.getElementById('clock').textContent = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${hms(d)}`;
-  document.querySelectorAll('.tm[data-start]:not([data-end])').forEach(e => {
-    const sp = e.querySelector('.d');
-    if (sp) sp.textContent = dur(Date.now() - (+e.dataset.start));
-  });
+  const d = new Date(); document.getElementById('clock').textContent = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${hms(d)}`;
+  document.querySelectorAll('.tm[data-start]:not([data-end])').forEach(e => { const sp = e.querySelector('.d'); if (sp) sp.textContent = dur(Date.now() - (+e.dataset.start)); });
   renderLanes();
 }, 1000);
-
 const S = {
-  multi: [
-    [['user','pm','Thêm thanh toán Pro, soát bảo mật + pháp lý.','Giao việc','',1]],
-    [['pm','r1','Quét phần đăng nhập và gói Pro.','Luồng A','',3],['pm','r2','Quét phần API và Webhook.','Luồng B','',3]],
-    [['r1','sys','Đọc licenseAndTiers.ts','Luồng A','',1],['r2','sys','Đọc api/download.js','Luồng B','',1]],
-    [['r1','pm','Gói Pro kiểm tra ở 2 chỗ.','Luồng A','ok',0],['r2','pm','Chưa có route checkout.','Luồng B','ok',0]],
-    [['pm','ba','Viết thiết kế + kế hoạch.','Thiết kế','',2]],
-    [['ba','user','Mời Boss duyệt thiết kế.','Thiết kế','',2]],
-    [['user','pm','Duyệt. Làm đi.','Thiết kế','ok',1]],
-    [['pm','fe','Task 1: màn hình nâng cấp Pro.','Luồng FE','',5],['pm','be','Task 2: API checkout + Webhook.','Luồng BE','',5]],
-    [['fe','sys','Ghi UpgradeModal.tsx, test 3/3','Luồng FE','',1],['be','sys','Ghi checkout.js, test 4/4','Luồng BE','',1]],
-    [['pm','qa','Chạy thử luồng mua Pro từ đầu đến cuối.','Kiểm thử','',4],['pm','sec','Soát bảo mật 2 task.','Kiểm Bảo mật','',4],['pm','law','Soát điều khoản thu tiền.','Kiểm Pháp lý','',4]],
-    [['qa','sys','Chạy 6 kịch bản mua hàng','Kiểm thử','',1],['sec','be','Thiếu kiểm tra chữ ký Webhook!','Kiểm Bảo mật','alert',2],['law','fe','Thiếu dòng gia hạn tự động!','Kiểm Pháp lý','alert',2]],
-    [['be','sys','Thêm kiểm tra chữ ký + test','Luồng BE','',1],['fe','sys','Thêm thông báo gia hạn','Luồng FE','',1]],
-    [['qa','pm','Kiểm thử: 6/6 kịch bản đạt.','Kiểm thử','ok',0],['sec','pm','Bảo mật: đạt.','Kiểm Bảo mật','ok',0],['law','pm','Pháp lý: đạt.','Kiểm Pháp lý','ok',0]],
-    [['pm','user','Xong. 9/9 test, 6/6 kịch bản đạt.','Bàn giao','ok',1]]
-  ],
-  single: [
-    [['user','pm','Thêm nút xuất PDF.','Giao việc','',1]],
-    [['pm','user','Cấp 2: sửa 3 file. Đồng ý?','Luồng chính','',1]],
-    [['user','pm','OK.','Luồng chính','ok',1]],
-    [['pm','sys','Sửa 3 file, test 5/5','Luồng chính','',1]],
-    [['pm','user','Xong.','Bàn giao','ok',1]]
-  ],
-  tier1: [
-    [['user','pm','Đổi nút sang màu xanh.','Giao việc','',1]],
-    [['pm','sys','Sửa style.css','Luồng chính','',1]],
-    [['pm','user','Xong.','Bàn giao','ok',1]]
-  ]
+  multi: [[['user','pm','Thêm thanh toán Pro, soát bảo mật + pháp lý.','Giao việc','',1]],[['pm','r1','Quét phần đăng nhập và gói Pro.','Luồng A','',3],['pm','r2','Quét phần API và Webhook.','Luồng B','',3]],[['r1','sys','Đọc licenseAndTiers.ts','Luồng A','',1],['r2','sys','Đọc api/download.js','Luồng B','',1]],[['r1','pm','Gói Pro kiểm tra ở 2 chỗ.','Luồng A','ok',0],['r2','pm','Chưa có route checkout.','Luồng B','ok',0]],[['pm','ba','Viết thiết kế + kế hoạch.','Thiết kế','',2]],[['ba','user','Mời Boss duyệt thiết kế.','Thiết kế','',2]],[['user','pm','Duyệt. Làm đi.','Thiết kế','ok',1]],[['pm','fe','Task 1: màn hình nâng cấp Pro.','Luồng FE','',5],['pm','be','Task 2: API checkout + Webhook.','Luồng BE','',5]],[['fe','sys','Ghi UpgradeModal.tsx, test 3/3','Luồng FE','',1],['be','sys','Ghi checkout.js, test 4/4','Luồng BE','',1]],[['pm','qa','Chạy thử luồng mua Pro từ đầu đến cuối.','Kiểm thử','',4],['pm','sec','Soát bảo mật 2 task.','Kiểm Bảo mật','',4],['pm','law','Soát điều khoản thu tiền.','Kiểm Pháp lý','',4]],[['qa','sys','Chạy 6 kịch bản mua hàng','Kiểm thử','',1],['sec','be','Thiếu kiểm tra chữ ký Webhook!','Kiểm Bảo mật','alert',2],['law','fe','Thiếu dòng gia hạn tự động!','Kiểm Pháp lý','alert',2]],[['be','sys','Thêm kiểm tra chữ ký + test','Luồng BE','',1],['fe','sys','Thêm thông báo gia hạn','Luồng FE','',1]],[['qa','pm','Kiểm thử: 6/6 kịch bản đạt.','Kiểm thử','ok',0],['sec','pm','Bảo mật: đạt.','Kiểm Bảo mật','ok',0],['law','pm','Pháp lý: đạt.','Kiểm Pháp lý','ok',0]],[['pm','user','Xong. 9/9 test, 6/6 kịch bản đạt.','Bàn giao','ok',1]]],
+  single: [[['user','pm','Thêm nút xuất PDF.','Giao việc','',1]],[['pm','user','Cấp 2: sửa 3 file. Đồng ý?','Luồng chính','',1]],[['user','pm','OK.','Luồng chính','ok',1]],[['pm','sys','Sửa 3 file, test 5/5','Luồng chính','',1]],[['pm','user','Xong.','Bàn giao','ok',1]]],
+  tier1: [[['user','pm','Đổi nút sang màu xanh.','Giao việc','',1]],[['pm','sys','Sửa style.css','Luồng chính','',1]],[['pm','user','Xong.','Bàn giao','ok',1]]]
 };
-
-let mode = 'multi', idx = 0, timer = null, seq = 0, camMode = 'eco', isLiveServer = false, lastEventCount = 0;
-const laneT = {};
-const log = document.getElementById('log'), key = (a, b) => [a, b].sort().join('-');
-
-function finishItems(L) {
-  const now = Date.now();
-  L.items.forEach(id => {
-    const e = document.getElementById(id);
-    if (!e || e.dataset.end) return;
-    e.dataset.end = now;
-    e.innerHTML = `⏱ ${hms(+e.dataset.start)} → <span class="end">${hms(now)}</span> · Tổng: <span class="end">${dur(now - (+e.dataset.start))}</span>`;
-  });
-}
+let mode = 'multi', idx = 0, timer = null, seq = 0, camMode = 'eco', isLiveServer = false;
+let officePhase = 'DEMO_IDLE', hasLiveHistory = false, autoSwitchedTo2d = false, manualDemoActive = false;
+let lastSeenEventId = '', lastLiveActivityMs = 0, cachedLiveState = null, liveSessionEvs = [];
+const laneT = {}, log = document.getElementById('log'), key = (a, b) => [a, b].sort().join('-');
+function finishItems(L) { const now = Date.now(); L.items.forEach(id => { const e = document.getElementById(id); if (e && !e.dataset.end) { e.dataset.end = now; e.innerHTML = `⏱ ${hms(+e.dataset.start)} → <span class="end">${hms(now)}</span> · Tổng: <span class="end">${dur(now - (+e.dataset.start))}</span>`; } }); }
 function openLink(f, t, kind, until, itemId) {
-  const k = key(f, t);
-  if (links.has(k)) {
-    const L = links.get(k);
-    Object.assign(L, { kind, f, t, closing: false });
-    L.until = Math.max(L.until, until);
-    L.items.push(itemId);
-    return;
-  }
-  const L = { f, t, kind, until, off: 100, closing: false, items: [itemId] };
-  links.set(k, L);
-  draw();
-  requestAnimationFrame(() => requestAnimationFrame(() => { L.off = 0; draw(); }));
+  const k = key(f, t); if (links.has(k)) { const L = links.get(k); Object.assign(L, { kind, f, t, closing: false }); L.until = Math.max(L.until, until); L.items.push(itemId); return; }
+  const L = { f, t, kind, until, off: 100, closing: false, items: [itemId] }; links.set(k, L); draw(); requestAnimationFrame(() => requestAnimationFrame(() => { L.off = 0; draw(); }));
 }
-function closeExpired(force) {
-  links.forEach((L, k) => {
-    if ((force || L.until < idx) && !L.closing) {
-      L.closing = true;
-      L.off = -100;
-      finishItems(L);
-      draw();
-      setTimeout(() => { links.delete(k); draw(); }, 900);
-    }
-  });
-}
+function closeExpired(force) { links.forEach((L, k) => { if ((force || L.until < idx) && !L.closing) { L.closing = true; L.off = -100; finishItems(L); draw(); setTimeout(() => { links.delete(k); draw(); }, 900); } }); }
 function renderLanes() {
-  const el = document.getElementById('lanes'), ks = Object.keys(laneT);
-  if (!ks.length) return;
-  const now = Date.now();
-  el.innerHTML = '<h5>Các bước / luồng</h5>' + ks.map(l => {
-    const t = laneT[l], on = !t.end;
-    return `<span class="lane ${on ? 'on' : 'ok'}">${on ? '▶' : '✓'} ${l}<small>${hms(t.start)}${t.end ? ' → ' + hms(t.end) : ''} · ${dur((t.end || now) - t.start)}</small></span>`;
-  }).join('');
+  const el = document.getElementById('lanes'), ks = Object.keys(laneT), now = Date.now();
+  if (!ks.length) { el.innerHTML = '<h5>Các bước / luồng</h5><span class="lane">Chưa có luồng nào</span>'; return; }
+  el.innerHTML = '<h5>Các bước / luồng</h5>' + ks.map(l => { const t = laneT[l], on = !t.end; return `<span class="lane ${on ? 'on' : 'ok'}">${on ? '▶' : '✓'} ${escapeHtml(l)}<small>${hms(t.start)}${t.end ? ' → ' + hms(t.end) : ''} · ${dur((t.end || now) - t.start)}</small></span>`; }).join('');
 }
-
 function step() {
-  const list = S[mode];
-  document.getElementById('replayRange').max = list.length;
-  document.getElementById('replayRange').value = Math.min(idx + 1, list.length);
-  document.getElementById('replayLabel').textContent = `Bước ${Math.min(idx + 1, list.length)}/${list.length}`;
-
-  if (idx >= list.length) {
-    clearInterval(timer);
-    timer = null;
-    closeExpired(true);
-    Object.values(laneT).forEach(t => t.end = t.end || Date.now());
-    renderLanes();
-    return;
-  }
-  closeExpired(false);
-  state = {};
-  for (const k in bubbles) delete bubbles[k];
+  if (hasLiveHistory && !manualDemoActive) { clearInterval(timer); timer = null; return; }
+  const list = S[mode]; document.getElementById('replayRange').max = list.length; document.getElementById('replayRange').value = Math.min(idx + 1, list.length); document.getElementById('replayLabel').textContent = `Bước ${Math.min(idx + 1, list.length)}/${list.length}`;
+  if (idx >= list.length) { clearInterval(timer); timer = null; closeExpired(true); Object.values(laneT).forEach(t => t.end = t.end || Date.now()); renderLanes(); return; }
+  closeExpired(false); state = {}; for (const k in bubbles) delete bubbles[k];
   const msgs = list[idx], now = Date.now(), act = new Set(msgs.map(m => m[3]));
-  Object.entries(laneT).forEach(([l, t]) => {
-    if (!act.has(l) && !t.end && ![...links.values()].some(L => !L.closing && L.lane === l)) t.end = now;
-  });
+  Object.entries(laneT).forEach(([l, t]) => { if (!act.has(l) && !t.end && ![...links.values()].some(L => !L.closing && L.lane === l)) t.end = now; });
   msgs.forEach(([f, t, txt, lane, kind, hold]) => {
-    laneT[lane] = laneT[lane] && !laneT[lane].end ? laneT[lane] : { start: laneT[lane]?.start || now };
-    laneT[lane].end = undefined;
-    state[f] = kind === 'alert' ? 'alert' : kind === 'ok' ? 'done' : 'busy';
-    state[t] = state[t] || (kind === 'ok' ? 'done' : 'busy');
-    const shownTxt = camMode === 'full' ? txt : sayEco(f, t, txt);
+    laneT[lane] = laneT[lane] && !laneT[lane].end ? laneT[lane] : { start: laneT[lane]?.start || now }; laneT[lane].end = undefined;
+    state[f] = kind === 'alert' ? 'alert' : kind === 'ok' ? 'done' : 'busy'; state[t] = state[t] || (kind === 'ok' ? 'done' : 'busy');
+    const shownTxt = camMode === 'full' ? txt : sayEco(f, t, txt), c = kind === 'alert' ? '#ff7b72' : kind === 'ok' ? '#3fb950' : R[f].c, id = 'tm' + (++seq), k = key(f, t);
     bubbles[f] = shownTxt;
-    const c = kind === 'alert' ? '#ff7b72' : kind === 'ok' ? '#3fb950' : R[f].c, id = 'tm' + (++seq);
-    const badgeClass = camMode === 'full' ? 'ev-ai' : 'ev-hook';
-    const badgeText = camMode === 'full' ? '💬 AI giải thích' : '✓ Bằng chứng Hook';
-    log.insertAdjacentHTML('afterbegin', `<div class="it ${R[f].strong ? 'strong' : ''}" style="--c:${c}"><span class="ln">${lane}</span><b>${R[f].n} ➔ ${R[t].n}</b><span class="tx redactable">${shownTxt}</span><span class="md ${badgeClass}">${badgeText}</span><div class="tm" id="${id}" data-start="${now}">⏱ ${hms(now)} → <span class="live">đang trao đổi</span> · <span class="d live">0s</span></div></div>`);
-    const k = key(f, t);
-    if (hold === 0 && links.has(k)) {
-      const L = links.get(k);
-      Object.assign(L, { kind: 'ok', f, t });
-      L.until = idx;
-      L.items.push(id);
-    } else {
-      openLink(f, t, kind, idx + hold - 1, id);
-    }
+    log.insertAdjacentHTML('afterbegin', `<div class="it ${R[f].strong ? 'strong' : ''}" style="--c:${c}"><span class="ln">${lane}</span><b>${R[f].n} ➔ ${R[t].n}</b><span class="tx redactable">${shownTxt}</span><span class="md ${camMode === 'full' ? 'ev-ai' : 'ev-hook'}">${camMode === 'full' ? '💬 AI giải thích' : '✓ Bằng chứng Hook'}</span><div class="tm" id="${id}" data-start="${now}">⏱ ${hms(now)} → <span class="live">đang trao đổi</span> · <span class="d live">0s</span></div></div>`);
+    if (hold === 0 && links.has(k)) { const L = links.get(k); Object.assign(L, { kind: 'ok', f, t }); L.until = idx; L.items.push(id); } else openLink(f, t, kind, idx + hold - 1, id);
     links.get(k).lane = lane;
   });
-  document.getElementById('status').textContent = `Bước ${idx + 1}/${list.length} · Dây đang mở: ${links.size}`;
-  document.getElementById('feedCount').textContent = `${seq} sự kiện`;
-  renderLanes();
-  draw();
-  idx++;
+  document.getElementById('status').textContent = `Bước ${idx + 1}/${list.length} · Dây đang mở: ${links.size}`; document.getElementById('feedCount').textContent = `${seq} sự kiện`; renderLanes(); draw(); idx++;
 }
-
 function triggerDeniedDemo() {
   if (camMode === 'off') return;
-  const now = Date.now(), id = 'tm' + (++seq);
-  state.sec = 'alert';
-  state.pm = 'alert';
-  bubbles.sec = '🛑 Đã chặn lệnh xóa đệ quy!';
-  openLink('sec', 'pm', 'alert', idx + 1, id);
-  const blockedCmd = 'Remove-Item -LiteralPath .\\build -Recurse -Force';
-  log.insertAdjacentHTML('afterbegin', `
-    <div class="it denied-card" style="--c:#e5534b">
-      <span class="ln">Security Gate</span>
-      <b>🛑 BẢO MẬT ➔ PM (LỆNH BỊ CHẶN BỞI GUARD HOOK)</b>
-      <div class="tx redactable" style="margin-top:3px">[SEN GUARD] Chặn lệnh xóa đệ quy: <code>${blockedCmd}</code></div>
-      <button class="copy-btn" onclick="navigator.clipboard?.writeText('${blockedCmd}');this.textContent='✓ Đã chép lệnh'">📋 Chép lệnh để tự chạy tay</button>
-      <div class="tm" id="${id}" data-start="${now}" data-end="${now}">⏱ ${hms(now)} · Chặn tức thì (0ms)</div>
-    </div>`);
+  const now = Date.now(), id = 'tm' + (++seq), blockedCmd = 'Remove-Item -LiteralPath .\\build -Recurse -Force';
+  state.sec = 'alert'; state.pm = 'alert'; bubbles.sec = '🛑 Đã chặn lệnh xóa đệ quy!'; openLink('sec', 'pm', 'alert', idx + 1, id);
+  log.insertAdjacentHTML('afterbegin', `<div class="it denied-card" style="--c:#e5534b"><span class="ln">Security Gate</span><b>🛑 BẢO MẬT ➔ PM (LỆNH BỊ CHẶN BỞI GUARD HOOK)</b><div class="tx redactable" style="margin-top:3px">[SEN GUARD] Chặn lệnh xóa đệ quy: <code>${blockedCmd}</code></div><button class="copy-btn" onclick="navigator.clipboard?.writeText('${blockedCmd}');this.textContent='✓ Đã chép lệnh'">📋 Chép lệnh để tự chạy tay</button><div class="tm" id="${id}" data-start="${now}" data-end="${now}">⏱ ${hms(now)} · Chặn tức thì (0ms)</div></div>`);
   selectActor('sec');
 }
-
-function resetSimulationState() {
-  clearInterval(timer);
-  timer = null;
-  links.clear();
-  state = {};
-  for (const k in bubbles) delete bubbles[k];
-  for (const k in laneT) delete laneT[k];
-  log.innerHTML = '';
-  seq = 0;
-  idx = 0;
-}
-
+function resetSimulationState() { clearInterval(timer); timer = null; links.clear(); state = {}; for (const k in bubbles) delete bubbles[k]; for (const k in laneT) delete laneT[k]; log.innerHTML = ''; seq = 0; idx = 0; }
 function scrubReplay(targetStep) {
-  resetSimulationState();
-  while (idx < targetStep && idx < S[mode].length) {
-    step();
+  if (hasLiveHistory && !manualDemoActive && liveSessionEvs.length > 0) {
+    const cap = Math.max(1, Math.min(targetStep, liveSessionEvs.length));
+    document.getElementById('replayLabel').textContent = `Bước ${cap}/${liveSessionEvs.length} (Thật)`; renderRealSceneFromEvents(liveSessionEvs.slice(0, cap), cachedLiveState); return;
   }
+  resetSimulationState(); while (idx < targetStep && idx < S[mode].length) step();
 }
-
-function setMode(m) {
-  if (m === camMode) return;
-  if (m === 'full') {
-    document.getElementById('mdl').classList.add('show');
-    return;
-  }
-  applyMode(m);
-}
+function setMode(m) { if (m !== camMode) { if (m === 'full') document.getElementById('mdl').classList.add('show'); else applyMode(m); } }
 function closeMdl() { document.getElementById('mdl').classList.remove('show'); }
 function applyMode(m) {
-  camMode = m;
-  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === m));
-  document.getElementById('offov').classList.toggle('show', m === 'off');
+  camMode = m; document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === m)); document.getElementById('offov').classList.toggle('show', m === 'off');
   if (m === 'off') { clearInterval(timer); timer = null; }
-  if (isLiveServer) {
-    fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ mode: m }) }).catch(() => {});
-  }
+  if (isLiveServer) fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ mode: m }) }).catch(() => {});
+  if (hasLiveHistory && !manualDemoActive && cachedLiveState) syncRealTelemetry(cachedLiveState, true);
 }
-
 const DEMO_TASKS = [
   { id: 'TASK-01', title: 'Task Manager, DAG & Execution Contract', module: 'Orchestrator', tier: 3, riskLevel: 'high', assignee: 'be', dependsOn: [], allowedPaths: ['scripts/Sen.psm1'], status: 'done', evidence: { command: 'tests/run.ps1', exitCode: 0, reviewer: 'tester' } },
   { id: 'TASK-02', title: 'Quy trình Backlog (docs/TODO.md)', module: 'Core Rule', tier: 2, riskLevel: 'medium', assignee: 'pm', dependsOn: ['TASK-01'], allowedPaths: ['rules/AGENTS.md', 'docs/TODO.md'], status: 'done', evidence: { command: 'Validate-Repo.ps1', exitCode: 0, reviewer: 'pm' } },
   { id: 'TASK-03', title: 'Chấm điểm Rủi ro (Get-SenTaskRiskScore) & 32 Kịch bản', module: 'Risk Engine', tier: 3, riskLevel: 'high', assignee: 'ba', dependsOn: ['TASK-01'], allowedPaths: ['tests/TierScenarios.Tests.ps1'], status: 'done', evidence: { command: 'tests/run.ps1', exitCode: 0, reviewer: 'tester' } },
   { id: 'TASK-08', title: 'Bảng điều khiển AI Control Center & Metrics', module: 'Sen Office', tier: 2, riskLevel: 'medium', assignee: 'fe', dependsOn: ['TASK-01'], allowedPaths: ['office/index.html'], status: 'done', evidence: { command: 'Validate-Repo.ps1', exitCode: 0, reviewer: 'sec' } }
 ];
-
-const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-
-function renderTaskManager(tasks, metrics, lessons, scale) {
-  const list = (Array.isArray(tasks) && tasks.length > 0) ? tasks : DEMO_TASKS;
-  if (scale) {
-    document.getElementById('tmScalePill').textContent = `Quy mô: ${scale.toUpperCase()} · Khóa File (File Lock): BẬT`;
+function shortRelPath(p, ws) {
+  if (!p) return '';
+  let s = String(p).replace(/\\/g, '/'), w = String(ws || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (w && s.toLowerCase().startsWith(w.toLowerCase() + '/')) s = s.slice(w.length + 1);
+  return s.length > 68 ? '…' + s.slice(-65) : s;
+}
+function detectAppLocalhostUrls(data) {
+  const urls = new Set(), officePort = String(location.port || (data?.config?.port || '47890')), re = /https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})(?:\/[^\s"'<>`,)\\]*)?/gi;
+  [JSON.stringify(data?.showcase || {}), JSON.stringify((data?.tasks || []).slice(-10)), JSON.stringify((data?.events || []).slice(-60))].forEach(txt => { let m; while ((m = re.exec(txt)) !== null) { const port = m[1], num = Number(port); if (port !== officePort && (num < 47890 || num > 47910)) { const clean = m[0].replace(/\\+$/, ''); urls.add(clean.endsWith('/') ? clean : clean + '/'); } } });
+  return [...urls];
+}
+function getSessionEventCluster(evs) {
+  if (!Array.isArray(evs) || !evs.length) return [];
+  let startIdx = Math.max(0, evs.length - 50);
+  for (let i = evs.length - 1; i > 0; i--) { if (Number(evs[i].ts || 0) - Number(evs[i - 1].ts || 0) > 900000) { startIdx = i; break; } }
+  return evs.slice(startIdx);
+}
+function renderTaskManager(tasks, metrics, lessons, scale, sessionEvs, ws) {
+  const useLive = hasLiveHistory && !manualDemoActive; let list = [];
+  if (!useLive) list = (Array.isArray(tasks) && tasks.length > 0) ? tasks : DEMO_TASKS;
+  else {
+    const rawTasks = Array.isArray(tasks) ? [...tasks] : [], activeInTasks = rawTasks.filter(t => t && (t.status === 'in_progress' || t.status === 'reviewing')), sEvs = Array.isArray(sessionEvs) ? sessionEvs : [];
+    if (sEvs.length > 0 && activeInTasks.length === 0) {
+      const edited = [...new Set(sEvs.filter(e => e.tool === 'write_file' || e.tool === 'edit_file').map(e => shortRelPath(e.target, ws)).filter(Boolean))];
+      const subEv = [...sEvs].reverse().find(e => e.tool === 'invoke_subagent'), lastCmd = [...sEvs].reverse().find(e => e.tool === 'run_command'), lastEv = sEvs[sEvs.length - 1];
+      const synthTitle = subEv ? subEv.ecoText : (edited.length ? `Cập nhật trực tiếp: ${edited.slice(0, 3).join(', ')}` : (lastEv.ecoText || 'Phiên làm việc trực tiếp'));
+      const newestTaskTs = rawTasks.length ? Date.parse(rawTasks[rawTasks.length - 1].updatedAt || '') || 0 : 0;
+      if (!rawTasks.length || (Number(lastEv.ts || 0) - newestTaskTs > 60000)) rawTasks.push({ id: 'LIVE-SESSION', title: synthTitle, module: edited[0] ? edited[0].split('/')[0] : 'Live Workspace', tier: 2, riskLevel: 'medium', assignee: lastEv.from || 'be', dependsOn: [], allowedPaths: edited.length ? edited.slice(0, 4) : ['*'], status: officePhase === 'LIVE_STREAMING' ? 'in_progress' : 'done', evidence: { command: lastCmd ? (lastCmd.ecoText || 'hook-verified') : 'hook-telemetry', exitCode: 0, reviewer: 'pm' } });
+    }
+    const prio = { in_progress: 0, reviewing: 1, ready: 2, todo: 3, pending: 4, done: 5, backlog: 6 };
+    list = rawTasks.slice().reverse().sort((a, b) => (prio[a.status] ?? 5) - (prio[b.status] ?? 5)).slice(0, 25);
   }
+  if (scale) document.getElementById('tmScalePill').textContent = `Quy mô: ${scale.toUpperCase()} · Khóa File (File Lock): BẬT`;
   if (metrics) {
-    document.getElementById('mSuccessRate').textContent = `${metrics.taskSuccessRatePct ?? 100}%`;
-    document.getElementById('mFirstPass').textContent = `${metrics.firstPassRatePct ?? 100}%`;
-    document.getElementById('mReworkRate').textContent = `${metrics.reworkRatePct ?? 0}%`;
-    document.getElementById('mTestPass').textContent = `${metrics.testPassRatePct ?? 100}%`;
+    document.getElementById('mSuccessRate').textContent = `${metrics.taskSuccessRatePct ?? 100}%`; document.getElementById('mFirstPass').textContent = `${metrics.firstPassRatePct ?? 100}%`;
+    document.getElementById('mReworkRate').textContent = `${metrics.reworkRatePct ?? 0}%`; document.getElementById('mTestPass').textContent = `${metrics.testPassRatePct ?? 100}%`;
   }
   const tb = document.getElementById('tbodyTasks');
-  if (tb) {
-    tb.innerHTML = list.map(t => {
-      const roleKey = R[t.assignee] ? t.assignee : (t.assignee === 'dev_fe' ? 'fe' : t.assignee === 'dev_be' ? 'be' : 'pm');
-      const rObj = R[roleKey] || R.pm;
-      const deps = Array.isArray(t.dependsOn) && t.dependsOn.length ? escapeHtml(t.dependsOn.join(', ')) : '—';
-      const paths = Array.isArray(t.allowedPaths) && t.allowedPaths.length ? t.allowedPaths.map(p => `<code>${escapeHtml(p)}</code>`).join(' ') : '<code>*</code>';
-      const stCol = t.status === 'done' ? '#3fb950' : t.status === 'in_progress' ? '#58a6ff' : t.status === 'reviewing' ? '#db61a2' : t.status === 'backlog' ? '#8b949e' : '#d29922';
-      const evTxt = (t.evidence && t.evidence.command) ? `<span style="color:#7ee787">✓ ${escapeHtml(t.evidence.command)} (Exit ${escapeHtml(t.evidence.exitCode ?? 0)})</span>` : '<span style="color:var(--muted)">Chờ kiểm thử</span>';
-      return `<tr>
-        <td><b>${escapeHtml(t.id)}</b></td>
-        <td><b>${escapeHtml(t.title)}</b><br><small style="color:var(--muted)">Module: ${escapeHtml(t.module || 'Core')}</small></td>
-        <td>Cấp ${escapeHtml(t.tier || 2)} · <span style="color:#e3b341">${escapeHtml(t.riskLevel || 'medium')}</span></td>
-        <td><span style="color:${rObj.c};font-weight:700">● ${rObj.n}</span></td>
-        <td><code>${deps}</code></td>
-        <td class="redactable">${paths}</td>
-        <td><b style="color:${stCol}">${escapeHtml((t.status || 'ready').toUpperCase())}</b></td>
-        <td class="redactable">${evTxt}</td>
-      </tr>`;
-    }).join('');
-  }
-  if (Array.isArray(lessons) && lessons.length > 0) {
-    const lb = document.getElementById('lessonsBox');
-    if (lb) {
-      lb.innerHTML = lessons.map(l => `• <b>[${escapeHtml(l.category)}]</b> ${escapeHtml(l.problem)} ➔ <span style="color:#7ee787">${escapeHtml(l.solution)}</span>`).join('<br>');
-    }
-  }
+  if (tb) tb.innerHTML = list.map(t => {
+    const roleKey = R[t.assignee] ? t.assignee : (t.assignee === 'dev_fe' ? 'fe' : t.assignee === 'dev_be' ? 'be' : 'pm'), rObj = R[roleKey] || R.pm;
+    const deps = Array.isArray(t.dependsOn) && t.dependsOn.length ? escapeHtml(t.dependsOn.join(', ')) : '—', paths = Array.isArray(t.allowedPaths) && t.allowedPaths.length ? t.allowedPaths.map(p => `<code>${escapeHtml(p)}</code>`).join(' ') : '<code>*</code>';
+    const stCol = t.status === 'done' ? '#3fb950' : t.status === 'in_progress' ? '#58a6ff' : t.status === 'reviewing' ? '#db61a2' : t.status === 'backlog' ? '#8b949e' : '#d29922';
+    const evTxt = (t.evidence && t.evidence.command) ? `<span style="color:#7ee787">✓ ${escapeHtml(t.evidence.command)} (Exit ${escapeHtml(t.evidence.exitCode ?? 0)})</span>` : (t.status === 'in_progress' ? '<span style="color:#58a6ff">⚡ Đang thực thi trực tiếp</span>' : '<span style="color:var(--muted)">Chờ kiểm thử</span>');
+    return `<tr><td><b>${escapeHtml(t.id)}</b></td><td><b>${escapeHtml(t.title)}</b><br><small style="color:var(--muted)">Module: ${escapeHtml(t.module || 'Core')}</small></td><td>Cấp ${escapeHtml(t.tier || 2)} · <span style="color:#e3b341">${escapeHtml(t.riskLevel || 'medium')}</span></td><td><span style="color:${rObj.c};font-weight:700">● ${rObj.n}</span></td><td><code>${deps}</code></td><td class="redactable">${paths}</td><td><b style="color:${stCol}">${escapeHtml((t.status || 'ready').toUpperCase())}</b></td><td class="redactable">${evTxt}</td></tr>`;
+  }).join('');
+  if (Array.isArray(lessons) && lessons.length > 0) { const lb = document.getElementById('lessonsBox'); if (lb) lb.innerHTML = lessons.map(l => `• <b>[${escapeHtml(l.category)}]</b> ${escapeHtml(l.problem)} ➔ <span style="color:#7ee787">${escapeHtml(l.solution)}</span>`).join('<br>'); }
 }
-
+function renderDualPhaseReal(data, sessionEvs, appUrls) {
+  const ws = data?.workspace || '', tks = Array.isArray(data?.tasks) ? data.tasks : [], activeTask = tks.find(t => t && (t.status === 'in_progress' || t.status === 'reviewing')) || tks[tks.length - 1];
+  const edited = [...new Set(sessionEvs.filter(e => e.tool === 'write_file' || e.tool === 'edit_file').map(e => shortRelPath(e.target, ws)).filter(Boolean))], reads = [...new Set(sessionEvs.filter(e => e.tool === 'read_file' || e.tool === 'grep_search').map(e => shortRelPath(e.target || e.ecoText, ws)).filter(Boolean))];
+  const cmds = [...new Set(sessionEvs.filter(e => e.tool === 'run_command').map(e => e.ecoText).filter(Boolean))], rolesUsed = [...new Set(sessionEvs.map(e => R[e.from]?.n || e.from))];
+  const p1TierEl = document.getElementById('p1Tier'); p1TierEl.textContent = officePhase === 'LIVE_STREAMING' ? '🟢 ĐANG THỰC THI' : `🟡 NGỦ ĐÔNG (Cấp ${activeTask?.tier || data?.showcase?.tier || 2})`; p1TierEl.className = officePhase === 'LIVE_STREAMING' ? 'conn-pill live' : 'conn-pill hib';
+  document.getElementById('p1Summary').textContent = activeTask ? `[${activeTask.id}] ${activeTask.title}` : (data?.showcase?.phase1?.summary || 'Phiên thực thi trực tiếp trên Workspace');
+  const p1Items = [];
+  if (activeTask && Array.isArray(activeTask.allowedPaths) && activeTask.allowedPaths.length) p1Items.push(`Phạm vi file mục tiêu: ${activeTask.allowedPaths.join(', ')}`);
+  if (rolesUsed.length) p1Items.push(`Nhân sự tham gia phiên: ${rolesUsed.join(', ')}`);
+  if (reads.length) p1Items.push(`Khảo sát & đọc mã nguồn (${reads.length} mục): ${reads.slice(-4).join(', ')}`);
+  if (data?.showcase?.phase1?.expectedOutputs?.length && !p1Items.length) data.showcase.phase1.expectedOutputs.forEach(x => p1Items.push(x));
+  if (!p1Items.length) p1Items.push('Đang thu thập luồng công việc trực tiếp từ Hook...');
+  document.getElementById('p1Outputs').innerHTML = p1Items.map(x => `<li>${escapeHtml(x)}</li>`).join('');
+  const p2St = document.getElementById('p2Status'); p2St.textContent = officePhase === 'LIVE_STREAMING' ? '⚡ Đang cập nhật trực tiếp' : '✅ Đã lưu Snapshot mới nhất'; p2St.className = officePhase === 'LIVE_STREAMING' ? 'conn-pill live' : 'conn-pill hib';
+  document.getElementById('p2Summary').textContent = `Tổng hợp thực tế từ ${sessionEvs.length} sự kiện trong phiên (${edited.length} file đã sửa, ${cmds.length} lệnh đã chạy).`;
+  const delivHtml = [];
+  appUrls.forEach(u => delivHtml.push(`<li>🌐 <b>Localhost Ứng dụng:</b> <a href="${escapeHtml(u)}" target="_blank" rel="noopener" style="color:#58a6ff;font-weight:700">${escapeHtml(u)} ↗</a></li>`));
+  edited.slice(-8).reverse().forEach(f => delivHtml.push(`<li>✏️ Đã sửa / ghi file: <code>${escapeHtml(f)}</code></li>`));
+  cmds.slice(-5).reverse().forEach(c => delivHtml.push(`<li>💻 Đã thực thi: <code>${escapeHtml(c)}</code></li>`));
+  if (!delivHtml.length && data?.showcase?.phase2?.verifiedOutputs?.length) data.showcase.phase2.verifiedOutputs.forEach(x => delivHtml.push(`<li><code>${escapeHtml(x)}</code></li>`));
+  if (!delivHtml.length) delivHtml.push(`<li>Đã ghi nhận ${sessionEvs.length} sự kiện hệ thống trong phiên hiện tại.</li>`);
+  document.getElementById('p2Deliverables').innerHTML = delivHtml.join('');
+  if (data?.showcase?.phase2?.gates) { const g = data.showcase.phase2.gates; if (g.tests) document.getElementById('gTests').textContent = g.tests; if (g.build) document.getElementById('gBuild').textContent = g.build; if (g.security) document.getElementById('gSec').textContent = g.security; if (g.legal) document.getElementById('gLaw').textContent = g.legal; }
+}
+function renderRealSceneFromEvents(evSlice, data) {
+  const tks = Array.isArray(data?.tasks) ? data.tasks : [], activeTasks = tks.filter(t => t && (t.status === 'in_progress' || t.status === 'reviewing'));
+  Object.keys(R).forEach(k => { R[k].read = 0; R[k].edit = 0; R[k].cmd = 0; R[k].time = '0s'; R[k].files = []; R[k].task = k === 'user' ? 'Giám sát & điều phối phiên thực tế' : k === 'sys' ? `Lưu trữ ${(data?.events || []).length} sự kiện thật (.agents/office/events.jsonl)` : 'Chờ phân công trong phiên hiện tại'; });
+  state = {}; links.clear(); for (const k in bubbles) delete bubbles[k]; for (const k in laneT) delete laneT[k];
+  const minTs = {}, maxTs = {}, evCnt = {}, lastEvByActor = {};
+  evSlice.forEach(ev => {
+    const f = R[ev.from] ? ev.from : 'be', ts = Number(ev.ts || Date.now()), tool = String(ev.tool || ''), msgTxt = camMode === 'full' ? (ev.fullText || ev.ecoText) : (ev.ecoText || tool), fileItem = `[${hms(ts)}] ${msgTxt}`, ln = ev.lane || 'Execution';
+    if (tool === 'read_file' || tool === 'grep_search' || tool === 'find_by_name') R[f].read++; else if (tool === 'write_file' || tool === 'edit_file') R[f].edit++; else R[f].cmd++;
+    if (ev.model && ev.model !== 'inherit') R[f].model = ev.model;
+    minTs[f] = minTs[f] ? Math.min(minTs[f], ts) : ts; maxTs[f] = maxTs[f] ? Math.max(maxTs[f], ts) : ts; evCnt[f] = (evCnt[f] || 0) + 1; lastEvByActor[f] = ev; R[f].task = msgTxt;
+    if (!R[f].files.includes(fileItem)) R[f].files.unshift(fileItem); if (R[f].files.length > 8) R[f].files.length = 8;
+    if (!laneT[ln]) laneT[ln] = { start: ts, end: ts }; else laneT[ln].end = Math.max(laneT[ln].end, ts);
+  });
+  Object.keys(evCnt).forEach(k => { R[k].time = dur(Math.min(Math.max(evCnt[k] * 1800, (maxTs[k] - minTs[k]) + 1500), 3600000)); });
+  const latestTask = activeTasks[0] || tks[tks.length - 1];
+  if (latestTask) {
+    R.user.cmd = activeTasks.length || 1; R.user.time = R.pm.time !== '0s' ? R.pm.time : '01m00s'; R.user.task = `Chỉ thị [${latestTask.id}]: ${latestTask.title}`;
+    R.user.files = [`Task: ${latestTask.id} (${(latestTask.status || 'done').toUpperCase()})`, `Mục tiêu: ${latestTask.title}`];
+    const aKey = R[latestTask.assignee] ? latestTask.assignee : (latestTask.assignee === 'dev_fe' ? 'fe' : latestTask.assignee === 'dev_be' ? 'be' : '');
+    if (aKey && latestTask.status === 'in_progress') R[aKey].task = `🔥 [${latestTask.id}] ${latestTask.title}`;
+  }
+  R.sys.cmd = (data?.events || []).length; R.sys.time = dur(evSlice.length * 1000); R.sys.files = evSlice.slice(-6).reverse().map(e => `[${hms(e.ts || Date.now())}] ${e.ecoText || e.tool}`);
+  const lastEv = evSlice.length ? evSlice[evSlice.length - 1] : null;
+  if (lastEv && officePhase === 'LIVE_STREAMING' && laneT[lastEv.lane || 'Execution']) laneT[lastEv.lane || 'Execution'].end = undefined;
+  Object.keys(lastEvByActor).forEach(k => { const ev = lastEvByActor[k]; bubbles[k] = camMode === 'full' ? (ev.fullText || ev.ecoText) : ev.ecoText; state[k] = ev.kind === 'alert' ? 'alert' : (officePhase === 'LIVE_STREAMING' && lastEv && (k === lastEv.from || k === lastEv.to) ? 'busy' : 'done'); });
+  state.user = officePhase === 'LIVE_STREAMING' ? 'busy' : 'done'; state.sys = officePhase === 'LIVE_STREAMING' ? 'busy' : 'done';
+  evSlice.slice(-3).forEach((ev, i) => {
+    const f = R[ev.from] ? ev.from : 'be', t = R[ev.to] ? ev.to : 'sys', k = key(f, t), lKind = ev.kind === 'alert' ? 'alert' : (officePhase === 'LIVE_STREAMING' && i === evSlice.slice(-3).length - 1 ? '' : 'ok');
+    links.set(k, { f, t, kind: lKind, until: 999, off: 0, closing: officePhase !== 'LIVE_STREAMING', items: [], lane: ev.lane || 'Live' });
+  });
+  renderLanes(); selectActor(selectedKey);
+}
+function syncRealTelemetry(data, forceFullRebuild) {
+  cachedLiveState = data;
+  const allEvs = Array.isArray(data?.events) ? data.events : [], tks = Array.isArray(data?.tasks) ? data.tasks : [], activeTasks = tks.filter(t => t && (t.status === 'in_progress' || t.status === 'reviewing'));
+  liveSessionEvs = getSessionEventCluster(allEvs);
+  const lastEv = allEvs.length ? allEvs[allEvs.length - 1] : null, appUrls = detectAppLocalhostUrls(data), pill = document.getElementById('connPill'), v2dPill = document.getElementById('v2dPhasePill');
+  const mbState = document.getElementById('mbStateText'), mbTask = document.getElementById('mbTaskText'), mbLatest = document.getElementById('mbLatestAction'), mbUrlWrap = document.getElementById('mbLocalhostWrap'), btnResume = document.getElementById('btnResumeLive');
+  if (btnResume) btnResume.style.display = manualDemoActive ? 'inline-block' : 'none';
+  const editedFiles = [...new Set(liveSessionEvs.filter(e => e.tool === 'write_file' || e.tool === 'edit_file').map(e => shortRelPath(e.target, data?.workspace)).filter(Boolean))];
+  const curTaskTitle = activeTasks.length ? `[${activeTasks[0].id}] ${activeTasks[0].title}` : (tks.length ? `[${tks[tks.length - 1].id}] ${tks[tks.length - 1].title}` : (editedFiles.length ? `Cập nhật: ${editedFiles.slice(0, 2).join(', ')}` : (lastEv?.ecoText || 'Phiên làm việc trực tiếp')));
+  if (officePhase === 'LIVE_STREAMING') {
+    pill.textContent = '🟢 LIVE STREAMING (ĐANG THỰC THI)'; pill.className = 'conn-pill live'; v2dPill.textContent = '🟢 ĐANG THỰC THI (LIVE STREAMING)'; v2dPill.className = 'conn-pill live';
+    mbState.textContent = '🟢 LIVE STREAMING (ĐANG THỰC THI)'; mbState.style.color = 'var(--green)'; document.getElementById('status').textContent = `Đang chạy: ${curTaskTitle.slice(0, 58)} · ${allEvs.length} sự kiện thật`;
+  } else {
+    pill.textContent = '🟡 NGỦ ĐÔNG (LƯU TRẠNG THÁI MỚI NHẤT)'; pill.className = 'conn-pill hib'; v2dPill.textContent = '🟡 NGỦ ĐÔNG (SNAPSHOT MỚI NHẤT)'; v2dPill.className = 'conn-pill hib';
+    mbState.textContent = '🟡 NGỦ ĐÔNG (LƯU TRẠNG THÁI MỚI NHẤT)'; mbState.style.color = '#f2cc60'; document.getElementById('status').textContent = `Ngủ đông · Giữ nguyên trạng thái mới nhất (${allEvs.length} sự kiện thật)`;
+  }
+  mbTask.textContent = curTaskTitle;
+  mbLatest.textContent = lastEv ? `[${hms(lastEv.ts || Date.now())}] ${R[lastEv.from]?.n || lastEv.from || 'Agent'}: ${camMode === 'full' ? (lastEv.fullText || lastEv.ecoText) : lastEv.ecoText}` : 'Đang chờ thao tác...';
+  mbUrlWrap.innerHTML = appUrls.length > 0 ? appUrls.map(u => `<a class="localhost-btn" href="${escapeHtml(u)}" target="_blank" rel="noopener">🌐 Mở ${escapeHtml(u)} ↗</a>`).join(' ') : `<a class="localhost-btn" href="${escapeHtml(location.origin + '/')}" target="_blank" rel="noopener">🏢 Office ${escapeHtml(location.host)}</a>`;
+  if (forceFullRebuild) {
+    log.innerHTML = ''; seq = 0;
+    allEvs.slice(-60).forEach(ev => {
+      const f = R[ev.from] ? ev.from : 'be', t = R[ev.to] ? ev.to : 'sys', txt = camMode === 'full' ? (ev.fullText || ev.ecoText) : ev.ecoText, id = 'tm' + (++seq);
+      if (ev.source === 'guard-denied') log.insertAdjacentHTML('afterbegin', `<div class="it denied-card" style="--c:#e5534b"><span class="ln">${escapeHtml(ev.lane || 'Security')}</span><b>🛑 BẢO MẬT ➔ PM (LỆNH BỊ CHẶN)</b><div class="tx redactable">${escapeHtml(txt)}</div><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
+      else log.insertAdjacentHTML('afterbegin', `<div class="it" style="--c:${R[f].c}"><span class="ln">${escapeHtml(ev.lane || 'Live')}</span><b>${R[f].n} ➔ ${R[t].n}</b><span class="tx redactable">${escapeHtml(txt)}</span><span class="md ${camMode === 'full' ? 'ev-ai' : 'ev-hook'}">${camMode === 'full' ? '💬 Chi tiết thật' : '✓ Hook thật'}</span><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
+    });
+    document.getElementById('feedCount').textContent = `${allEvs.length} sự kiện thật`; document.getElementById('replayRange').max = Math.max(1, liveSessionEvs.length); document.getElementById('replayRange').value = Math.max(1, liveSessionEvs.length); document.getElementById('replayLabel').textContent = `Bước ${liveSessionEvs.length}/${liveSessionEvs.length} (Thật)`;
+  }
+  renderRealSceneFromEvents(liveSessionEvs, data); renderTaskManager(data.tasks, data.metrics, data.lessons, data.config ? data.config.scale : 'standard', liveSessionEvs, data.workspace); renderDualPhaseReal(data, liveSessionEvs, appUrls);
+}
 function setView(v) {
-  currentView = v;
-  document.querySelectorAll('#viewModes button').forEach(b => b.classList.toggle('sel', b.dataset.v === v));
-  document.getElementById('main3dWrap').style.display = (v === '3d' || v === 'split') ? 'grid' : 'none';
-  document.getElementById('view2d').classList.toggle('show', v === '2d');
-  document.getElementById('taskManagerView').classList.toggle('show', v === 'tasks' || v === 'split');
-  document.getElementById('dualPhase').classList.toggle('show', v === 'dual' || v === 'split');
+  currentView = v; document.querySelectorAll('#viewModes button').forEach(b => b.classList.toggle('sel', b.dataset.v === v));
+  document.getElementById('main3dWrap').style.display = (v === '3d' || v === 'split') ? 'grid' : 'none'; document.getElementById('view2d').classList.toggle('show', v === '2d' || v === 'split');
+  document.getElementById('taskManagerView').classList.toggle('show', v === 'tasks' || v === 'split'); document.getElementById('dualPhase').classList.toggle('show', v === 'dual' || v === 'split');
 }
-
-function toggleStreamer() {
-  isStreamer = !isStreamer;
-  document.body.classList.toggle('streamer-redact', isStreamer);
-  document.getElementById('btnStreamer').classList.toggle('active-tog', isStreamer);
-}
-
-function toggleNight() {
-  isNight = !isNight;
-  document.getElementById('stageBox').classList.toggle('night', isNight);
-  document.getElementById('btnNight').classList.toggle('active-tog', isNight);
-  document.getElementById('btnNight').textContent = isNight ? '☀️ Ngày' : '🌙 Đêm';
-  draw();
-}
-
+function toggleStreamer() { isStreamer = !isStreamer; document.body.classList.toggle('streamer-redact', isStreamer); document.getElementById('btnStreamer').classList.toggle('active-tog', isStreamer); }
+function toggleNight() { isNight = !isNight; document.getElementById('stageBox').classList.toggle('night', isNight); document.getElementById('btnNight').classList.toggle('active-tog', isNight); document.getElementById('btnNight').textContent = isNight ? '☀️ Ngày' : '🌙 Đêm'; draw(); }
 function sayEco(f, t, txt) { return t === 'sys' ? txt : (R[f].strong ? txt : 'Gửi tin cho ' + R[t].n); }
-function run(m) {
-  if (camMode === 'off') return;
-  resetSimulationState();
-  mode = m;
-  draw();
-  step();
-  timer = setInterval(step, 2600);
+function restoreDemoDefaults() { Object.keys(DEMO_R).forEach(k => { Object.assign(R[k], DEMO_R[k], { files: [...DEMO_R[k].files] }); }); }
+function run(m, isManualClick) {
+  if (camMode === 'off' || (!isManualClick && hasLiveHistory)) return;
+  if (isManualClick) { manualDemoActive = true; const btnResume = document.getElementById('btnResumeLive'); if (btnResume && hasLiveHistory) btnResume.style.display = 'inline-block'; const pill = document.getElementById('connPill'); pill.textContent = '🔵 DEMO THỦ CÔNG'; pill.className = 'conn-pill demo'; }
+  restoreDemoDefaults(); resetSimulationState(); mode = m; draw(); step(); timer = setInterval(step, 2600);
 }
-
-// Live Server Polling (auto-detects http://127.0.0.1:<port>/api/state)
-async function pollLiveServer() {
+function resumeLiveSnapshot() { manualDemoActive = false; clearInterval(timer); timer = null; if (cachedLiveState) syncRealTelemetry(cachedLiveState, true); }
+async function pollLiveServer(isInitialLoad) {
   if (location.protocol === 'file:') return;
   try {
-    const res = await fetch('/api/state', { cache: 'no-store' });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!isLiveServer) {
-      isLiveServer = true;
-      const pill = document.getElementById('connPill');
-      pill.textContent = '🟢 LIVE WORKSPACE';
-      pill.className = 'conn-pill live';
-    }
-    if (data.config && data.config.mode && data.config.mode !== camMode) {
-      camMode = data.config.mode;
-      document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === camMode));
-      document.getElementById('offov').classList.toggle('show', camMode === 'off');
-    }
-    if (Array.isArray(data.events) && data.events.length > lastEventCount) {
-      const newEvs = data.events.slice(lastEventCount);
-      lastEventCount = data.events.length;
-      newEvs.forEach(ev => {
-        const f = R[ev.from] ? ev.from : 'be', t = R[ev.to] ? ev.to : 'sys';
-        state[f] = ev.kind === 'alert' ? 'alert' : 'busy';
-        bubbles[f] = camMode === 'full' ? (ev.fullText || ev.ecoText) : ev.ecoText;
-        const id = 'tm' + (++seq);
-        if (ev.source === 'guard-denied') {
-          log.insertAdjacentHTML('afterbegin', `<div class="it denied-card" style="--c:#e5534b"><span class="ln">${escapeHtml(ev.lane || 'Security')}</span><b>🛑 BẢO MẬT ➔ PM (LỆNH BỊ CHẶN)</b><div class="tx redactable">${escapeHtml(ev.ecoText)}</div><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
-        } else {
-          log.insertAdjacentHTML('afterbegin', `<div class="it" style="--c:${R[f].c}"><span class="ln">${escapeHtml(ev.lane || 'Live')}</span><b>${R[f].n} ➔ ${R[t].n}</b><span class="tx redactable">${escapeHtml(bubbles[f])}</span><span class="md ev-hook">✓ Hook thật</span><div class="tm" id="${id}">⏱ ${hms(ev.ts || Date.now())}</div></div>`);
-        }
-      });
-      document.getElementById('feedCount').textContent = `${lastEventCount} sự kiện thật`;
-      draw();
-    }
-    if (data.showcase) {
-      if (data.showcase.tier) {
-        document.getElementById('p1Tier').textContent = `Cấp ${data.showcase.tier} (Tier ${data.showcase.tier})`;
-      }
-      if (data.showcase.phase1) {
-        if (data.showcase.phase1.summary) document.getElementById('p1Summary').textContent = data.showcase.phase1.summary;
-        if (Array.isArray(data.showcase.phase1.expectedOutputs) && data.showcase.phase1.expectedOutputs.length) {
-          document.getElementById('p1Outputs').innerHTML = data.showcase.phase1.expectedOutputs.map(x => `<li>${escapeHtml(x)}</li>`).join('');
-        }
-      }
-      if (data.showcase.phase2) {
-        if (data.showcase.phase2.summary) document.getElementById('p2Summary').textContent = data.showcase.phase2.summary;
-        if (Array.isArray(data.showcase.phase2.verifiedOutputs) && data.showcase.phase2.verifiedOutputs.length) {
-          document.getElementById('p2Deliverables').innerHTML = data.showcase.phase2.verifiedOutputs.map(x => `<li><code>${escapeHtml(x)}</code></li>`).join('');
-        }
-        if (data.showcase.phase2.gates) {
-          const g = data.showcase.phase2.gates;
-          if (g.tests) document.getElementById('gTests').textContent = g.tests;
-          if (g.build) document.getElementById('gBuild').textContent = g.build;
-          if (g.security) document.getElementById('gSec').textContent = g.security;
-          if (g.legal) document.getElementById('gLaw').textContent = g.legal;
-        }
-      }
-    }
-    if (data.tasks || data.metrics || data.lessons) {
-      renderTaskManager(data.tasks, data.metrics, data.lessons, data.config ? data.config.scale : 'standard');
-    }
-  } catch (e) {}
+    const res = await fetch('/api/state', { cache: 'no-store' }); if (!res.ok) return;
+    const data = await res.json(); isLiveServer = true;
+    if (data.config && data.config.mode && data.config.mode !== camMode) { camMode = data.config.mode; document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === camMode)); document.getElementById('offov').classList.toggle('show', camMode === 'off'); }
+    if (data.quota && data.quota.available && Array.isArray(data.quota.models) && data.quota.models.length) { document.getElementById('quotaPct').textContent = `${data.quota.models[0].pctLeft}%`; document.getElementById('quotaRows').innerHTML = data.quota.models.map(m => `• ${escapeHtml(m.label)}: <b>${escapeHtml(m.pctLeft)}% còn lại</b>`).join('<br>'); }
+    const evs = Array.isArray(data.events) ? data.events : [], tks = Array.isArray(data.tasks) ? data.tasks : [], activeTasks = tks.filter(t => t && (t.status === 'in_progress' || t.status === 'reviewing'));
+    const lastEv = evs.length ? evs[evs.length - 1] : null, lastEvId = lastEv ? String(lastEv.id || lastEv.ts) : '', lastEvTs = lastEv && lastEv.ts ? Number(lastEv.ts) : 0;
+    if (evs.length === 0 && activeTasks.length === 0 && !hasLiveHistory) { officePhase = 'DEMO_IDLE'; const pill = document.getElementById('connPill'); pill.textContent = '🔵 DEMO MODE (CHỜ TASK THẬT)'; pill.className = 'conn-pill demo'; if (isInitialLoad && !timer) run('multi', false); return; }
+    hasLiveHistory = true;
+    const isNewEventArrived = (lastEvId !== '' && lastEvId !== lastSeenEventId), isCompletionEvent = lastEv && (lastEv.tool === 'send_message' || /Complete-SenTaskReview|Test-SenDeliveryGate|Write-SenOfficeShowcase/i.test(String(lastEv.command || lastEv.target || '')));
+    if (isInitialLoad) { lastSeenEventId = lastEvId; if (!isCompletionEvent && (Date.now() - lastEvTs) < 25000) lastLiveActivityMs = lastEvTs; }
+    else if (isNewEventArrived) { lastSeenEventId = lastEvId; manualDemoActive = false; lastLiveActivityMs = (isCompletionEvent && activeTasks.length === 0) ? 0 : Date.now(); }
+    if (!manualDemoActive && timer) { clearInterval(timer); timer = null; }
+    if (!autoSwitchedTo2d) { autoSwitchedTo2d = true; setView('2d'); }
+    const isStreamingNow = (activeTasks.length > 0) || ((Date.now() - lastLiveActivityMs) < 25000), prevPhase = officePhase;
+    officePhase = isStreamingNow ? 'LIVE_STREAMING' : 'HIBERNATED_SNAPSHOT';
+    if (!manualDemoActive) syncRealTelemetry(data, isInitialLoad || isNewEventArrived || (prevPhase !== officePhase));
+  } catch (e) { if (isInitialLoad && !hasLiveHistory && !timer) run('multi', false); }
 }
-
-renderTaskManager(DEMO_TASKS, null, null, 'standard');
-selectActor('pm');
-setTimeout(() => run('multi'), 350);
-if (location.protocol !== 'file:') {
-  setInterval(pollLiveServer, 1500);
-  pollLiveServer();
-}
+renderTaskManager(DEMO_TASKS, null, null, 'standard', [], ''); selectActor('pm');
+if (location.protocol === 'file:') setTimeout(() => run('multi', false), 350); else { pollLiveServer(true); setInterval(() => pollLiveServer(false), 1500); }
 </script>
 </body>
 </html>
