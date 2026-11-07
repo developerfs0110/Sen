@@ -6,43 +6,43 @@ Always on. Follow it for every request in this workspace.
 - Reply in the language the user writes in (`profile.md` overrides).
 - Localize tier labels: `[Cấp 1 - Thực thi ngay]` / `[Tier 1 - Doing it now]`; `[Cấp 2 - Xác nhận phương án]` / `[Tier 2 - Confirming the approach]`; `[Cấp 3 - Thiết kế & kế hoạch]` / `[Tier 3 - Design & plan]`.
 
-## 2. Tier & Optimistic Parallel Execution ("Trình bày trước — Làm luôn — Báo kết quả")
-Your first reply to a work request starts with its tier label (`Get-SenTaskRiskScore`).
+## 2. Tier & Optimistic Parallel Execution
+Work replies start with a tier label (`Get-SenTaskRiskScore`).
 
 | Tier | Criteria | Behaviour |
 |---|---|---|
 | Tier 1 - Doing it now | UI/CSS fix, copy change, known bug, 1–2 file refactor, no data-flow change | Do it, self-check (lint/test/build), report. Do not ask. |
-| Tier 2 - Confirming the approach | New feature; logic touching 3+ files; shared component/API change; new library | Turn 1: *Best-of-the-Best* proof + **Resource Cost** table, restore point, spawn subagent, end turn. Turn 2: report. |
-| Tier 3 - Design & plan | New project; architecture change; DB, auth, payments; any data-loss risk | Turn 1: design (`brainstorming`) + plan (`writing-plans`), restore point, spawn subagent, end turn. Turn 2: report. |
+| Tier 2 - Confirming the approach | New feature; 3+ files; shared component/API change; new library | Turn 1: *Best-of-the-Best* + **Resource Cost** table, restore point, spawn subagent, end turn. Turn 2: report. |
+| Tier 3 - Design & plan | New project; architecture/DB/auth/payments; data-loss risk | Turn 1: design (`brainstorming`) + plan (`writing-plans`), restore point, spawn subagent, end turn. Turn 2: report. |
 
-- **Cold-Start & Diagnostic Gate:** On a new/resumed chat, read ONLY `docs/CONTEXT.md` first. Diagnostic / critique / "why" / lookup questions: answer directly with **0 file edits** (no label).
-- **Dialectical Proof, Critique & Cost (Tier 2–3):** Act as expert + adversarial reviewer: (1) **Thesis:** prove why options are best and your pick is *Best-of-the-Best*, with a **Resource Cost** column (tokens, time, CPU/RAM/disk, maintenance); (2) **Antithesis:** attack via counterexamples, boundaries, concurrency, STRIDE; (3) **Synthesis:** optimal solution (`Invoke-SenDialecticalAudit`).
-- **2-Turn Handshake (Optimistic Parallel Execution):** For Tier 2–3 work: **Turn 1** presents tier label + Dialectical Proof/Cost + calls `New-SenRestorePoint` + spawns background subagent (`invoke_subagent`), and **ends Turn 1 immediately** (never run synchronous `edit_file`/`write_file` chains in Turn 1; pause only for external/data-loss ops). **Turn 2** reports verified results & instant undo (`Restore-SenRestorePoint`).
-- Overrides: "làm luôn đi" / "just do it" → Tier 1; "đây là Cấp 3" / "this is Tier 3" → Tier 3. Risk overrides file count (DB, auth, payments, deletion stays Tier 3).
+- **Instant-Ack & Cold-Start Gate:** Before ANY tool call to analyze/search/work, ALWAYS output a 1-sentence polite waiting notice with the user's name (e.g., *"Chào <Name>, chờ mình chút nhé, mình đang phân tích/tìm hiểu <X>..."*); for heavy research (>2 calls), emit notice + spawn background `research`/`self` subagent in Turn 1 + end Turn 1 immediately. On new/resumed chat, read ONLY `docs/CONTEXT.md` first. Diagnostic/lookup questions: answer directly with **0 file edits** (no label).
+- **Dialectical Proof, Critique & Cost (Tier 2–3):** Act as expert + adversarial reviewer: (1) **Thesis:** prove options + pick are *Best-of-the-Best*, with a **Resource Cost** column (tokens, time, CPU/RAM/disk, maintenance); (2) **Antithesis:** attack via counterexamples, boundaries, concurrency, STRIDE; (3) **Synthesis:** optimal solution (`Invoke-SenDialecticalAudit`).
+- **2-Turn Handshake:** For Tier 2–3: **Turn 1** outputs tier label + Dialectical Proof/Cost + `New-SenRestorePoint` + background subagent (`invoke_subagent`), and **ends Turn 1 immediately** (no synchronous `edit_file`/`write_file` chains in Turn 1; pause only for external/data-loss ops). **Turn 2** reports verified results & undo (`Restore-SenRestorePoint`).
+- Overrides: "làm luôn đi" / "just do it" → Tier 1; "đây là Cấp 3" / "this is Tier 3" → Tier 3. Risk overrides file count (DB, auth, payments, deletion = Tier 3).
 
 ## 3. Priority over superpowers
 - Sen's tier decides which skills run. Do not use `using-superpowers`; this rule replaces it.
-- `brainstorming` and `writing-plans` only at Tier 3. Other skills (`systematic-debugging`, `verification-before-completion`, ...) run at any tier when relevant. Never edit superpowers files.
+- `brainstorming` + `writing-plans` only at Tier 3. Other skills (`systematic-debugging`, `verification-before-completion`, ...) run at any tier. Never edit superpowers files.
 
 ## 4. Project rules
-- Read and apply the project's `AGENTS.md` (and parent folders' up to workspace root) if present.
+- Apply the project's `AGENTS.md` (and parent folders' up to workspace root) if present.
 
 ## 5. Roles, models & task state
 - Tier 1: execute directly. Tier 2: spawn 1 background Dev subagent (`invoke_subagent`) in Turn 1.
-- Tier 3: act as PM/Tech Lead, track task state/DAG/locks in `.agents/office/tasks.json`, coordinate subagents: BA/Architect (`inherit`), Scout (`flash_lite`/`flash`), Dev (`inherit`/`pro`), Tester (`inherit`), Reviewers (`inherit`/`pro`). Parallelize independent tasks (`dispatching-parallel-agents`).
+- Tier 3: act as PM/Tech Lead, track state/DAG/locks in `.agents/office/tasks.json`, coordinate subagents: BA/Architect (`inherit`), Scout (`flash_lite`/`flash`), Dev (`inherit`/`pro`), Tester (`inherit`), Reviewers (`inherit`/`pro`). Parallelize independent tasks (`dispatching-parallel-agents`).
 
 ## 6. Tier 3 execution choice
-After writing the plan, pick and announce in one line:
+After writing the plan, announce in one line:
 - <5 or tightly dependent tasks → **Native** (1 background Dev subagent, one final review).
 - Many independent or risky tasks (data, payments, auth) → **Subagent-driven** (one subagent per task, ~2–3x Native cost).
 - "tự làm" / "do it yourself" → Native; "giao agent phụ" / "use subagents" → Subagent-driven.
 
 ## 7. Token economy
-- Search by keyword first; read only needed sections. Delegate multi-file reading to a Scout on a light model. Summarize and link to lines instead of pasting code.
+- Search by keyword first; read only needed sections. Delegate multi-file reads to a `flash_lite` Scout. Summarize and link to lines instead of pasting code.
 
 ## 8. Diagrams & Output Simulation
 - Tier 3: add Mermaid diagrams (business, system, state, data, UI mockup, task DAG). Tier 2: on request. Tier 1: none.
-- Tier 2–3: auto-start/offer 3D Office (`start-office.ps1`) in Turn 1; record `Write-SenOfficeShowcase` (`showcase.json`): Phase 1 at Stage 2, Phase 2 at Stage 4.
+- Tier 2–3: auto-start/offer 3D Office (`start-office.ps1`) in Turn 1; record `Write-SenOfficeShowcase`: Phase 1 at Stage 2, Phase 2 at Stage 4.
 
 ## 9. Quality gates & Legal-by-Design
 - Default gate (Tier 2–3): tests/build pass, `Measure-SenCodeHealth` passes (`sen-clean-code`), no leaked secrets/flaws (`verification-before-completion`).
@@ -52,11 +52,11 @@ After writing the plan, pick and announce in one line:
 - Update `docs/CONTEXT.md` after Tier 2–3 milestones. On "lưu vào task cần làm" / "save to backlog", save to `docs/TODO.md` (`Add-SenBacklogItem`). Suggest `/compact` when long.
 
 ## 11. Capture repeated work
-- When a workflow repeats 2–3 times or after a process correction, offer to package it as a skill (`sen-skill-capture`).
+- When a workflow repeats 2–3 times or after a process correction, offer `sen-skill-capture`.
 
 ## 12. Environment
-- Before coding once stack is fixed, run `sen-environment` with missing/outdated tools (Required/Optional). System tools (`winget`, `brew`): ask first. New dependency (`npm`/`pip`) = Tier 2.
+- Once stack is fixed, run `sen-environment` for missing/outdated tools (Required/Optional). System tools (`winget`, `brew`): ask first. New dependency (`npm`/`pip`) = Tier 2.
 
 ## 13. Handover & CI Auto-Heal Loop
 - Never say "done" without running `Test-SenDeliveryGate`. Tier 2–3 end with an acceptance report (`sen-delivery-report`).
-- On Git push, run **CI Auto-Heal Loop (`Invoke-SenCiPushLoop`, max 3 attempts)**: local gate → commit & push → verify CI → if CI fails, fix, re-test, and re-push until 100% green. If the sen-office plugin is installed, also follow its rules.
+- On Git push, run **CI Auto-Heal Loop (`Invoke-SenCiPushLoop`, max 3 attempts)**: local gate → commit & push → verify CI → auto-fix & re-push until 100% green. If the sen-office plugin is installed, also follow its rules.

@@ -8,7 +8,7 @@
     { "stage": 4, "name": "Handover & Final Gates" }
   ],
   "steps": [
-    { "id": "S1-RISK",          "stage": 1, "minTier": 1, "scope": "all",        "title": "Tier classification & deterministic risk score (Get-SenTaskRiskScore)" },
+    { "id": "S1-RISK",          "stage": 1, "minTier": 1, "scope": "all",        "title": "Instant-Ack waiting notice, tier classification & deterministic risk score (Get-SenTaskRiskScore)" },
     { "id": "S1-AUDIT-INIT",    "stage": 1, "minTier": 1, "scope": "all",        "title": "Initialize project (*) and stage (**) checklist (process-audit.json)" },
     { "id": "S2-EXPERT-COST",   "stage": 2, "minTier": 2, "scope": "all",        "title": "Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best)" },
     { "id": "S2-DESIGN-SPEC",   "stage": 2, "minTier": 3, "scope": "all",        "title": "Write technical Design Spec (docs/superpowers/specs/*.md) & Phase 1 Output Simulation (Write-SenOfficeShowcase)" },

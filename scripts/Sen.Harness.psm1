@@ -699,7 +699,7 @@ function Test-SenCapabilityParity {
     $missing = [System.Collections.Generic.List[string]]::new()
     $rulePath = Join-Path $root "rules/AGENTS.md"
     $ruleTxt = if (Test-Path -LiteralPath $rulePath) { [System.IO.File]::ReadAllText($rulePath, [System.Text.Encoding]::UTF8) } else { "" }
-    $reqPrims = @("Get-SenTaskRiskScore", "Invoke-SenDialecticalAudit", "New-SenRestorePoint", "Restore-SenRestorePoint", "Write-SenOfficeShowcase", "Measure-SenCodeHealth", "Invoke-SenVnLawScan", "Test-SenDeliveryGate", "Invoke-SenCiPushLoop", "Add-SenBacklogItem")
+    $reqPrims = @("Get-SenTaskRiskScore", "Invoke-SenDialecticalAudit", "New-SenRestorePoint", "Restore-SenRestorePoint", "Write-SenOfficeShowcase", "Measure-SenCodeHealth", "Invoke-SenVnLawScan", "Test-SenDeliveryGate", "Invoke-SenCiPushLoop", "Add-SenBacklogItem", "Instant-Ack")
     foreach ($p in $reqPrims) { if ($ruleTxt -notmatch "\b$([regex]::Escape($p))\b") { $missing.Add("L1-RuleMissingPrimitive:$p") } }
     if ($ruleTxt -match '(?i)\bor inline\b') { $missing.Add("L1-RuleContainsInlineLoophole") }
     $cat = Get-SenProcessCatalog -ManifestPath (Join-Path $root "scripts/process-manifest.json")

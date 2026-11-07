@@ -14,17 +14,17 @@ Test "rules/AGENTS.md exists" {
     Assert-True (Test-Path -LiteralPath $rulePath) "rules/AGENTS.md must exist"
 }
 
-Test "rules/AGENTS.md is at most 6000 bytes" {
+Test "rules/AGENTS.md is at most 5750 bytes" {
     $full = (Resolve-Path -LiteralPath $rulePath).Path
     $len = [System.IO.File]::ReadAllBytes($full).Length
-    Assert-True ($len -le 6000) "rules/AGENTS.md must be <= 6000 bytes (got $len)"
+    Assert-True ($len -le 5750) "rules/AGENTS.md must be <= 5750 bytes (got $len)"
 }
 
-Test "rules/AGENTS.md has fewer than 100 lines" {
+Test "rules/AGENTS.md has at most 95 lines" {
     $text = Get-RuleText
     $lineCount = @($text -split "`n").Count
     if ($text.EndsWith("`n")) { $lineCount-- }
-    Assert-True ($lineCount -lt 100) "rules/AGENTS.md must be < 100 lines (got $lineCount)"
+    Assert-True ($lineCount -le 95) "rules/AGENTS.md must be <= 95 lines (got $lineCount)"
 }
 
 $required = @(
@@ -36,6 +36,7 @@ $required = @(
     "using-superpowers", "Native", "Subagent-driven",
     ("2" + [char]0x2013 + "3"),
     "project's AGENTS.md",
+    "Instant-Ack",
     "If the sen-office plugin is installed, also follow its rules."
 )
 for ($i = 0; $i -lt $required.Count; $i++) {

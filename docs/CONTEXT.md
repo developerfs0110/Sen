@@ -8,11 +8,11 @@
 ---
 
 ## 1. Trạng thái hiện tại
-Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi & Dual-Phase Output Simulation**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, 2-Turn Optimistic Parallel Execution, Dialectical Proof-Critique Loop, Zero-Amnesia 5-Layer Parity Gate, CI Auto-Heal Loop, 2-Way Auto-Sync, 3-Tier Process Compliance Engine & Creative Domain Packs**) đều đã hoàn tất 100%, vượt qua toàn bộ **233/233 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), `Test-SenCapabilityParity` (`5/5` tầng, `71/71` hàm phủ Unit Test `100%`), `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**, và GitHub Actions CI từ xa đạt trạng thái **`success` (100% xanh)**.
+Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.0` Sen Office 3D Chibi & Dual-Phase Output Simulation**, **`v0.3.x` Sen Orchestrator, Clean Code 6D & Legal-by-Design**, và **`v0.4.0` Multi-Harness Adapter, Instant-Ack & 2-Turn Optimistic Parallel Execution, Dialectical Proof-Critique Loop, Zero-Amnesia 5-Layer Parity Gate, CI Auto-Heal Loop, 2-Way Auto-Sync, 3-Tier Process Compliance Engine & Creative Domain Packs**) đều đã hoàn tất 100%, vượt qua toàn bộ **234/234 bài kiểm thử tự động trên 12 bộ test** (`tests/run.ps1` `0` lỗi), `Validate-Repo.ps1` (`0` lỗi), `Test-SenCapabilityParity` (`5/5` tầng, `71/71` hàm phủ Unit Test `100%`), `Measure-SenCodeHealth` đạt điểm tuyệt đối **`100/100`**, và GitHub Actions CI từ xa đạt trạng thái **`success` (100% xanh)**.
 
 ## 2. Các quyết định thiết kế đã chốt (`v0.1.0` → `v0.4.0`)
-- **Giao thức Thực thi Song song 2 Nhịp (`2-Turn Handshake` — "Trình bày trước — Làm luôn — Báo kết quả"), Cổng Chặn `Pre-Edit Restore Point` & Cold-Start 1-File (`TASK-15`, `TASK-17` — [rules/AGENTS.md](../rules/AGENTS.md)):**
-  - **Cold-Start & Diagnostic Gate:** Khi mở phiên mới chỉ đọc duy nhất `docs/CONTEXT.md`; câu hỏi chẩn đoán/phản biện/tra cứu trả lời thẳng với `0 file edits`.
+- **Giao thức Phản hồi Chờ Lịch sự Tức thì (`Instant-Ack`), Thực thi Song song 2 Nhịp (`2-Turn Handshake` — "Trình bày trước — Làm luôn — Báo kết quả"), Cổng Chặn `Pre-Edit Restore Point` & Cold-Start 1-File (`TASK-15`, `TASK-17`, `TASK-19` — [rules/AGENTS.md](../rules/AGENTS.md)):**
+  - **Instant-Ack & Cold-Start Gate:** Trước khi gọi bất kỳ công cụ nào để phân tích, tìm kiếm hoặc làm việc, luôn phát ngay 1 câu thông báo chờ lịch sự có tên người dùng (ví dụ: *"Chào anh Gấu, chờ mình chút nhé, mình đang phân tích/tìm hiểu <X>..."*); với tác vụ nghiên cứu nặng (>2 lần gọi tool), phát thông báo chờ, khởi chạy Subagent nền (`research`/`self`) ở Turn 1 và kết thúc Turn 1 ngay lập tức. Khi mở phiên mới chỉ đọc duy nhất `docs/CONTEXT.md`; câu hỏi chẩn đoán/tra cứu trả lời thẳng với `0 file edits`.
   - **2-Turn Handshake (Xóa bỏ `"or inline"`):** Với yêu cầu Cấp 2–3, **Turn 1** trình bày phân tích *Best-of-the-Best* + Phản biện 7 mũi nhọn (`Invoke-SenDialecticalAudit`) + bảng **Tài nguyên tiêu tốn (Resource Cost)**, chụp điểm khôi phục (`New-SenRestorePoint`), khởi chạy Subagent nền (`invoke_subagent`) và **kết thúc Turn 1 ngay lập tức** để người dùng đọc ngay trên màn hình; **Turn 2** báo cáo kết quả đã kiểm chứng kèm lệnh hoàn tác (`Restore-SenRestorePoint`).
   - **Khóa Đẳng Cấu 5 Tầng (`Test-SenCapabilityParity`) & Mô phỏng Output 2 Giai đoạn (`Write-SenOfficeShowcase`):** Tự động kiểm tra đối chiếu 5 tầng trong `Validate-Repo.ps1` và tự động đồng bộ 0-token `.agents/office/showcase.json` (Phase 1 ở `S2-DESIGN-SPEC`, Phase 2 ở `S4-CONTEXT-REPORT`).
 - **Vòng lặp Tự động Commit/Push & Tự Chữa Lành CI Từ Xa (`TASK-16` — `Get-SenRemoteCiStatus` & `Invoke-SenCiPushLoop` trong [Sen.Harness.psm1](../scripts/Sen.Harness.psm1)):**
@@ -31,7 +31,7 @@ Toàn bộ 4 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.
 ## 3. Các cổng chất lượng đã kiểm chứng
 - `scripts/Validate-Repo.ps1` & `Test-SenCapabilityParity`: **ĐẠT (0 lỗi, 5/5 tầng đẳng cấu)** (`rules/AGENTS.md` <= 5.750 bytes & <= 95 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`).
 - `Measure-SenCodeHealth`: **ĐẠT (`Healthy = True`, `Score = 100/100` trên 28 tệp mã nguồn)**.
-- `tests/run.ps1`: **ĐẠT (233 / 233 bài kiểm thử trên 12 bộ test, 71/71 hàm phủ Unit Test 100%)**.
+- `tests/run.ps1`: **ĐẠT (234 / 234 bài kiểm thử trên 12 bộ test, 71/71 hàm phủ Unit Test 100%)**.
 
 ## 4. Bước tiếp theo & Danh sách Việc cần làm (`docs/TODO.md`)
-- Toàn bộ 18 hạng mục (`TASK-01` → `TASK-18`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
+- Toàn bộ 19 hạng mục (`TASK-01` → `TASK-19`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`.
