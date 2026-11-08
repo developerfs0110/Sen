@@ -117,12 +117,10 @@ function Build-SenHarnessBridgeText {
 function Install-SenHarnessHookFile {
   param([string]$Workspace, [string]$HarnessId, [string]$HookRelPath)
   if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
-  $fullP = Join-Path $Workspace $HookRelPath
-  $isWin = ($env:OS -eq "Windows_NT")
-  $gRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { if ($isWin) { ".agents/plugins/sen-method/scripts/guard.ps1" } else { ".agents/plugins/sen-method/scripts/guard.sh" } } else { if ($isWin) { "scripts/guard.ps1" } else { "scripts/guard.sh" } }
-  $pRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/office-post.ps1")) { if ($isWin) { ".agents/plugins/sen-method/scripts/office-post.ps1" } else { ".agents/plugins/sen-method/scripts/office-post.sh" } } else { if ($isWin) { "scripts/office-post.ps1" } else { "scripts/office-post.sh" } }
-  $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $gRel" } else { "sh $gRel" }
-  $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pRel" } else { "sh $pRel" }
+  $fullP = Join-Path $Workspace $HookRelPath; $isWin = ($env:OS -eq "Windows_NT"); $ext = if ($isWin) { "ps1" } else { "sh" }
+  $pBase = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts" } else { "scripts" }
+  $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/guard.$ext" } else { "sh $pBase/guard.$ext" }
+  $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/office-post.$ext" } else { "sh $pBase/office-post.$ext" }
   if ($HarnessId -eq "antigravity") {
     if (-not (Test-Path -LiteralPath $fullP)) {
       $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
@@ -136,8 +134,7 @@ function Install-SenHarnessHookFile {
   if (-not $rHash.ContainsKey("hooks") -or $rHash["hooks"] -isnot [hashtable]) { $rHash["hooks"] = @{} }
   $rHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|run_command|write_file|edit_file|read_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) })
   $rHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) })
-  Write-SenAtomicJson -Path $fullP -InputObject $rHash -Depth 10
-  return $fullP
+  Write-SenAtomicJson -Path $fullP -InputObject $rHash -Depth 10; return $fullP
 }
 
 function Resolve-SenRequestedHarnesses {
@@ -280,43 +277,33 @@ function Sync-SenTasksToMarkdown {
 }
 
 function Get-SenProcessCatalog {
-  [CmdletBinding()]
-  param([string]$ManifestPath = "")
-  $path = if (-not [string]::IsNullOrWhiteSpace($ManifestPath)) { $ManifestPath } else { Join-Path -Path $PSScriptRoot -ChildPath "process-manifest.json" }
-  $obj = Read-SenSafeJson -Path $path
-  if ($null -eq $obj) { throw "Process manifest not found: $path" }
-  return $obj
+  [CmdletBinding()] param([string]$ManifestPath = "")
+  $p = if ($ManifestPath) { $ManifestPath } else { Join-Path $PSScriptRoot "process-manifest.json" }
+  $o = Read-SenSafeJson -Path $p; if ($null -eq $o) { throw "Manifest not found: $p" }; return $o
 }
 
 function Initialize-SenProcessAudit {
   [CmdletBinding()]
   param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectName = "Project", [ValidateRange(1, 3)][int]$Tier = 3, [ValidateSet("core", "web_mobile", "all")][string]$ProjectScope = "core", [switch]$PreserveLatched)
-  $catalog = Get-SenProcessCatalog; $auditPath = Join-Path -Path $Workspace -ChildPath ".agents/office/process-audit.json"
-  $existing = Read-SenSafeJson -Path $auditPath; $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-  $sameProj = ($null -ne $existing) -and ([string]$existing.projectName -eq $ProjectName)
-  $startedAt = if ($PreserveLatched -and $sameProj -and $existing.PSObject.Properties['startedAt'] -and $existing.startedAt) { [string]$existing.startedAt } else { $nowIso }
-  $latchedMap = @{}
-  if ($PreserveLatched -and $sameProj -and $existing.PSObject.Properties.Name -contains "selectedSteps") {
-    foreach ($oldStep in @($existing.selectedSteps)) {
-      if ($oldStep -and [bool]$oldStep.latched -and [string]$oldStep.verifiedAt -ge $startedAt) { $latchedMap[[string]$oldStep.id] = $oldStep }
-    }
+  $cat = Get-SenProcessCatalog; $aPath = Join-Path $Workspace ".agents/office/process-audit.json"
+  $ex = Read-SenSafeJson -Path $aPath; $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $same = ($null -ne $ex) -and ([string]$ex.projectName -eq $ProjectName)
+  $start = if ($PreserveLatched -and $same -and $ex.PSObject.Properties['startedAt'] -and $ex.startedAt) { [string]$ex.startedAt } else { $now }
+  $lMap = @{}
+  if ($PreserveLatched -and $same -and $ex.PSObject.Properties.Name -contains "selectedSteps") {
+    foreach ($os in @($ex.selectedSteps)) { if ($os -and [bool]$os.latched -and [string]$os.verifiedAt -ge $start) { $lMap[[string]$os.id] = $os } }
   }
-  $selected = [System.Collections.Generic.List[object]]::new()
-  foreach ($s in @($catalog.steps)) {
+  $sel = [System.Collections.Generic.List[object]]::new()
+  foreach ($s in @($cat.steps)) {
     if ([int]$s.minTier -gt $Tier -or ([string]$s.scope -eq "web_mobile" -and $ProjectScope -eq "core")) { continue }
-    $sid = [string]$s.id; $wasLatched = $latchedMap.ContainsKey($sid) -or ($sid -in @("S1-RISK", "S1-AUDIT-INIT"))
-    $verAt = if ($latchedMap.ContainsKey($sid)) { [string]$latchedMap[$sid].verifiedAt } elseif ($wasLatched) { $nowIso } else { $null }
-    $selected.Add([pscustomobject][ordered]@{ id = $sid; stage = [int]$s.stage; title = [string]$s.title; passed = [bool]$wasLatched; latched = [bool]$wasLatched; verifiedAt = $verAt })
+    $sid = [string]$s.id; $lat = $lMap.ContainsKey($sid) -or ($sid -in @("S1-RISK", "S1-AUDIT-INIT"))
+    $vAt = if ($lMap.ContainsKey($sid)) { [string]$lMap[$sid].verifiedAt } elseif ($lat) { $now } else { $null }
+    $sel.Add([pscustomobject][ordered]@{ id = $sid; stage = [int]$s.stage; title = [string]$s.title; passed = [bool]$lat; latched = [bool]$lat; verifiedAt = $vAt })
   }
-  $offCfg = Get-SenOfficeConfig -Workspace $Workspace
-  $offMode = if ($offCfg -and $offCfg.mode) { [string]$offCfg.mode } else { "eco" }
-  $offPort = if ($offCfg -and $offCfg.port) { [int]$offCfg.port } else { 47890 }
-  $offAction = if ($Tier -lt 2) { "none" } elseif ($offMode -eq "off") { "offer_enable" } else { "auto_start" }
-  $auditObj = [pscustomobject][ordered]@{
-    manifestVersion = [string]$catalog.manifestVersion; projectName = $ProjectName; tier = $Tier; projectScope = $ProjectScope
-    officeMode = $offMode; officeUrl = "http://127.0.0.1:$offPort/"; officeAction = $offAction; startedAt = $startedAt; updatedAt = $nowIso; selectedSteps = @($selected.ToArray())
-  }
-  Write-SenAtomicJson -Path $auditPath -InputObject $auditObj -Depth 8; return $auditObj
+  $cfg = Get-SenOfficeConfig -Workspace $Workspace; $m = if ($cfg -and $cfg.mode) { [string]$cfg.mode } else { "eco" }; $pt = if ($cfg -and $cfg.port) { [int]$cfg.port } else { 47890 }
+  $act = if ($Tier -lt 2) { "none" } elseif ($m -eq "off") { "offer_enable" } else { "auto_start" }
+  $obj = [pscustomobject][ordered]@{ manifestVersion = [string]$cat.manifestVersion; projectName = $ProjectName; tier = $Tier; projectScope = $ProjectScope; officeMode = $m; officeUrl = "http://127.0.0.1:$pt/"; officeAction = $act; startedAt = $start; updatedAt = $now; selectedSteps = @($sel.ToArray()) }
+  Write-SenAtomicJson -Path $aPath -InputObject $obj -Depth 8; return $obj
 }
 
 function Test-SenSingleStepEvidence {
