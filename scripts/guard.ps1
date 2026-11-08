@@ -303,7 +303,35 @@ if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
         if (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue) {
             $repoHealth = Measure-SenCodeHealth -Path $targetSrc
             if (-not $repoHealth.Healthy) {
-                Out-Decision "deny" "[SEN GUARD] Blocked: Code health check failed on target repo (Score=$($repoHealth.Score)). Run Measure-SenCodeHealth and fix violations before committing/pushing." $primaryWs $toolName $targetSrc $cmd
+                $dirtyRelFiles = @()
+                try {
+                    $gitStatusLines = @(git -C $gitTargetDir status --porcelain 2>$null)
+                    if ($LASTEXITCODE -eq 0 -and $gitStatusLines.Count -gt 0) {
+                        foreach ($gLine in $gitStatusLines) {
+                            if ($gLine.Length -gt 3) {
+                                $relF = $gLine.Substring(3).Trim().Trim('"').Replace('\', '/')
+                                if ($relF.StartsWith("src/")) { $relF = $relF.Substring(4) }
+                                $dirtyRelFiles += $relF
+                            }
+                        }
+                    }
+                }
+                catch { <# Fallback to full repo check #> }
+                $shouldBlockHealth = $true
+                if ($dirtyRelFiles.Count -gt 0) {
+                    $violatingPaths = @()
+                    foreach ($vItem in @($repoHealth.OversizedFiles) + @($repoHealth.LongFunctions) + @($repoHealth.DeepNesting) + @($repoHealth.EmptyCatches)) {
+                        if ($vItem -and $vItem.path) { $violatingPaths += ([string]$vItem.path).Replace('\', '/') }
+                    }
+                    $touchedViolation = $false
+                    foreach ($vp in $violatingPaths) {
+                        if ($dirtyRelFiles -contains $vp) { $touchedViolation = $true; break }
+                    }
+                    $shouldBlockHealth = $touchedViolation
+                }
+                if ($shouldBlockHealth) {
+                    Out-Decision "deny" "[SEN GUARD] Blocked: Code health check failed on target repo (Score=$($repoHealth.Score)). Run Measure-SenCodeHealth and fix violations before committing/pushing." $primaryWs $toolName $targetSrc $cmd
+                }
             }
         }
         $uiScripts = @(Get-ChildItem -LiteralPath $targetSrc -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(js|ts|jsx|tsx)$' })

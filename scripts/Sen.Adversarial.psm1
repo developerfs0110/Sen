@@ -723,7 +723,7 @@ function Invoke-SenDialecticalAudit {
         $isDone = ([string]$_.status -eq "done")
         $cmdText = if ($_.evidence) { [string]$_.evidence.command } else { "" }
         $exitVal = if ($_.evidence -and $null -ne $_.evidence.exitCode) { [int]$_.evidence.exitCode } else { -1 }
-        $isFakeCmd = ($cmdText -notmatch '[A-Za-z0-9]{3,}') -or ($cmdText -match '(?i)^(manual|none|ok|pass|fake|verbal)$')
+        $isFakeCmd = ($cmdText -notmatch '[A-Za-z0-9]{3,}') -or ($cmdText -match '(?i)^(manual|none|ok|pass|fake|verbal|subagent-verified|verified-in-session|session-verified|hook-telemetry|subagent-report|subagent-closed)$')
         $isPlaceholderCmd = ($RequireIndependentReviewer.IsPresent -and ($cmdText -match '(?i)^(todo-verified|subagent-verified)$'))
         ((-not $isDone) -and $RequireIndependentReviewer.IsPresent) -or ($isDone -and ($null -eq $_.evidence -or $exitVal -ne 0 -or $isFakeCmd -or $isPlaceholderCmd))
     })
@@ -740,7 +740,7 @@ function Invoke-SenDialecticalAudit {
     $v1Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $specsDir))
     $v2Passed = [bool]($codeHealth.Healthy -and $antiGaming.Passed)
     $v3Passed = ($invalidEvidenceTasks.Count -eq 0) -and [bool]$evidenceValidity.AllValid -and $probePassed
-    $v4Passed = [bool]$vnLaw.CompliantCodeLevel
+    $v4Passed = [bool]$vnLaw.CompliantCodeLevel -and ($vnLaw.Verdict -in @("PASS", "NOT_APPLICABLE"))
     $v5Passed = [bool]$hungCheck.Healthy
     $v6Passed = ($selfReviewedTasks.Count -eq 0) -and $probePassed
 

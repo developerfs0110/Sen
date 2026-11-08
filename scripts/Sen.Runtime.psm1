@@ -410,24 +410,29 @@ function Read-SenOfficeShowcase {
 
 function Get-SenAntigravityQuota {
     [CmdletBinding()]
-    param()
+    param([string]$DbPath = "")
     $candidates = @()
-    if ($env:APPDATA) {
-        $candidates += Join-Path $env:APPDATA "Antigravity\User\globalStorage\state.vscdb"
+    if (-not [string]::IsNullOrWhiteSpace($DbPath)) {
+        $candidates += $DbPath
     }
-    if ($env:HOME) {
-        $candidates += Join-Path $env:HOME "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
-        $candidates += Join-Path $env:HOME ".config/Antigravity/User/globalStorage/state.vscdb"
+    else {
+        if ($env:APPDATA) {
+            $candidates += Join-Path $env:APPDATA "Antigravity\User\globalStorage\state.vscdb"
+        }
+        if ($env:HOME) {
+            $candidates += Join-Path $env:HOME "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
+            $candidates += Join-Path $env:HOME ".config/Antigravity/User/globalStorage/state.vscdb"
+        }
     }
     $dbFile = $null
     foreach ($c in $candidates) {
         if ($c -and (Test-Path -LiteralPath $c)) { $dbFile = $c; break }
     }
     if (-not $dbFile) {
-        return @{ available = $false; source = "none"; models = @() }
+        return @{ available = $false; status = "Unavailable"; source = "none"; models = @() }
     }
-    $proRemain = 90
-    $flashRemain = 96
+    $proRemain = $null
+    $flashRemain = $null
     try {
         $fs = [System.IO.File]::Open($dbFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         try {
@@ -435,18 +440,23 @@ function Get-SenAntigravityQuota {
             $buf = New-Object byte[] $len
             [void]$fs.Read($buf, 0, $len)
             $txt = [System.Text.Encoding]::ASCII.GetString($buf)
-            if ($txt -match '"pctLeft"\s*:\s*(\d{1,3})') { $proRemain = [int]$matches[1] }
+            $mList = @([regex]::Matches($txt, '"pctLeft"\s*:\s*(\d{1,3})'))
+            if ($mList.Count -ge 1) { $proRemain = [int]$mList[0].Groups[1].Value }
+            if ($mList.Count -ge 2) { $flashRemain = [int]$mList[1].Groups[1].Value }
         }
         finally { $fs.Close() }
     }
     catch { <# Safe fallback if SQLite file is locked exclusively #> }
+    if ($null -eq $proRemain) {
+        return @{ available = $false; status = "Unavailable"; source = "state.vscdb (unreadable)"; models = @() }
+    }
+    $modelsOut = @(@{ label = "Gemini Pro / Inherit"; pctLeft = $proRemain })
+    if ($null -ne $flashRemain) { $modelsOut += @{ label = "Gemini Flash / Scout"; pctLeft = $flashRemain } }
     return @{
         available = $true
+        status    = "Available"
         source    = "state.vscdb (read-only)"
-        models    = @(
-            @{ label = "Gemini Pro / Inherit"; pctLeft = $proRemain },
-            @{ label = "Gemini Flash / Scout"; pctLeft = $flashRemain }
-        )
+        models    = $modelsOut
     }
 }
 
@@ -623,6 +633,24 @@ function Find-SenDuplicateCodeBlocks {
     return $dups
 }
 
+function Measure-SenNonPsFunctionSpans {
+    param([string[]]$Lines, [string]$RelPath, [int]$MaxFunctionLines, $LongFunctions)
+    $fnStarts = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^\s*(export\s+)?(async\s+)?(function|def|func)\s+([A-Za-z0-9_]+)') {
+            $fnStarts.Add([pscustomobject]@{ Name = $matches[4]; Line = $i })
+        }
+    }
+    for ($j = 0; $j -lt $fnStarts.Count; $j++) {
+        $startIdx = $fnStarts[$j].Line
+        $endLimit = if (($j + 1) -lt $fnStarts.Count) { $fnStarts[$j + 1].Line - 1 } else { $Lines.Count - 1 }
+        $span = ($endLimit - $startIdx) + 1
+        if ($span -gt $MaxFunctionLines) {
+            $LongFunctions.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fnStarts[$j].Name; lines = $span; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" })
+        }
+    }
+}
+
 function Measure-SenCodeHealth {
     [CmdletBinding()]
     param(
@@ -665,7 +693,7 @@ function Measure-SenCodeHealth {
             }
             else {
                 if ($rawText -match 'catch\s*(\([^)]*\))?\s*\{\s*\}') { $emptyCat.Add([pscustomobject][ordered]@{ path = $rel; line = 1; rule = "ESLint:no-empty/Sonar:S108/CWE-1069" }) }
-                if ($rawText -match '\bfunction\s+([A-Za-z0-9_]+)' -and $lines.Count -gt $MaxFunctionLines) { $longFuncs.Add([pscustomobject][ordered]@{ path = $rel; function = $matches[1]; lines = $lines.Count; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" }) }
+                Measure-SenNonPsFunctionSpans -Lines $lines -RelPath $rel -MaxFunctionLines $MaxFunctionLines -LongFunctions $longFuncs
             }
         }
     }
@@ -683,7 +711,7 @@ function Measure-SenCodeHealth {
     $rec = if ($healthy) { "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)." } else { "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'." }
 
     return [pscustomobject][ordered]@{
-        Healthy = [bool]$healthy; Score = [int]$score; ScannedFiles = [int]$files.Count; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
+        Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = "AST+ScopedHeuristic"; ScannedFiles = [int]$files.Count; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
         OversizedFiles = @($oversized.ToArray()); LongFunctions = @($longFuncs.ToArray()); DeepNesting = @($deepNest.ToArray())
         DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray())
         Standards = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")

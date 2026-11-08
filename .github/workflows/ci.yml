@@ -8,16 +8,20 @@ on:
 
 jobs:
   validate-and-test:
-    name: Validate Repo & Run Test Suite
-    runs-on: windows-latest
+    name: Validate Repo & Run Test Suite (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Validate repository constraints (Validate-Repo.ps1)
-        shell: powershell
+        shell: pwsh
         run: |
-          $errs = @(& .\scripts\Validate-Repo.ps1 -Root .)
+          $errs = @(& ./scripts/Validate-Repo.ps1 -Root .)
           if ($errs.Count -gt 0) {
             $errs | ForEach-Object { Write-Error $_ }
             exit 1
@@ -25,8 +29,17 @@ jobs:
           Write-Host "Validate-Repo.ps1 passed with 0 errors."
 
       - name: Run automated test suite (tests/run.ps1)
-        shell: powershell
+        shell: pwsh
         run: |
-          & .\tests\run.ps1
+          & ./tests/run.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run POSIX shell syntax & smoke tests (Ubuntu / macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          for s in scripts/*.sh tests/*.sh; do
+            bash -n "$s"
+          done
+          bash tests/check-updates-smoke.sh
 

@@ -22,7 +22,7 @@ function Get-SenVnLawCandidateFiles {
             if ($d.Name -notmatch $skipDirRe) { $queue.Enqueue($d.FullName) }
         }
         foreach ($f in @(Get-ChildItem -LiteralPath $cur -File -ErrorAction SilentlyContinue)) {
-            if ($f.Name -match '(?i)(package-lock\.json|\.lock$|\.min\.js$)') { continue }
+            if ($f.Name -match '(?i)(package-lock\.json|\.lock$|\.min\.js$|^(README(\.[a-z]+)?|CHANGELOG|INSTALL|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY|LICENSE)\.md$)') { continue }
             if ($validExts -contains $f.Extension.ToLowerInvariant() -or $f.Name -in @('Podfile', '.env.example', 'AndroidManifest.xml', 'Info.plist')) {
                 $filtered.Add($f)
             }
@@ -202,25 +202,28 @@ function Invoke-SenVnLawScan {
         $delHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex '(?i)(delete[-_ ]?account|deleteAccount|deleteUser|x\u00f3a\s+t\u00e0i\s+kho\u1ea3n|xo\u00e1\s+t\u00e0i\s+kho\u1ea3n|account[-_ ]deletion)' -Limit 2 -ExcludeLineRegex '^\s*(//|#|/\*|\*|<!--)'
         $hasAccountDelete = ($delHits.Count -gt 0); $evidence['ACCOUNT_DELETE'] = $delHits
     }
+    $privacyConsentRe = '(?i)(privacy[-_ ]?(policy|notice)|ch\u00ednh\s+s\u00e1ch\s+b\u1ea3o\s+m\u1eadt|chinh\s+sach\s+bao\s+mat|b\u1ea3o\s+v\u1ec7\s+d\u1eef\s+li\u1ec7u\s+c\u00e1\s+nh\u00e2n|bao\s+ve\s+du\s+lieu\s+ca\s+nhan|consent[_-]?(log|given|granted|record|gate)|cookie[_-]?consent|\u0111\u1ed3ng\s+\u00fd\s+(x\u1eed\s+l\u00fd|chia\s+s\u1ebb|chuy\u1ec3n\s+ti\u1ebfp|cookie)|dong\s+y\s+(xu\s+ly|chia\s+se|chuyen\s+tiep|cookie)|356/2025|91/2025)'
+    $privacyConsentHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex $privacyConsentRe -Limit 3
+    $hasPrivacyConsent = ($privacyConsentHits.Count -gt 0)
     $hasBotConsent = $true
     if ($found['BOT_FORWARDING']) {
-        $botConsentRe = '(?i)(privacy[-_ ]?(policy|notice)|ch\u00ednh\s+s\u00e1ch\s+b\u1ea3o\s+m\u1eadt|chinh\s+sach\s+bao\s+mat|b\u1ea3o\s+v\u1ec7\s+d\u1eef\s+li\u1ec7u\s+c\u00e1\s+nh\u00e2n|bao\s+ve\s+du\s+lieu\s+ca\s+nhan|consent[_-]?(log|given|granted|record)|\u0111\u1ed3ng\s+\u00fd\s+(x\u1eed\s+l\u00fd|chia\s+s\u1ebb|chuy\u1ec3n\s+ti\u1ebfp)|dong\s+y\s+(xu\s+ly|chia\s+se|chuyen\s+tiep)|356/2025)'
-        $botConsentHits = Find-SenVnLawPatternHits -FileEntries $entries -Regex $botConsentRe -Limit 3
-        $hasBotConsent = ($botConsentHits.Count -gt 0); $evidence['BOT_CONSENT'] = $botConsentHits
+        $hasBotConsent = $hasPrivacyConsent; $evidence['BOT_CONSENT'] = $privacyConsentHits
     }
     $level = 0
     if ($found['AUTH'] -and $found['MARKETPLACE']) { $level = 3 }
     elseif ($found['COMMERCE']) { $level = 2 }
     elseif ($found['FORM'] -or $found['TRACKING'] -or $found['AUTH'] -or $found['AI'] -or $found['PERMISSIONS'] -or $found['SDK_TRACKING'] -or $found['ADS_SDK'] -or $found['BOT_FORWARDING']) { $level = 1 }
     $eval = Resolve-SenVnLawChecklistsAndRedFlags -Found $found -ConsentState $consentState -IsMobileApp $isMobileApp -HasAccountDelete $hasAccountDelete -HasBotConsent $hasBotConsent -Level $level
-    $verdict = if ($eval.RedFlags.Count -gt 0) { 'FAIL' } elseif ($eval.Checklists.Count -gt 0 -or $consentState -eq 'unknown') { 'UNKNOWN' } else { 'PASS' }
+    $scopeStatus = if ($level -eq 0 -and $eval.RedFlags.Count -eq 0 -and $eval.Checklists.Count -eq 0 -and $consentState -eq 'none') { 'NOT_APPLICABLE' } else { 'APPLICABLE' }
+    $verdict = if ($eval.RedFlags.Count -gt 0) { 'FAIL' } elseif ($scopeStatus -eq 'NOT_APPLICABLE') { 'PASS' } elseif ($consentState -eq 'unknown' -or (-not $hasPrivacyConsent)) { 'UNKNOWN' } else { 'PASS' }
+    $codeCompliant = ($eval.RedFlags.Count -eq 0) -and ($verdict -in @('PASS', 'NOT_APPLICABLE'))
     return [pscustomobject]@{
-        Path = $resolvedRoot; Level = [int]$level; AI = [bool]$found['AI']; ForeignHost = [bool]$found['FOREIGN_HOST']
+        Path = $resolvedRoot; Level = [int]$level; ScopeStatus = $scopeStatus; AI = [bool]$found['AI']; ForeignHost = [bool]$found['FOREIGN_HOST']
         MobileApp = [bool]$isMobileApp; MobilePlatforms = $platforms; TrackingConsent = $consentState; AccountDelete = [bool]$hasAccountDelete
         BotForwarding = [bool]$found['BOT_FORWARDING']; BotConsent = [bool]$hasBotConsent
         Signals = [pscustomobject]$found; Evidence = [pscustomobject]$evidence
-        RequiredChecklists = $eval.Checklists; CodeRedFlags = $eval.RedFlags; CompliantCodeLevel = ($eval.RedFlags.Count -eq 0)
-        Passed = ($eval.RedFlags.Count -eq 0); Verdict = $verdict; LawCatalogVersion = '2026.11'; EffectiveDate = '2026-01-01'
+        RequiredChecklists = $eval.Checklists; CodeRedFlags = $eval.RedFlags; CompliantCodeLevel = [bool]$codeCompliant
+        Passed = [bool]$codeCompliant; Verdict = $verdict; LawCatalogVersion = '2026.11'; EffectiveDate = '2026-01-01'
         LegalDisclaimer = 'Static code scan only; does not replace human legal audit.'
     }
 }

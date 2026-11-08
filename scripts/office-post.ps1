@@ -26,6 +26,9 @@ try {
         $pathArg  = $norm.TargetPath
         $cmdArg   = $norm.CommandLine
         $queryArg = $norm.Query
+        $hasEc    = [bool]$norm.HasExplicitExitCode
+        $ecVal    = [int]$norm.ExitCode
+        $isErr    = [bool]$norm.IsError
     }
     else {
         $wsCandidates = [System.Collections.Generic.List[string]]::new()
@@ -34,19 +37,27 @@ try {
         if ($payload.cwd -and -not [string]::IsNullOrWhiteSpace([string]$payload.cwd)) { $wsCandidates.Add([string]$payload.cwd) }
         $wsList = @($wsCandidates.ToArray())
         $ws = if ($wsList.Count -gt 0) { [string]$wsList[0] } else { "" }
-        $toolName = ""; $pathArg = ""; $cmdArg = ""; $queryArg = ""
+        $toolName = ""; $pathArg = ""; $cmdArg = ""; $queryArg = ""; $hasEc = $false; $ecVal = -1; $isErr = $false
     }
     if ([string]::IsNullOrWhiteSpace($ws)) { exit 0 }
     $shortFile = if ($pathArg) { [System.IO.Path]::GetFileName($pathArg) } else { "" }
+    $sealFile = Join-Path $ws ".agents/office/state-seal.json"
+    $sealIntactBeforeHook = $true
+    if ((Test-Path -LiteralPath $sealFile) -and (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue)) {
+        try { $sealIntactBeforeHook = (-not (Sync-SenOfficeState -Workspace $ws -VerifySeal).Tampered) } catch { $sealIntactBeforeHook = $false }
+    }
+    $hookMutatedOfficeJson = $false
 
     # Zero-token Auto-Orchestration: sync Plan / TODO Markdown to .agents/office/tasks.json on write/edit
     if (($toolName -eq "write_file" -or $toolName -eq "edit_file") -and $pathArg -match '(?i)(plans[\\/][^\\/]+\.md|TODO\.md)$') {
         if (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue) {
             $planTarget = if ($pathArg -match '(?i)plans[\\/][^\\/]+\.md$') { $pathArg } else { "" }
             [void](Sync-SenPlanToTasks -Workspace $ws -PlanPath $planTarget)
+            $hookMutatedOfficeJson = $true
         }
         if ((Test-Path -LiteralPath (Join-Path $ws ".agents/office/process-audit.json")) -and (Get-Command Test-SenStageGate -ErrorAction SilentlyContinue)) {
             [void](Test-SenStageGate -Workspace $ws -Stage 2)
+            $hookMutatedOfficeJson = $true
         }
     }
 
@@ -75,10 +86,13 @@ try {
         $fullText = "Subagent [$roleArg]: " + $(if ($cleanPrompt.Length -gt 180) { $cleanPrompt.Substring(0, 177) + "..." } else { $cleanPrompt })
         $pathArg = $roleArg
         if (Get-Command New-SenTask -ErrorAction SilentlyContinue) {
-            [void](New-SenTask -Workspace $ws -Id "SUBAGENT-LIVE" -Title $ecoText -Tier 2 -RiskLevel "medium" -Module "Subagent" -Assignee $to -Status "in_progress")
+            $st = New-SenTask -Workspace $ws -Id "SUBAGENT-LIVE" -Title $ecoText -Tier 2 -RiskLevel "medium" -Module "Subagent" -Assignee $to -Status "in_progress"
+            $allT = @(Get-SenTasks -Workspace $ws); foreach ($item in $allT) { if ($item -and [string]$item.id -eq "SUBAGENT-LIVE") { $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force } }
+            [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true
         }
         if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
             [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "SUBAGENT-LIVE" -Title $ecoText -Phase 1 -Summary $fullText -Domain "architecture")
+            $hookMutatedOfficeJson = $true
         }
     }
     elseif ($toolName -eq "send_message") {
@@ -87,19 +101,29 @@ try {
         $from = "be"; $to = "pm"; $lane = "Subagent"; $kind = "ok"
         $ecoText = "Report: $shortMsg"
         $fullText = "Subagent message: " + $(if ($msgRaw.Length -gt 180) { $msgRaw.Substring(0, 177) + "..." } else { $msgRaw })
-        if (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue) {
-            [void](Complete-SenTaskReview -Workspace $ws -Id "SUBAGENT-LIVE" -Passed $true -Reviewer "pm" -EvidenceCommand "subagent-report" -ExitCode 0 -Notes $shortMsg)
+        if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
+            $allT = @(Get-SenTasks -Workspace $ws)
+            foreach ($item in $allT) {
+                if ($item -and [string]$item.id -eq "SUBAGENT-LIVE") {
+                    $item.status = "done"; $item.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force
+                }
+            }
+            [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true
         }
         if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
             [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "SUBAGENT-LIVE" -Title $ecoText -Phase 2 -Summary $fullText -Domain "architecture")
+            $hookMutatedOfficeJson = $true
         }
     }
     elseif ($toolName -eq "manage_subagents") {
         $act = if ($argsObj.Action) { [string]$argsObj.Action } else { "list" }
         $from = "pm"; $to = "sys"; $lane = "Subagent"; $kind = "ok"
         $ecoText = "Subagents: $act"
-        if ($act -in @("kill", "kill_all") -and (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue)) {
-            [void](Complete-SenTaskReview -Workspace $ws -Id "SUBAGENT-LIVE" -Passed $true -Reviewer "pm" -EvidenceCommand "subagent-closed" -ExitCode 0)
+        if ($act -in @("kill", "kill_all") -and (Get-Command Get-SenTasks -ErrorAction SilentlyContinue)) {
+            $allT = @(Get-SenTasks -Workspace $ws)
+            foreach ($item in $allT) { if ($item -and [string]$item.id -eq "SUBAGENT-LIVE") { $item.status = "done"; $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force } }
+            [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true
         }
     }
     elseif ($toolName -eq "grep_search" -or $toolName -eq "find_by_name") {
@@ -131,10 +155,13 @@ try {
                 $curTasks = @(Get-SenTasks -Workspace $ws | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
                 if ($curTasks.Count -eq 0 -and (Get-Command New-SenTask -ErrorAction SilentlyContinue)) {
                     [void](New-SenTask -Workspace $ws -Id "AUTO-WORK" -Title "Edit $shortFile" -Tier 1 -RiskLevel "low" -Module "AutoTrack" -Assignee "be" -Status "in_progress")
+                    $allT = @(Get-SenTasks -Workspace $ws); foreach ($item in $allT) { if ($item -and [string]$item.id -eq "AUTO-WORK") { $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force } }
+                    [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true
                 }
             }
             if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
                 [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title "Modifying $shortFile" -Phase 1 -Summary "Editing $pathArg" -Domain "code")
+                $hookMutatedOfficeJson = $true
             }
         }
         if ($pathArg -match '(?i)\.(html|css|tsx|jsx|vue|svg)$') {
@@ -157,10 +184,6 @@ try {
     }
     elseif ($toolName -eq "run_command") {
         $cleanCmd = ($cmdArg -replace '[\r\n\t]+', ' ').Trim()
-        if ($cmdArg -match '(?i)(Complete-SenTaskReview|Test-SenDeliveryGate|Write-SenOfficeShowcase|Invoke-SenPostCodePipeline)' -and (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue)) {
-            [void](Complete-SenTaskReview -Workspace $ws -Id "SUBAGENT-LIVE" -Passed $true -Reviewer "pm" -EvidenceCommand "session-verified" -ExitCode 0)
-            [void](Complete-SenTaskReview -Workspace $ws -Id "AUTO-WORK" -Passed $true -Reviewer "pm" -EvidenceCommand "session-verified" -ExitCode 0)
-        }
         if ($cmdArg -match '(?i)(Validate-Repo|security|audit|Measure-SenCodeHealth|Invoke-SenVnLawScan)') {
             $from = "sec"
             $lane = "Security Gate"
@@ -171,14 +194,19 @@ try {
             $from = "qa"
             $lane = "QA Gate"
             $ecoText = "Run test suite"
-            if (Get-Command Register-SenEvidence -ErrorAction SilentlyContinue) {
-                [void](Register-SenEvidence -Workspace $ws -EvidenceId "EV-AUTO-TEST" -TaskId "AUTO-WORK" -Type "unit" -Command $cleanCmd -ExitCode 0)
-            }
-            if (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue) {
-                [void](Complete-SenTaskReview -Workspace $ws -Id "AUTO-WORK" -Passed $true -Reviewer "qa" -EvidenceCommand $cleanCmd -ExitCode 0)
-            }
-            if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
-                [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title "Verified test suite" -Phase 2 -Summary "Executed: $cleanCmd" -Domain "qa")
+            if ($hasEc -and ($ecVal -eq 0) -and (-not $isErr)) {
+                if (Get-Command Register-SenEvidence -ErrorAction SilentlyContinue) {
+                    [void](Register-SenEvidence -Workspace $ws -EvidenceId "EV-AUTO-TEST" -TaskId "AUTO-WORK" -Type "unit" -Command $cleanCmd -ExitCode $ecVal)
+                    $hookMutatedOfficeJson = $true
+                }
+                if (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue) {
+                    [void](Complete-SenTaskReview -Workspace $ws -Id "AUTO-WORK" -Passed $true -Reviewer "qa" -EvidenceCommand $cleanCmd -ExitCode $ecVal)
+                    $hookMutatedOfficeJson = $true
+                }
+                if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
+                    [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title "Verified test suite" -Phase 2 -Summary "Executed: $cleanCmd" -Domain "qa")
+                    $hookMutatedOfficeJson = $true
+                }
             }
         }
         else {
@@ -191,7 +219,7 @@ try {
     }
 
     if ([string]::IsNullOrWhiteSpace($fullText)) { $fullText = $ecoText }
-    if (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue) {
+    if ($sealIntactBeforeHook -and $hookMutatedOfficeJson -and (Test-Path -LiteralPath $sealFile) -and (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue)) {
         try { [void](Sync-SenOfficeState -Workspace $ws -UpdateSeal) } catch { <# Non-fatal #> }
     }
     $targetVal = if ($pathArg) { $pathArg } else { $cmdArg }
