@@ -62,7 +62,7 @@ try:
             if "/.git/config" in norm_rp or "/.git/hooks" in norm_rp:
                 print("DENY_GIT:" + rp)
                 sys.exit(0)
-            if any(x in norm_rp for x in ("/.agents/office/tasks.json", "/.agents/office/process-audit.json", "/.agents/office/loops.json", "/.agents/plugins/sen-method/scripts/guard.")):
+            if any(x in norm_rp for x in ("/.agents/office/tasks.json", "/.agents/office/process-audit.json", "/.agents/office/loops.json", "/.agents/office/bounded-loops.json", "/.agents/office/requirements.json", "/.agents/office/evidence.json", "/.agents/office/claims.json", "/.agents/office/quality-baseline.json", "/.agents/office/state-seal.json", "/.agents/office/governance-audit.json", "/.agents/plugins/sen-method/scripts/guard.")):
                 print("DENY_STATE:" + rp)
                 sys.exit(0)
             rw0 = os.path.realpath(ws_list[0])
@@ -109,10 +109,20 @@ except Exception:
       ;;
   esac
 else
+  FLAT_RAW="$(printf '%s' "$RAW" | tr '\r\n' ' ')"
+  if printf '%s' "$FLAT_RAW" | grep -Eiq '(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519|\.npmrc|\.pypirc|\.netrc)'; then
+    out_decision "deny" "[SEN GUARD] Blocked: access to sensitive host credential path."
+  fi
+  if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|Write|Edit|MultiEdit)"'; then
+    if printf '%s' "$FLAT_RAW" | grep -Eiq '(/\.git/(config|hooks)|/\.agents/office/(tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json|/\.agents/plugins/sen-method/scripts/guard\.|\.\./)'; then
+      out_decision "deny" "[SEN GUARD] Blocked: protected state, git metadata, or path traversal detected in POSIX fallback."
+    fi
+    out_decision "deny" "[SEN GUARD] Blocked (fail-closed): python3 is required on POSIX to verify canonical symlink/workspace boundaries for file writes."
+  fi
   if command -v jq >/dev/null 2>&1; then
-    CMD="$(printf '%s' "$RAW" | jq -r '.toolCall.args.CommandLine // empty' 2>/dev/null || true)"
+    CMD="$(printf '%s' "$RAW" | jq -r '.toolCall.args.CommandLine // .tool_input.CommandLine // .tool_input.command // empty' 2>/dev/null || true)"
   else
-    CMD="$(printf '%s' "$RAW" | tr '\r\n' ' ' | sed -n 's/.*"CommandLine"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    CMD="$(printf '%s' "$FLAT_RAW" | sed -n 's/.*"\(CommandLine\|command\)"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\2/p')"
   fi
 fi
 
@@ -185,6 +195,9 @@ if printf '%s' "$CMD" | grep -Eq '\bgit\b[^|;&]*\bbranch\b[^|;&]*([[:space:]]-D\
 fi
 if printf '%s' "$CMD" | grep -Eiq '\bffmpeg(\.exe)?\b[^|;&]*[[:space:]]-i[[:space:]]+["'\'']?(\./)?([^"'\''[:space:]]+)["'\'']?([[:space:]]+[^|;&]*)*[[:space:]]+["'\'']?(\./)?\3["'\'']?([[:space:]]+-(y|n))*[[:space:]]*($|[|;&])'; then
   deny "Non-destructive media guard: ffmpeg in-place overwrite of input file is prohibited. Write output to a separate file or output/ folder"
+fi
+if printf '%s' "$CMD" | grep -Eiq '(>|>>|\btee\b|\bcp\b|\bmv\b|\brm\b)[^|;&]*\.agents/office/(tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json'; then
+  deny "Direct shell tampering with protected .agents/office state JSON"
 fi
 
 out_decision "ask" ""

@@ -32,8 +32,19 @@ cat <<'EOF' > "$WS1/.agents/sen.lock.json"
 }
 EOF
 
-# Run check-updates.sh with a dummy PATH where jq and python3 are missing
-ERR_OUT=$(PATH=/bin "$CHECK_SH" -Workspace "$WS1" -Force 2>&1 || true)
+# Run check-updates.sh with an isolated dummy PATH where jq and python3 are guaranteed missing
+if [ -x /bin/jq ] || [ -x /bin/python3 ]; then
+  ISO_BIN="$TEMP_DIR/isolated_bin"
+  mkdir -p "$ISO_BIN"
+  for tool in bash sh grep sed tr cat date mkdir rm wc head dirname basename uname mktemp; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      ln -sf "$(command -v "$tool")" "$ISO_BIN/$tool"
+    fi
+  done
+  ERR_OUT=$(PATH="$ISO_BIN" bash "$CHECK_SH" -Workspace "$WS1" -Force 2>&1 || true)
+else
+  ERR_OUT=$(PATH=/bin "$CHECK_SH" -Workspace "$WS1" -Force 2>&1 || true)
+fi
 if grep -q "neither jq nor python3 is available" <<< "$ERR_OUT"; then
   echo "PASS: Warning printed when jq and python3 are missing"
 else

@@ -281,3 +281,92 @@ Test "ST-12: New-SenReleaseNote and Test-SenReleaseNoteGate enforce bilingual VI
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "ST-13: Hardened Evidence Provenance, VN-Law Scope/Verdict Gate, and Non-Fabricated Quota" {
+    $ws = New-GovTestWorkspace
+    try {
+        # 1. ConvertFrom-SenHookPayload explicit exitCode detection
+        $pNoExit = ConvertFrom-SenHookPayload -InputObject ('{"tool_name":"run_command","tool_input":{"CommandLine":"npm test"}}' | ConvertFrom-Json)
+        Assert-True (-not $pNoExit.HasExplicitExitCode) "Payload without exit_code must set HasExplicitExitCode = false"
+        $pWithExit = ConvertFrom-SenHookPayload -InputObject ('{"tool_name":"run_command","tool_input":{"CommandLine":"npm test"},"tool_response":{"exit_code":0}}' | ConvertFrom-Json)
+        Assert-True $pWithExit.HasExplicitExitCode "Payload with exit_code must set HasExplicitExitCode = true"
+        Assert-Equal 0 $pWithExit.ExitCode "Explicit exit_code 0 parsed"
+
+        # 2. Complete-SenTaskReview rejects placeholder evidence commands
+        [void](New-SenTask -Workspace $ws -Id "TASK-HARD-01" -Title "Hardened Task" -Tier 2 -Assignee "dev_be")
+        [void](Start-SenTask -Workspace $ws -Id "TASK-HARD-01" -Assignee "dev_be")
+        [void](Submit-SenTaskForReview -Workspace $ws -Id "TASK-HARD-01")
+        $resPlaceholder = Complete-SenTaskReview -Workspace $ws -Id "TASK-HARD-01" -Passed $true -EvidenceCommand "subagent-verified" -ExitCode 0
+        Assert-True (-not $resPlaceholder.Completed) "Complete-SenTaskReview must reject placeholder EvidenceCommand 'subagent-verified'"
+
+        # 3. Non-app repo with README mentioning account_delete stays NOT_APPLICABLE
+        Set-Content -LiteralPath (Join-Path $ws "README.md") -Value "# CLI Tool`nMentions account_delete and 356/2025 in docs only." -Encoding UTF8
+        $scanDocOnly = Invoke-SenVnLawScan -Path $ws
+        Assert-Equal "NOT_APPLICABLE" $scanDocOnly.ScopeStatus "Docs-only mention in README.md must not trigger app scope"
+        Assert-Equal "PASS" $scanDocOnly.Verdict "Verdict for non-app project remains PASS with ScopeStatus = NOT_APPLICABLE"
+        Assert-True $scanDocOnly.CompliantCodeLevel "Non-app project must have CompliantCodeLevel = true"
+
+        # 4. Unattested Level 1 web form returns Verdict = UNKNOWN and CompliantCodeLevel = false
+        New-Item -ItemType Directory -Path (Join-Path $ws "src") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $ws "src/Form.tsx") -Value '<form><input type="email" name="email" /></form>' -Encoding UTF8
+        $scanUnattested = Invoke-SenVnLawScan -Path $ws
+        Assert-Equal "APPLICABLE" $scanUnattested.ScopeStatus "Web form triggers APPLICABLE scope"
+        Assert-Equal "UNKNOWN" $scanUnattested.Verdict "Web form without privacy/consent notice must return Verdict = UNKNOWN"
+        Assert-True (-not $scanUnattested.CompliantCodeLevel) "Verdict = UNKNOWN must set CompliantCodeLevel = false to block Delivery Gate"
+
+        # 5. Adding privacy notice + consent gate turns Verdict = PASS
+        Set-Content -LiteralPath (Join-Path $ws "PRIVACY.md") -Value "Chinh sach bao ve du lieu ca nhan theo Nghi dinh 356/2025 va Luat 91/2025 consent_gate." -Encoding UTF8
+        $scanAttested = Invoke-SenVnLawScan -Path $ws
+        Assert-Equal "PASS" $scanAttested.Verdict "Web form with privacy notice and no red flags returns Verdict = PASS"
+        Assert-True $scanAttested.CompliantCodeLevel "Attested web form sets CompliantCodeLevel = true"
+
+        # 6. Get-SenAntigravityQuota returns Unavailable when state.vscdb is missing
+        $quota = Get-SenAntigravityQuota -DbPath (Join-Path $ws "nonexistent-state.vscdb")
+        Assert-True (-not $quota.available) "Missing state.vscdb must set available = false"
+        Assert-Equal "Unavailable" $quota.status "Missing state.vscdb must return status = Unavailable"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Sen.Core.psm1 unified bootstrap loads all modules and guard.ps1 blocks unhealthy code or DOM XSS before git commit/push" {
+    $ws = New-GovTestWorkspace
+    try {
+        $coreMod = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/Sen.Core.psm1"
+        Assert-True (Test-Path -LiteralPath $coreMod) "Sen.Core.psm1 must exist in scripts/"
+        Import-Module -Name $coreMod -Force -DisableNameChecking
+        Assert-True ($null -ne (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue)) "Sen.Core.psm1 must export Measure-SenCodeHealth"
+        Assert-True ($null -ne (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue)) "Sen.Core.psm1 must export Sync-SenOfficeState"
+
+        $subRepo = Join-Path $ws "Code/subproj"
+        $srcDir = Join-Path $subRepo "src"
+        New-Item -ItemType Directory -Path $srcDir -Force | Out-Null
+
+        # 1. Create a JS file with >100 line function -> guard.ps1 must block git commit
+        $longBody = (1..105 | ForEach-Object { "  const line$_ = $_;" }) -join "`n"
+        Set-Content -LiteralPath (Join-Path $srcDir "app.js") -Value ("function renderApp() {`n" + $longBody + "`n}`nrenderApp();") -Encoding UTF8
+        $commitPayload = @{
+            workspacePaths = @($ws)
+            toolCall = @{ name = "run_command"; args = @{ CommandLine = "git -C `"$subRepo`" commit -m `"feat: init`"" } }
+        }
+        $resLong = Invoke-GovGuardJson $commitPayload
+        Assert-Equal "deny" $resLong.decision "guard.ps1 must block git commit when target repo src/ fails Measure-SenCodeHealth"
+        Assert-True ($resLong.reason -match "Code health check failed") "Block reason must cite Code health check failed"
+
+        # 2. Replace with short function that has unescaped .innerHTML interpolation -> guard.ps1 must block DOM XSS (CWE-79)
+        $bt = [char]96
+        Set-Content -LiteralPath (Join-Path $srcDir "app.js") -Value ("function renderUser(u) {`n  document.body.innerHTML = ${bt}<div>`${u.name}</div>${bt};`n}`nrenderUser({name:'x'});") -Encoding UTF8
+        $resXss = Invoke-GovGuardJson $commitPayload
+        Assert-Equal "deny" $resXss.decision "guard.ps1 must block git commit when unescaped innerHTML interpolation is present"
+        Assert-True ($resXss.reason -match "CWE-79") "Block reason must cite CWE-79 DOM XSS"
+
+        # 3. Sanitize with escapeHtml -> guard.ps1 must allow (ask)
+        Set-Content -LiteralPath (Join-Path $srcDir "app.js") -Value ("function escapeHtml(s) { return String(s); }`nfunction renderUser(u) {`n  document.body.innerHTML = ${bt}<div>`${escapeHtml(u.name)}</div>${bt};`n}`nrenderUser({name:'x'});") -Encoding UTF8
+        $resClean = Invoke-GovGuardJson $commitPayload
+        Assert-Equal "ask" $resClean.decision "guard.ps1 must allow git commit when CodeHealth is 100/100 and escapeHtml is used"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

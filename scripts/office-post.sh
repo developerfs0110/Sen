@@ -23,7 +23,8 @@ def redact(s):
 
 try:
     d = json.loads(sys.stdin.read())
-    ws_list = [w for w in (d.get("workspacePaths") or []) if w]
+    ws_list = [w for w in (d.get("workspacePaths") or d.get("workspace_roots") or []) if w]
+    if not ws_list and d.get("cwd"): ws_list = [d.get("cwd")]
     if not ws_list: sys.exit(0)
     ws = ws_list[0]
     off_dir = os.path.join(ws, ".agents", "office")
@@ -37,10 +38,10 @@ try:
     if mode == "off": sys.exit(0)
 
     tc = d.get("toolCall") or {}
-    tname = tc.get("name") or ""
-    args = tc.get("args") or {}
-    path_arg = args.get("Path") or args.get("SearchPath") or ""
-    cmd_arg = args.get("CommandLine") or ""
+    tname = tc.get("name") or d.get("tool_name") or ""
+    args = tc.get("args") or d.get("tool_input") or d.get("toolArgs") or {}
+    path_arg = args.get("Path") or args.get("file_path") or args.get("target_file") or args.get("path") or args.get("SearchPath") or ""
+    cmd_arg = args.get("CommandLine") or args.get("command") or args.get("cmd") or ""
     short_file = os.path.basename(path_arg) if path_arg else ""
 
     role, lane, model, eco = "be", "Execution", "inherit", tname

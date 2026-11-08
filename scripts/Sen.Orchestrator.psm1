@@ -8,11 +8,14 @@ function Save-SenTasks {
   [CmdletBinding()]
   param([Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace, [AllowEmptyCollection()][Parameter(Mandatory = $true)][object[]]$Tasks, [switch]$Internal)
   $tasksPath = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
-  $mtxName = "Local\SenTasksMutex_" + [Math]::Abs($tasksPath.ToLowerInvariant().GetHashCode())
+  $canonPath = [System.IO.Path]::GetFullPath($tasksPath).Replace('\', '/').ToLowerInvariant()
+  $shaHex = ([BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($canonPath)))).Replace("-", "").Substring(0, 24).ToLowerInvariant()
+  $mtxName = "Local\SenTasksMutex_" + $shaHex
   $mtx = [System.Threading.Mutex]::new($false, $mtxName)
   $hasLock = $false
   try {
     try { $hasLock = $mtx.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
+    if (-not $hasLock) { throw "Concurrency lock timeout acquiring '$mtxName' on '$tasksPath'." }
     $finalList = [System.Collections.Generic.List[object]]::new()
     $diskObj = if (-not $Internal -and (Test-Path -LiteralPath $tasksPath)) { Read-SenSafeJson -Path $tasksPath } else { $null }
     $diskArr = if ($null -ne $diskObj -and $diskObj.PSObject.Properties.Name -contains "tasks") { @($diskObj.tasks) } else { @() }
@@ -25,7 +28,8 @@ function Save-SenTasks {
       $dt = if ($diskMap.ContainsKey($tid)) { $diskMap[$tid] } else { $null }
       $dRev = if ($null -ne $dt -and $dt.PSObject.Properties.Name -contains "_rev") { [int]$dt._rev } else { 0 }
       if ($null -ne $dt -and $dRev -gt $tRev) { $finalList.Add($dt); continue }
-      $newRev = if ($null -ne $dt -and [string]$t.status -ne [string]$dt.status) { $dRev + 1 } else { $tRev }
+      $changed = ($null -ne $dt) -and (([string]$t.status -ne [string]$dt.status) -or ([string]$t.title -ne [string]$dt.title) -or ([string]$t.assignee -ne [string]$dt.assignee))
+      $newRev = if ($changed) { $dRev + 1 } else { $tRev }
       $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue $newRev -Force
       $finalList.Add($t)
     }
@@ -245,7 +249,6 @@ function Complete-SenTaskReview {
     [string]$Verdict = ""
   )
   if ($Verdict -match '(?i)^(REJECT|FAIL)') { $Passed = $false }
-  elseif ($Verdict -match '(?i)^(APPROV|PASS)' -and [string]::IsNullOrWhiteSpace($EvidenceCommand)) { $EvidenceCommand = "verified-in-session" }
   $tasks = @(Get-SenTasks -Workspace $Workspace)
   $target = $tasks | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1
   if ($null -eq $target) { return [pscustomobject]@{ Completed = $false; Status = "not_found"; Reason = "Task '$Id' not found" } }
@@ -256,12 +259,13 @@ function Complete-SenTaskReview {
 
   $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
   $curRev = if ($target.PSObject.Properties.Name -contains "_rev") { [int]$target._rev } else { 1 }
+  $placeholderRe = '^(?i)(subagent-verified|verified-in-session|session-verified|hook-telemetry|subagent-report|subagent-closed)$'
   if ($Passed) {
-    if ([string]::IsNullOrWhiteSpace($EvidenceCommand) -or $EvidenceCommand -notmatch '[A-Za-z0-9]{3,}' -or $ExitCode -ne 0) {
+    if ([string]::IsNullOrWhiteSpace($EvidenceCommand) -or $EvidenceCommand -notmatch '[A-Za-z0-9]{3,}' -or $EvidenceCommand -match $placeholderRe -or $ExitCode -ne 0) {
       return [pscustomobject]@{
         Completed = $false
         Status    = [string]$target.status
-        Reason    = "Integration & Testing gate requires a valid executable EvidenceCommand and ExitCode = 0 to mark '$Id' done."
+        Reason    = "Integration & Testing gate requires a valid non-placeholder executable EvidenceCommand and ExitCode = 0 to mark '$Id' done."
       }
     }
     $target.status = "done"
@@ -319,17 +323,20 @@ function Test-SenHungTasks {
   try {
     $winProcs = if ($env:OS -eq 'Windows_NT' -and (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) { @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction SilentlyContinue) } else { @() }
     foreach ($wp in $winProcs) {
-      if (-not $wp -or [int]$wp.ProcessId -eq $PID -or [string]$wp.CommandLine -notmatch '(?i)-Command\s+"try\s*\{\s*\$OutputEncoding|Sen\.psm1|Invoke-SenCiPushLoop') { continue }
+      $cmdLine = [string]$wp.CommandLine
+      if (-not $wp -or [int]$wp.ProcessId -eq $PID -or $cmdLine -notmatch '(?i)-Command\s+"try\s*\{\s*\$OutputEncoding|Sen\.psm1|Invoke-SenCiPushLoop') { continue }
+      if ($cmdLine -match '(?i)(start-office\.ps1|\bvite\b|\bnpm(\.cmd)?\s+run\s+(dev|start|serve|preview)\b|\brun\.ps1\b)' -or $cmdLine.IndexOf($Workspace, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
       $proc = Get-Process -Id ([int]$wp.ProcessId) -ErrorAction SilentlyContinue
       if ($null -ne $proc -and $proc.StartTime.ToUniversalTime() -lt $cutoff) { $hungPids.Add([int]$wp.ProcessId); $deadlocked.Add("OSHungProcess:PID=$($wp.ProcessId)") }
     }
-    $psLines = if ($env:OS -ne 'Windows_NT' -and (Get-Command ps -ErrorAction SilentlyContinue)) { @(& ps -eo pid,etimes,args 2>$null) } else { @() }
+    $psLines = if ($env:OS -ne 'Windows_NT' -and (Get-Command ps -ErrorAction SilentlyContinue)) { @(& ps -eo pid, etimes, args 2>$null) } else { @() }
     foreach ($line in $psLines) {
       if ($line -match '^\s*(\d+)\s+(\d+)\s+(.+)$' -and [int]$matches[1] -ne $PID -and [int]$matches[2] -gt $maxSec -and $matches[3] -match 'Sen\.psm1|Invoke-SenCiPushLoop') {
         $hungPids.Add([int]$matches[1]); $deadlocked.Add("OSHungProcess:PID=$($matches[1])")
       }
     }
-  } catch { <# Ignore OS process probe errors #> }
+  }
+  catch { <# Ignore OS process probe errors #> }
   $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
   $subObj = if (Test-Path -LiteralPath $subFile) { Read-SenSafeJson -Path $subFile } else { $null }
   $subList = if ($null -eq $subObj) { @() } elseif ($subObj.PSObject.Properties.Name -contains "subagents") { @($subObj.subagents) } else { @($subObj) }
@@ -446,15 +453,14 @@ function Test-SenDeliveryGate {
   )
   $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
   if (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
-  foreach ($st in @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.id -like "SUBAGENT-*" -and [string]$_.status -ne "done" })) {
-    [void](Complete-SenTaskReview -Workspace $Workspace -Id ([string]$st.id) -Passed $true -Reviewer "pm" -EvidenceCommand "subagent-verified" -ExitCode 0)
-  }
   $hungObj = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes
   $tasks = @(Get-SenTasks -Workspace $Workspace)
-  $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })
+  $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" -and (-not ($_.PSObject.Properties['isTelemetryOnly'] -and [bool]$_.isTelemetryOnly)) })
   $incomplete = [System.Collections.Generic.List[string]]::new(); $rems = [System.Collections.Generic.List[string]]::new(); $doneCount = 0
+  $placeholderRe = '^(?i)(subagent-verified|verified-in-session|session-verified|hook-telemetry|subagent-report|subagent-closed)$'
   foreach ($t in $active) {
-    $hasValidEvidence = ($null -ne $t.evidence) -and (-not [string]::IsNullOrWhiteSpace([string]$t.evidence.command)) -and ([int]$t.evidence.exitCode -eq 0)
+    $evCmd = if ($null -ne $t.evidence) { [string]$t.evidence.command } else { "" }
+    $hasValidEvidence = (-not [string]::IsNullOrWhiteSpace($evCmd)) -and ($evCmd -notmatch $placeholderRe) -and ([int]$t.evidence.exitCode -eq 0)
     if ([string]$t.status -eq "done" -and $hasValidEvidence) { $doneCount++ } else { $incomplete.Add([string]$t.id) }
   }
   $reasons = [System.Collections.Generic.List[string]]::new()
@@ -474,8 +480,8 @@ function Test-SenDeliveryGate {
   $codeHealthObj = if ((-not $SkipCodeHealth.IsPresent) -and (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue)) { Measure-SenCodeHealth -Path $targetDir } else { $null }
   if ($null -ne $codeHealthObj -and (-not $codeHealthObj.Healthy)) { $allowed = $false; $reasons.Add("Clean Code check failed (Score=$($codeHealthObj.Score))"); $rems.Add("Measure-SenCodeHealth -Path '$targetDir'") }
   $vnLawObj = if ((-not $SkipVnLaw.IsPresent) -and (Get-Command Invoke-SenVnLawScan -ErrorAction SilentlyContinue)) { Invoke-SenVnLawScan -Path $targetDir } else { $null }
-  if ($null -ne $vnLawObj -and (-not $vnLawObj.CompliantCodeLevel)) {
-    $allowed = $false; $codes = @($vnLawObj.CodeRedFlags | ForEach-Object { $_.Code }) -join ', '; $reasons.Add("Vietnam Law code red flags ($codes)"); $rems.Add("Invoke-SenVnLawScan -Path '$targetDir'")
+  if ($null -ne $vnLawObj -and ((-not $vnLawObj.CompliantCodeLevel) -or ($vnLawObj.Verdict -notin @("PASS", "NOT_APPLICABLE")))) {
+    $allowed = $false; $codes = @($vnLawObj.CodeRedFlags | ForEach-Object { $_.Code }) -join ', '; $reasons.Add("Vietnam Law gate blocked (Verdict=$($vnLawObj.Verdict); RedFlags=$codes)"); $rems.Add("Invoke-SenVnLawScan -Path '$targetDir'")
   }
   $complianceObj = if ($null -ne $auditObj -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) { Test-SenProjectCompliance -Workspace $Workspace -ProjectPath $targetDir } else { $null }
   if ($null -ne $complianceObj -and (-not $complianceObj.Compliant)) { $allowed = $false; $reasons.Add("Process Compliance missing steps ($($complianceObj.MissingSteps -join ', '))"); $rems.Add("Test-SenProjectCompliance -Workspace '$Workspace'") }
@@ -510,12 +516,12 @@ function Get-SenRecoveryState {
   param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
   $tasks = @(Get-SenTasks -Workspace $Workspace)
   $inProgress = @($tasks | Where-Object { [string]$_.status -eq "in_progress" } | ForEach-Object { [string]$_.id })
-  $reviewing  = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
-  $ready      = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
-  $pending    = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
-  $done       = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
-  $backlog    = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
-  $failed     = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
+  $reviewing = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
+  $ready = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
+  $pending = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
+  $done = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
+  $backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
+  $failed = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
   return [pscustomobject][ordered]@{
     needsRecovery = [bool](($inProgress.Count + $reviewing.Count + $failed.Count) -gt 0); totalTasks = $tasks.Count
     doneIds = $done; inProgressIds = $inProgress; reviewingIds = $reviewing; readyIds = $ready; pendingIds = $pending; failedIds = $failed; backlogIds = $backlog

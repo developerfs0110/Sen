@@ -87,7 +87,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(404, "application/json", '{"error":"not found"}')
     def do_POST(self):
         p = self.path.split("?")[0]
+        origin = self.headers.get("Origin", "")
+        host = self.headers.get("Host", "")
+        if origin and not origin.startswith(("http://127.0.0.1", "http://localhost", "https://127.0.0.1", "https://localhost")):
+            self._send(403, "application/json", '{"error":"forbidden origin"}')
+            return
+        if host and not host.startswith(("127.0.0.1", "localhost")):
+            self._send(403, "application/json", '{"error":"forbidden host"}')
+            return
         n = int(self.headers.get("Content-Length", "0"))
+        if n > 65536:
+            self._send(413, "application/json", '{"error":"payload too large"}')
+            return
         body = self.rfile.read(n).decode("utf-8") if n > 0 else "{}"
         os.makedirs(off_dir, exist_ok=True)
         if p == "/api/config":

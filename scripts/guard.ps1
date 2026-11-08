@@ -130,7 +130,7 @@ if ($toolName -in @("write_file", "edit_file", "read_file")) {
             if ($normCheck -match '(?i)/\.git/(config|hooks(/|$))') {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct modification of protected Git metadata ($fullTarget)." $primaryWs $toolName $fullTarget $fullTarget
             }
-            if ($normCheck -match '(?i)/\.agents/(office/(tasks|process-audit|loops)\.json$|plugins/sen-method/scripts/guard\.(ps1|sh)$)') {
+            if ($normCheck -match '(?i)/\.agents/(office/(tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json$|plugins/sen-method/scripts/guard\.(ps1|sh)$)') {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct tampering with Sen protected state or guard ($fullTarget). Use Sen cmdlets instead." $primaryWs $toolName $fullTarget $fullTarget
             }
             # Auto-Create Restore Point before modifying any project source file (Zero-Amnesia Pre-Edit Backup)
@@ -234,7 +234,8 @@ $rules = @(
     @{ re = '(\biex\b|\binvoke-expression\b)\s*\(?\s*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b|new-object\s+net\.webclient)'; why = 'Remote script download and execution (IEX / IRM)' },
     @{ re = '(\bcurl\b|\bwget\b)[^;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; why = 'Piped remote script execution (curl/wget | sh/bash/pwsh)' },
     @{ re = '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b)[^|;&]*([/\\]\.ssh[/\\]|[/\\]\.aws[/\\]|[/\\]\.gnupg[/\\]|[/\\]\.kube[/\\]|id_rsa|id_ed25519)'; why = 'Reading sensitive host credential/key files via shell' },
-    @{ re = '\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}'; why = 'Encoded PowerShell command execution' }
+    @{ re = '\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}'; why = 'Encoded PowerShell command execution' },
+    @{ re = '(>|>>|\bset-content\b|\bout-file\b|\badd-content\b|\btee\b|\bcp\b|\bmv\b|\bcopy-item\b|\bmove-item\b|\bremove-item\b|\bdel\b|\brm\b)[^|;&]*[/\\]\.agents[/\\]office[/\\](tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json\b'; why = 'Direct shell tampering with protected .agents/office state JSON' }
 )
 
 foreach ($r in $rules) {
@@ -287,14 +288,47 @@ if ($cmd -cmatch '\bgit\b[^|;&]*\bbranch\b[^|;&]*(\s-D\b|--delete\s+--force|--fo
     Out-Decision "deny" "[SEN GUARD] Blocked: git branch -D (force-deletes unmerged branch). If you truly need this command, run it manually." $primaryWs $toolName $cmd $cmd
 }
 
-# 5. Zero-Amnesia Pre-Commit / Pre-Push Auto-Seal & Escalation Quarantine Gate
-if ($primaryWs -and ($cmd -match '(?i)\bgit\s+(commit|push)\b') -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
-    Import-SenRuntimeModule
-    if (Get-Command Install-SenGitHooks -ErrorAction SilentlyContinue) {
-        try { [void](Install-SenGitHooks -Workspace $primaryWs) } catch { <# Non-fatal #> }
+# 5. Zero-Amnesia Pre-Commit / Pre-Push Auto-Seal, CodeHealth & DOM XSS Gate
+if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
+    $gitTargetDir = $primaryWs
+    if ($cmd -match '(?i)\bgit\s+-C\s+(?:"([^"]+)"|''([^'']+)''|(\S+))') {
+        $gitTargetDir = if ($matches[1]) { $matches[1] } elseif ($matches[2]) { $matches[2] } else { $matches[3] }
     }
-    if (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue) {
-        try { [void](Sync-SenOfficeState -Workspace $primaryWs -PruneStale -UpdateSeal) } catch { <# Non-fatal #> }
+    elseif ($cmd -match '(?i)\b(?:Set-Location|cd|Push-Location)\s+(?:-(?:Path|LiteralPath)\s+)?(?:"([^"]+)"|''([^'']+)''|([^|;&\s]+))') {
+        $gitTargetDir = if ($matches[1]) { $matches[1] } elseif ($matches[2]) { $matches[2] } else { $matches[3] }
+    }
+    if ($gitTargetDir -and (Test-Path -LiteralPath (Join-Path $gitTargetDir "src"))) {
+        $targetSrc = Join-Path $gitTargetDir "src"
+        Import-SenRuntimeModule
+        if (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue) {
+            $repoHealth = Measure-SenCodeHealth -Path $targetSrc
+            if (-not $repoHealth.Healthy) {
+                Out-Decision "deny" "[SEN GUARD] Blocked: Code health check failed on target repo (Score=$($repoHealth.Score)). Run Measure-SenCodeHealth and fix violations before committing/pushing." $primaryWs $toolName $targetSrc $cmd
+            }
+        }
+        $uiScripts = @(Get-ChildItem -LiteralPath $targetSrc -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(js|ts|jsx|tsx)$' })
+        foreach ($uf in $uiScripts) {
+            $uTxt = [System.IO.File]::ReadAllText($uf.FullName, [System.Text.Encoding]::UTF8)
+            if ($uTxt -match '\.innerHTML\s*\+?=\s*`[^`]*\$\{' -and $uTxt -notmatch '(?i)\b(escapeHtml|DOMPurify)\b') {
+                Out-Decision "deny" "[SEN GUARD] Blocked: Potential DOM XSS (CWE-79) unescaped innerHTML interpolation detected." $primaryWs $toolName $uf.FullName $cmd
+            }
+        }
+    }
+    if ($primaryWs -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
+        Import-SenRuntimeModule
+        if (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue) {
+            $sealPath = Join-Path $primaryWs ".agents/office/state-seal.json"
+            if (Test-Path -LiteralPath $sealPath) {
+                $sealVerify = Sync-SenOfficeState -Workspace $primaryWs -VerifySeal
+                if ($sealVerify.Tampered) {
+                    Out-Decision "deny" "[SEN GUARD] Blocked: .agents/office state seal is tampered ($($sealVerify.TamperedFiles -join ', ')). Restore or verify state before committing/pushing." $primaryWs $toolName $cmd $cmd
+                }
+            }
+            try { [void](Sync-SenOfficeState -Workspace $primaryWs -PruneStale -UpdateSeal) } catch { <# Non-fatal #> }
+        }
+        if (Get-Command Install-SenGitHooks -ErrorAction SilentlyContinue) {
+            try { [void](Install-SenGitHooks -Workspace $primaryWs) } catch { <# Non-fatal #> }
+        }
     }
 }
 
