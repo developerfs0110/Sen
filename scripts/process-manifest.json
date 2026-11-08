@@ -39,7 +39,7 @@
       "stage": 2,
       "minTier": 2,
       "scope": "all",
-      "title": "Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best)"
+      "title": "Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best, Invoke-SenDialecticalAudit)"
     },
     {
       "id": "S2-DESIGN-SPEC",
@@ -74,7 +74,7 @@
       "stage": 3,
       "minTier": 1,
       "scope": "all",
-      "title": "Execute tasks with verified test evidence (ExitCode = 0) & zero hung tasks (Test-SenHungTasks)"
+      "title": "Execute tasks with verified test evidence (ExitCode = 0), Bounded Repair Loop (Invoke-SenBoundedRepairRound / Invoke-SenEscalationQuarantine, .agents/office/bounded-loops.json) & zero hung tasks (Test-SenHungTasks)"
     },
     {
       "id": "S3-TWOWAY-SYNC",
@@ -102,7 +102,7 @@
       "stage": 4,
       "minTier": 2,
       "scope": "all",
-      "title": "Sync docs/CONTEXT.md & TODO.md/README/CHANGELOG (Test-SenCapabilityParity), Phase 2 Output Simulation (Write-SenOfficeShowcase), delivery report & CI push loop (Invoke-SenCiPushLoop)"
+      "title": "Sync docs/CONTEXT.md & TODO.md/README/CHANGELOG (Test-SenCapabilityParity), state seal & Git hooks (Sync-SenOfficeState, Install-SenGitHooks), Phase 2 Output Simulation (Write-SenOfficeShowcase), delivery report & CI push loop (Invoke-SenCiPushLoop)"
     }
   ]
 }

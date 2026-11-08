@@ -561,4 +561,14 @@ if (Test-Path -LiteralPath $senGovernanceModulePath) {
     Import-Module -Name $senGovernanceModulePath -Global -Force
 }
 
+$senAdversarialModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Adversarial.psm1"
+if (Test-Path -LiteralPath $senAdversarialModulePath) {
+    Import-Module -Name $senAdversarialModulePath -Global -Force
+}
+
+$senBoundedLoopModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.BoundedLoop.psm1"
+if (Test-Path -LiteralPath $senBoundedLoopModulePath) {
+    Import-Module -Name $senBoundedLoopModulePath -Global -Force
+}
+
 Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack

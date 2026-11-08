@@ -6,7 +6,7 @@ description: Captures repeated multi-step workflows or user process corrections 
 # `sen-skill-capture` — Package Repeated Workflows & Corrections into Reusable Skills
 
 ## When to Suggest or Trigger
-1. **Repeated Workflow (2nd–3rd time):** You notice the user asking for, or you are executing, the same multi-step domain pattern, build/deploy ritual, or code convention for the **2nd or 3rd time** across the project or workspace.
+1. **Repeated Workflow (2nd–3rd time — Deterministic Detection via `Register-SenActionPattern`):** You notice the user asking for, or you are executing, the same multi-step domain pattern, build/deploy ritual, or code convention for the **2nd or 3rd time** across the project or workspace. Record recurring action sequences via `Register-SenActionPattern -Workspace $ws -PatternName "<name>" -Steps @(...)`; when `ShouldCapture -eq $true`, offer to package it using the returned `SuggestedSkillName` (which automatically strips any reserved `sen-` prefix).
 2. **After a Process Correction:** Immediately after the user corrects a non-trivial workflow, convention, or architectural mistake so the team never repeats the same mistake in future chats.
 3. **Explicit User Request:** The user says **"đóng gói thành skill"**, **"tạo skill từ việc này"**, **"lưu quy trình này thành skill"**, **"capture this as a skill"**, or **"package this workflow as a skill"**.
 
@@ -33,10 +33,11 @@ Once the user agrees to create the skill:
 2. Confirm the destination path: `<WORKSPACE>/.agents/skills/<skill-name>/SKILL.md`.
 3. If `<WORKSPACE>/.agents/skills/<skill-name>/SKILL.md` already exists, ask the user before updating or overwriting it.
 
-### Step 2: Author the Skill Using `writing-skills`
-Delegate the structure, frontmatter design, and authoring discipline to the **`writing-skills`** skill (installed in `<WORKSPACE>/.agents/plugins/superpowers/skills/writing-skills/SKILL.md`):
+### Step 2: Author & Package the Skill (`New-SenCapturedSkill, Invoke-SenPostCodePipeline` + `writing-skills`)
+Use **`New-SenCapturedSkill, Invoke-SenPostCodePipeline`** to deterministically scaffold `<WORKSPACE>/.agents/skills/<skill-name>/SKILL.md` along with zero-token executable scripts (`scripts/run.ps1` and `scripts/run.sh`) and follow the **`writing-skills`** skill (`<WORKSPACE>/.agents/plugins/superpowers/skills/writing-skills/SKILL.md`):
 
-1. Read and follow **`writing-skills`** best practices:
+1. Run `New-SenCapturedSkill, Invoke-SenPostCodePipeline -Workspace $ws -SkillName "<skill-name>" -Description "<trigger description>" -Steps @(...) -Commands @(...)` to generate `SKILL.md`, `scripts/run.ps1`, and `scripts/run.sh`, and automatically mark `.agents/office/action-patterns.json` as captured (`capturedSkill = "<skill-name>"`).
+2. Read and follow **`writing-skills`** best practices:
    - Write clear YAML frontmatter with `name: <skill-name>` and a specific `description` (`<= 300` characters) that states **when to trigger** the skill (including both Vietnamese and English trigger phrases if the user works in Vietnamese).
    - Keep the body focused on actionable steps, exact commands/paths, edge cases discovered during the session, and the specific mistake or pitfall the user corrected.
    - Keep `SKILL.md` compact (`<= 12,000` bytes); if the workflow requires a long checklist, template, or helper script, place those in sibling files inside `<WORKSPACE>/.agents/skills/<skill-name>/` and link to them with relative markdown links.
