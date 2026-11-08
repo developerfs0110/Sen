@@ -127,12 +127,16 @@ if (Test-Path -LiteralPath $installPath) {
 }
 
 $personalDataPattern = 'TUNBH[\\/]Workspace|[a-z]:[\\/]TUNBH'
+$secretLeakPattern   = '(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
 foreach ($f in $scanFiles) {
     $text = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8
     if ([string]::IsNullOrEmpty($text)) { continue }
+    $rel = $f.FullName.Substring($resolvedRoot.Length).TrimStart("\/")
     if ($text -match $personalDataPattern) {
-        $rel = $f.FullName.Substring($resolvedRoot.Length).TrimStart("\/")
         $errors.Add("personal data in $rel")
+    }
+    if ($f.Name -ne "Validate-Repo.ps1" -and $f.Name -notlike "*.Tests.ps1" -and $text -match $secretLeakPattern) {
+        $errors.Add("secret leak in $rel")
     }
 }
 

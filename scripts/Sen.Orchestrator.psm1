@@ -586,10 +586,15 @@ function Get-SenQualityMetrics {
     $firstPassPct = if ($doneCount -gt 0) { [int][Math]::Round(($firstPassCount * 100.0) / $doneCount) } else { 100 }
     $reworkPct = if ($totalActive -gt 0) { [int][Math]::Round(($reworkedCount * 100.0) / $totalActive) } else { 0 }
     $testPassPct = if ($doneCount -gt 0) { [int][Math]::Round(($verifiedPassCount * 100.0) / $doneCount) } else { 100 }
+    $reqCovPct = 100
+    if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/requirements.json")) -and (Get-Command Get-SenRequirementTraceability -ErrorAction SilentlyContinue)) {
+        $rtm = Get-SenRequirementTraceability -Workspace $Workspace
+        if ($rtm.TotalRequirements -gt 0) { $reqCovPct = [int][Math]::Round(($rtm.Verified * 100.0) / $rtm.TotalRequirements) }
+    }
     return [pscustomobject][ordered]@{
         totalTasks = $tasks.Count; activeTasks = $totalActive; doneTasks = $doneCount; inProgressTasks = $inProg.Count
         readyTasks = $ready.Count; backlogTasks = $backlog.Count; taskSuccessRatePct = $successPct
-        firstPassRatePct = $firstPassPct; reworkRatePct = $reworkPct; testPassRatePct = $testPassPct
+        firstPassRatePct = $firstPassPct; reworkRatePct = $reworkPct; testPassRatePct = $testPassPct; requirementCoveragePct = $reqCovPct
     }
 }
 

@@ -118,10 +118,11 @@ function Install-SenHarnessHookFile {
   param([string]$Workspace, [string]$HarnessId, [string]$HookRelPath)
   if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
   $fullP = Join-Path $Workspace $HookRelPath
-  $gRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts/guard.ps1" } else { "scripts/guard.ps1" }
-  $pRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/office-post.ps1")) { ".agents/plugins/sen-method/scripts/office-post.ps1" } else { "scripts/office-post.ps1" }
-  $gCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $gRel"
-  $pCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File $pRel"
+  $isWin = ($env:OS -eq "Windows_NT")
+  $gRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { if ($isWin) { ".agents/plugins/sen-method/scripts/guard.ps1" } else { ".agents/plugins/sen-method/scripts/guard.sh" } } else { if ($isWin) { "scripts/guard.ps1" } else { "scripts/guard.sh" } }
+  $pRel = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/office-post.ps1")) { if ($isWin) { ".agents/plugins/sen-method/scripts/office-post.ps1" } else { ".agents/plugins/sen-method/scripts/office-post.sh" } } else { if ($isWin) { "scripts/office-post.ps1" } else { "scripts/office-post.sh" } }
+  $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $gRel" } else { "sh $gRel" }
+  $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pRel" } else { "sh $pRel" }
   if ($HarnessId -eq "antigravity") {
     if (-not (Test-Path -LiteralPath $fullP)) {
       $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
@@ -468,7 +469,12 @@ function Invoke-SenCiPushLoop {
     }
     $ciOk = ($null -ne $ci -and $ci.Found -and $ci.Status -eq "completed" -and $ci.Conclusion -eq "success")
     if ($ciOk -or $null -eq $HealAction -or $attempt -ge $MaxAttempts) { break }
+    $preSuite = if (Get-Command Test-SenSuiteIntegrity -ErrorAction SilentlyContinue) { Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") } else { $null }
     & $HealAction $ci.FailedSteps
+    if ($null -ne $preSuite -and $preSuite.AssertionCount -gt 0) {
+      $postSuite = Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") -MinFiles $preSuite.FileCount -MinAssertions $preSuite.AssertionCount
+      if (-not $postSuite.Passed) { return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $pushed; CiPassed = $false; Attempts = $attempt; HeadSha = $headSha; Errors = @("TestTamperBlocked: $($postSuite.Reason)"); CiStatus = $ci } }
+    }
   }
   return [pscustomobject][ordered]@{ LocalPassed = $true; Pushed = $pushed; CiPassed = [bool]$ciOk; HeadSha = $headSha; Errors = if ($ci -and $ci.FailedSteps) { $ci.FailedSteps } else { @() }; CiStatus = $ci }
 }
