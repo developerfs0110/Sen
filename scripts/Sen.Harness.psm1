@@ -422,7 +422,7 @@ function Test-SenProjectCompliance {
 
 function Get-SenRemoteCiStatus {
   [CmdletBinding()]
-  param([Parameter(Mandatory = $true)][string]$RepoSlug, [string]$HeadSha = "", [scriptblock]$RestInvoker = $null)
+  param([Parameter(Mandatory = $false)][string]$RepoSlug = "developerfs0110/Sen", [string]$HeadSha = "", [Alias("WorkspacePath", "RepositoryPath", "RepoPath", "Path")][string]$Workspace = "", [scriptblock]$RestInvoker = $null)
   $invoker = if ($null -ne $RestInvoker) { $RestInvoker } else { { param([string]$Uri) Invoke-RestMethod -Uri $Uri -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 15 } }
   try { $runsResp = & $invoker "https://api.github.com/repos/$RepoSlug/actions/runs?per_page=5" }
   catch { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "error"; Conclusion = "error"; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @("API error: $($_.Exception.Message)") } }

@@ -370,6 +370,15 @@ function Test-SenHungTasks {
     $probeLog = Join-Path -Path $Workspace -ChildPath ".agents/office/hung-probes.log"
     $rawLog = $LogContent + "`n" + $(if (Test-Path -LiteralPath $probeLog) { [System.IO.File]::ReadAllText($probeLog) } else { "" })
     foreach ($m in [regex]::Matches($rawLog, '(?i)(Supply values for the following parameters:|\[Y/n\]|Press any key to continue|Overwrite\s*\?)')) { $deadlocked.Add($m.Value.Trim()) }
+    $hungPids = [System.Collections.Generic.List[int]]::new()
+    try {
+        foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction SilentlyContinue)) {
+            if (-not $wp -or [int]$wp.ProcessId -eq $PID) { continue }
+            if ([string]$wp.CommandLine -notmatch '(?i)-Command\s+"try\s*\{\s*\$OutputEncoding') { continue }
+            $proc = Get-Process -Id ([int]$wp.ProcessId) -ErrorAction SilentlyContinue
+            if ($null -ne $proc -and $proc.StartTime.ToUniversalTime() -lt $cutoff) { $hungPids.Add([int]$wp.ProcessId); $deadlocked.Add("OSHungProcess:PID=$($wp.ProcessId)") }
+        }
+    } catch { <# Ignore WMI errors #> }
     $subFile = Join-Path -Path $Workspace -ChildPath ".agents/office/subagents.json"
     $subObj = if (Test-Path -LiteralPath $subFile) { Read-SenSafeJson -Path $subFile } else { $null }
     $subList = if ($null -eq $subObj) { @() } elseif ($subObj.PSObject.Properties.Name -contains "subagents") { @($subObj.subagents) } else { @($subObj) }
@@ -412,7 +421,7 @@ function Test-SenHungTasks {
     return [pscustomobject][ordered]@{
         Healthy = ($staleTasks.Count -eq 0 -and $staleSubs.Count -eq 0 -and $deadlocked.Count -eq 0); StaleMinutes = $StaleMinutes
         StaleTaskIds = @($staleTasks.ToArray()); StaleSubagents = @($staleSubs.ToArray()); ActiveLongRunningIds = @($activeLongRunning.ToArray())
-        IdleSubagents = @($idleSubs.ToArray()); DeadlockedItems = @($deadlocked.ToArray()); CheckedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        IdleSubagents = @($idleSubs.ToArray()); DeadlockedItems = @($deadlocked.ToArray()); HungProcessIds = @($hungPids.ToArray()); CheckedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
 }
 
@@ -420,6 +429,10 @@ function Clear-SenHungTasks {
     [CmdletBinding()]
     param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [int]$StaleMinutes = 15, [ValidateSet("reset_to_todo", "mark_blocked", "ready", "blocked")][string]$Resolution = "reset_to_todo", [string]$LogContent = "")
     $check = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes -LogContent $LogContent
+    $killedPids = [System.Collections.Generic.List[int]]::new()
+    foreach ($hp in @($check.HungProcessIds)) {
+        if ($hp -and [int]$hp -ne $PID) { Stop-Process -Id ([int]$hp) -Force -ErrorAction SilentlyContinue; $killedPids.Add([int]$hp) }
+    }
     $newStatus = if ($Resolution -in @("mark_blocked", "blocked")) { "blocked" } elseif ($Resolution -eq "ready") { "ready" } else { "todo" }
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     $clearedTasks = [System.Collections.Generic.List[string]]::new()
@@ -467,8 +480,8 @@ function Clear-SenHungTasks {
         Write-SenAtomicJson -Path $subFile -InputObject $outPayload -Depth 6
     }
     return [pscustomobject][ordered]@{
-        ClearedCount = ($clearedTasks.Count + $clearedSubs.Count); ClearedTaskIds = @($clearedTasks.ToArray())
-        ClearedSubagents = @($clearedSubs.ToArray()); ClosedIdleSubagents = @($closedIdle.ToArray())
+        ClearedCount = ($clearedTasks.Count + $clearedSubs.Count + $killedPids.Count); ClearedTaskIds = @($clearedTasks.ToArray())
+        ClearedSubagents = @($clearedSubs.ToArray()); ClosedIdleSubagents = @($closedIdle.ToArray()); KilledProcessIds = @($killedPids.ToArray())
         ProtectedLongRunningIds = @($check.ActiveLongRunningIds); Resolution = $Resolution; NewStatus = $newStatus
     }
 }
@@ -541,7 +554,7 @@ function Test-SenDeliveryGate {
 
 function Get-SenRecoveryState {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $inProgress = @($tasks | Where-Object { [string]$_.status -eq "in_progress" } | ForEach-Object { [string]$_.id })
     $reviewing  = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
@@ -558,7 +571,7 @@ function Get-SenRecoveryState {
 
 function Get-SenQualityMetrics {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+    param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
     $tasks = @(Get-SenTasks -Workspace $Workspace)
     $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" })
     $backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" })
