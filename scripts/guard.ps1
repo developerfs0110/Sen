@@ -133,6 +133,21 @@ if ($toolName -in @("write_file", "edit_file", "read_file")) {
             if ($normCheck -match '(?i)/\.agents/(office/(tasks|process-audit|loops)\.json$|plugins/sen-method/scripts/guard\.(ps1|sh)$)') {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct tampering with Sen protected state or guard ($fullTarget). Use Sen cmdlets instead." $primaryWs $toolName $fullTarget $fullTarget
             }
+            # Auto-Create Restore Point before modifying any project source file (Zero-Amnesia Pre-Edit Backup)
+            if ($primaryWs -and ($normCheck -notmatch '(?i)/(\.agents|docs)/') -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
+                $rpDir = Join-Path $primaryWs ".agents/.sen-restore"
+                $recentRp = $false
+                if (Test-Path -LiteralPath $rpDir) {
+                    $latestRp = Get-ChildItem -LiteralPath $rpDir -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+                    if ($latestRp -and (([DateTime]::UtcNow - $latestRp.LastWriteTimeUtc).TotalMinutes -lt 10)) { $recentRp = $true }
+                }
+                if (-not $recentRp) {
+                    Import-SenRuntimeModule
+                    if (Get-Command New-SenRestorePoint -ErrorAction SilentlyContinue) {
+                        try { [void](New-SenRestorePoint -Workspace $primaryWs -Files @($fullTarget) -Label "auto-pre-edit") } catch { <# Non-fatal #> }
+                    }
+                }
+            }
             # Enforce Pre-Edit Restore Point Gate during active Tier 2/3 workflow
             $auditFile = if ($primaryWs) { Join-Path $primaryWs ".agents/office/process-audit.json" } else { "" }
             if ($auditFile -and (Test-Path -LiteralPath $auditFile) -and ($normCheck -notmatch '(?i)/(\.agents|docs)/')) {
@@ -270,6 +285,17 @@ if (Test-SenFfmpegInPlaceOverwrite -CommandText $cmd) {
 # Case-sensitive pattern: git branch -D (force-deletes unmerged branch)
 if ($cmd -cmatch '\bgit\b[^|;&]*\bbranch\b[^|;&]*(\s-D\b|--delete\s+--force|--force\s+--delete)') {
     Out-Decision "deny" "[SEN GUARD] Blocked: git branch -D (force-deletes unmerged branch). If you truly need this command, run it manually." $primaryWs $toolName $cmd $cmd
+}
+
+# 5. Zero-Amnesia Pre-Commit / Pre-Push Auto-Seal & Escalation Quarantine Gate
+if ($primaryWs -and ($cmd -match '(?i)\bgit\s+(commit|push)\b') -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
+    Import-SenRuntimeModule
+    if (Get-Command Install-SenGitHooks -ErrorAction SilentlyContinue) {
+        try { [void](Install-SenGitHooks -Workspace $primaryWs) } catch { <# Non-fatal #> }
+    }
+    if (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue) {
+        try { [void](Sync-SenOfficeState -Workspace $primaryWs -PruneStale -UpdateSeal) } catch { <# Non-fatal #> }
+    }
 }
 
 Out-Decision "ask" $null
