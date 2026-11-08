@@ -468,7 +468,7 @@ function Invoke-SenCiPushLoop {
 
 function Invoke-SenDialecticalAudit {
   [CmdletBinding()]
-  param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectPath = "")
+  param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectPath = "", [switch]$RequireIndependentReviewer, [scriptblock]$IndependentProbe = $null)
   $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
   $sDir = Join-Path $Workspace "docs/superpowers/specs"; $hasDialecticalSpec = $false
   if (Test-Path -LiteralPath $sDir) {
@@ -478,16 +478,33 @@ function Invoke-SenDialecticalAudit {
     }
   }
   $ch = Measure-SenCodeHealth -Path $targetDir; $vl = Invoke-SenVnLawScan -Path $targetDir
+  $evVal = if (Get-Command Test-SenEvidenceValidity -ErrorAction SilentlyContinue) { Test-SenEvidenceValidity -Workspace $Workspace } else { [pscustomobject]@{ AllValid = $true; StaleCount = 0 } }
+  $hung = if (Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) { Test-SenHungTasks -Workspace $Workspace } else { [pscustomobject]@{ Healthy = $true; StaleTaskIds = @(); HungProcessIds = @() } }
   $tasks = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
-  $badEvidence = @($tasks | Where-Object { [string]$_.status -eq "done" -and ($null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 -or ([string]$_.evidence.command -notmatch '[A-Za-z0-9]{3,}')) })
+  $fakeCmdRe = '^(todo-verified|subagent-verified|manual|none|ok|pass|fake|verbal)$'
+  $badEvidence = @($tasks | Where-Object {
+    [string]$_.status -eq "done" -and ($null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 -or ([string]$_.evidence.command -notmatch '[A-Za-z0-9]{3,}') -or ([string]$_.evidence.command -match '(?i)^(manual|none|ok|pass|fake|verbal)$') -or ($RequireIndependentReviewer.IsPresent -and [string]$_.evidence.command -match "(?i)$fakeCmdRe"))
+  })
+  $selfReviewed = @($tasks | Where-Object {
+    [string]$_.status -eq "done" -and $_.evidence -and (-not [string]::IsNullOrWhiteSpace([string]$_.assignee)) -and (-not [string]::IsNullOrWhiteSpace([string]$_.evidence.reviewer)) -and ([string]$_.assignee -eq [string]$_.evidence.reviewer) -and ([string]$_.assignee -ne "pm" -or $RequireIndependentReviewer.IsPresent)
+  })
+  $probeOk = if ($null -ne $IndependentProbe) { [bool](& $IndependentProbe) } else { $true }
+  $v3Ok = ($badEvidence.Count -eq 0) -and [bool]$evVal.AllValid -and $probeOk
+  $v6Ok = ($selfReviewed.Count -eq 0) -and $probeOk
   $vectors = @(
-    [pscustomobject]@{ Id = "V1-DIALECTICAL-SPEC"; Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $sDir)); Detail = "Thesis + Antithesis" },
-    [pscustomobject]@{ Id = "V2-BOUNDARY-HEALTH"; Passed = [bool]$ch.Healthy; Detail = "Score=$($ch.Score)" },
-    [pscustomobject]@{ Id = "V3-SOCRATIC-EVIDENCE"; Passed = ($badEvidence.Count -eq 0); Detail = "Bad=$($badEvidence.Count)" },
-    [pscustomobject]@{ Id = "V4-LEGAL-PARTITION"; Passed = [bool]$vl.CompliantCodeLevel; Detail = "Red=$($vl.CodeRedFlags.Count)" }
+    [pscustomobject]@{ Id = "V1-DIALECTICAL-SPEC"; Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $sDir)); Detail = "AgentA:Proposal+ResourceCost" },
+    [pscustomobject]@{ Id = "V2-BOUNDARY-HEALTH"; Passed = [bool]$ch.Healthy; Detail = "AgentC:Score=$($ch.Score)" },
+    [pscustomobject]@{ Id = "V3-SOCRATIC-EVIDENCE"; Passed = [bool]$v3Ok; Detail = "Bad=$($badEvidence.Count);Stale=$($evVal.StaleCount)" },
+    [pscustomobject]@{ Id = "V4-LEGAL-PARTITION"; Passed = [bool]$vl.CompliantCodeLevel; Detail = "Red=$($vl.CodeRedFlags.Count)" },
+    [pscustomobject]@{ Id = "V5-RUNTIME-LIVENESS"; Passed = [bool]$hung.Healthy; Detail = "AgentB:Hung=$($hung.StaleTaskIds.Count + $hung.HungProcessIds.Count)" },
+    [pscustomobject]@{ Id = "V6-INDEPENDENT-REVIEW"; Passed = [bool]$v6Ok; Detail = "AgentD:SelfReview=$($selfReviewed.Count)" }
   )
-  $passedCount = @($vectors | Where-Object { $_.Passed }).Count
-  $resObj = [pscustomobject][ordered]@{ Workspace = $Workspace; Passed = ($passedCount -eq $vectors.Count); Score = [int][Math]::Round(($passedCount * 100.0) / $vectors.Count); Vectors = $vectors; verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
+  $passedCount = @($vectors | Where-Object { $_.Passed }).Count; $allPassed = ($passedCount -eq $vectors.Count)
+  $indepReport = [pscustomobject][ordered]@{
+    AgentA_Proposer = [bool]($vectors[0].Passed); AgentB_FaultFinder = [bool]($vectors[4].Passed -and $v3Ok)
+    AgentC_Quantitative = [bool]($vectors[1].Passed -and $vectors[3].Passed); AgentD_Decision = if ($allPassed) { "APPROVED" } else { "REJECTED" }
+  }
+  $resObj = [pscustomobject][ordered]@{ Workspace = $Workspace; Passed = $allPassed; Score = [int][Math]::Round(($passedCount * 100.0) / $vectors.Count); Vectors = $vectors; IndependentReview = $indepReport; verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
   if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) { Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/dialectical-audit.json") -InputObject $resObj -Depth 6 }
   return $resObj
 }
