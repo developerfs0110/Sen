@@ -64,72 +64,65 @@ function ConvertFrom-SenHookPayload {
 function Update-SenManagedBlock {
   [CmdletBinding()]
   param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Content, [string]$FrontMatter = "")
-  $managedBlock = "<!-- SEN-METHOD:START -->`n$($Content.Trim())`n<!-- SEN-METHOD:END -->"
+  $blk = "<!-- SEN-METHOD:START -->`n$($Content.Trim())`n<!-- SEN-METHOD:END -->"
   $dir = [System.IO.Path]::GetDirectoryName($Path)
   if ($dir -and -not (Test-Path -LiteralPath $dir)) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
-  $existing = if (Test-Path -LiteralPath $Path) { [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8) } else { "" }
-  $pattern = '(?s)<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->'
-  if ([string]::IsNullOrWhiteSpace($existing)) { $finalText = if (-not [string]::IsNullOrWhiteSpace($FrontMatter)) { "$($FrontMatter.Trim())`n`n$managedBlock`n" } else { "$managedBlock`n" } }
-  elseif ($existing -match $pattern) { $finalText = [regex]::Replace($existing, $pattern, $managedBlock) }
+  $ex = if (Test-Path -LiteralPath $Path) { [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8) } else { "" }
+  $pat = '(?s)<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->'
+  if ([string]::IsNullOrWhiteSpace($ex)) { $fin = if ($FrontMatter) { "$($FrontMatter.Trim())`n`n$blk`n" } else { "$blk`n" } }
+  elseif ($ex -match $pat) { $fin = [regex]::Replace($ex, $pat, $blk) }
   else {
-    $prefix = $existing.TrimEnd()
-    if (-not [string]::IsNullOrWhiteSpace($FrontMatter) -and -not $prefix.StartsWith("---")) { $prefix = "$($FrontMatter.Trim())`n`n$prefix" }
-    $finalText = "$prefix`n`n$managedBlock`n"
+    $pfx = $ex.TrimEnd()
+    if ($FrontMatter -and -not $pfx.StartsWith("---")) { $pfx = "$($FrontMatter.Trim())`n`n$pfx" }
+    $fin = "$pfx`n`n$blk`n"
   }
-  [System.IO.File]::WriteAllText($Path, $finalText, [System.Text.UTF8Encoding]::new($false)); return $true
+  [System.IO.File]::WriteAllText($Path, $fin, [System.Text.UTF8Encoding]::new($false)); return $true
 }
 
 function Remove-SenManagedBlock {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $true)][string]$Path)
+  [CmdletBinding()] param([Parameter(Mandatory = $true)][string]$Path)
   if (-not (Test-Path -LiteralPath $Path)) { return $false }
-  $existing = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
-  $pattern = '(?s)\r?\n?<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->\r?\n?'
-  if ($existing -notmatch $pattern) { return $false }
-  $cleaned = ([regex]::Replace($existing, $pattern, "`n")).Trim()
-  if ([string]::IsNullOrWhiteSpace($cleaned) -or $cleaned -match '^---\s*[\s\S]*?---$') { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
-  else { [System.IO.File]::WriteAllText($Path, ($cleaned + "`n"), [System.Text.UTF8Encoding]::new($false)) }
+  $ex = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+  $pat = '(?s)\r?\n?<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->\r?\n?'
+  if ($ex -notmatch $pat) { return $false }
+  $cln = ([regex]::Replace($ex, $pat, "`n")).Trim()
+  if ([string]::IsNullOrWhiteSpace($cln) -or $cln -match '^---\s*[\s\S]*?---$') { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
+  else { [System.IO.File]::WriteAllText($Path, ($cln + "`n"), [System.Text.UTF8Encoding]::new($false)) }
   return $true
 }
 
 function Build-SenHarnessBridgeText {
   param([string]$Workspace, [string]$HarnessId)
-  $pRules = Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"
-  $rPath = Join-Path $Workspace ".agents/rules/AGENTS.md"
-  if (Test-Path -LiteralPath $pRules) {
-    $pDir = [System.IO.Path]::GetDirectoryName($rPath)
-    if ($pDir -and -not (Test-Path -LiteralPath $pDir)) { [System.IO.Directory]::CreateDirectory($pDir) | Out-Null }
-    Copy-Item -LiteralPath $pRules -Destination $rPath -Force
-  }
-  elseif (-not (Test-Path -LiteralPath $rPath)) { $rPath = Join-Path $Workspace "rules/AGENTS.md" }
-  $core = if (Test-Path -LiteralPath $rPath) { [System.IO.File]::ReadAllText($rPath, [System.Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
-  $profP = Join-Path $Workspace ".agents/rules/profile.md"
-  $prof = if (Test-Path -LiteralPath $profP) { "`n`n" + [System.IO.File]::ReadAllText($profP, [System.Text.Encoding]::UTF8).Trim() } else { "" }
-  $info = "## Multi-Harness Bridge ($HarnessId)`n- **Single Source of Truth:** `.agents/` holds rules, skills (`.agents/plugins/sen-method/skills/` and `.agents/skills/`), state (`.agents/office/tasks.json`), and 3D AI Office.`n- **Two-Way Sync:** Saving `docs/superpowers/plans/*.md` or `docs/TODO.md` auto-syncs tasks into `.agents/office/tasks.json`; completing tasks via `Complete-SenTaskReview` auto-ticks `[x]` in Markdown."
-  return ($core + $prof + "`n`n" + $info)
+  $pR = Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"; $rP = Join-Path $Workspace ".agents/rules/AGENTS.md"
+  if (Test-Path -LiteralPath $pR) {
+    $d = [System.IO.Path]::GetDirectoryName($rP); if ($d -and -not (Test-Path -LiteralPath $d)) { [System.IO.Directory]::CreateDirectory($d) | Out-Null }
+    Copy-Item -LiteralPath $pR -Destination $rP -Force
+  } elseif (-not (Test-Path -LiteralPath $rP)) { $rP = Join-Path $Workspace "rules/AGENTS.md" }
+  $core = if (Test-Path -LiteralPath $rP) { [System.IO.File]::ReadAllText($rP, [System.Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
+  $prP = Join-Path $Workspace ".agents/rules/profile.md"
+  $prof = if (Test-Path -LiteralPath $prP) { "`n`n" + [System.IO.File]::ReadAllText($prP, [System.Text.Encoding]::UTF8).Trim() } else { "" }
+  return ($core + $prof + "`n`n## Multi-Harness Bridge ($HarnessId)`n- **Single Source of Truth:** `.agents/` holds rules, skills (`.agents/plugins/sen-method/skills/` and `.agents/skills/`), state (`.agents/office/tasks.json`), and 3D AI Office.`n- **Two-Way Sync:** Saving `docs/superpowers/plans/*.md` or `docs/TODO.md` auto-syncs tasks into `.agents/office/tasks.json`; completing tasks via `Complete-SenTaskReview` auto-ticks `[x]` in Markdown.")
 }
 
 function Install-SenHarnessHookFile {
   param([string]$Workspace, [string]$HarnessId, [string]$HookRelPath)
-  if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
-  $fullP = Join-Path $Workspace $HookRelPath; $isWin = ($env:OS -eq "Windows_NT"); $ext = if ($isWin) { "ps1" } else { "sh" }
-  $pBase = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts" } else { "scripts" }
-  $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/guard.$ext" } else { "sh $pBase/guard.$ext" }
-  $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/office-post.$ext" } else { "sh $pBase/office-post.$ext" }
+  if (-not $HookRelPath) { return $null }
+  $fullP = Join-Path $Workspace $HookRelPath; $win = ($env:OS -eq "Windows_NT"); $ext = if ($win) { "ps1" } else { "sh" }
+  $pB = if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts" } else { "scripts" }
+  $gC = if ($win) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pB/guard.$ext" } else { "sh $pB/guard.$ext" }
+  $pC = if ($win) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pB/office-post.$ext" } else { "sh $pB/office-post.$ext" }
   if ($HarnessId -eq "antigravity") {
     if (-not (Test-Path -LiteralPath $fullP)) {
-      $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
-      Write-SenAtomicJson -Path $fullP -InputObject $agObj -Depth 8
+      Write-SenAtomicJson -Path $fullP -InputObject ([ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gC; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pC; timeout = 5 }) }) } }) -Depth 8
     }
     return $fullP
   }
-  $exObj = Read-SenSafeJson -Path $fullP
-  $rHash = if ($null -ne $exObj) { ConvertTo-SenHashtable -InputObject $exObj } else { @{} }
-  if ($rHash -isnot [hashtable]) { $rHash = @{} }
-  if (-not $rHash.ContainsKey("hooks") -or $rHash["hooks"] -isnot [hashtable]) { $rHash["hooks"] = @{} }
-  $rHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|run_command|write_file|edit_file|read_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) })
-  $rHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) })
-  Write-SenAtomicJson -Path $fullP -InputObject $rHash -Depth 10; return $fullP
+  $ex = Read-SenSafeJson -Path $fullP; $rH = if ($null -ne $ex) { ConvertTo-SenHashtable -InputObject $ex } else { @{} }
+  if ($rH -isnot [hashtable]) { $rH = @{} }
+  if (-not $rH.ContainsKey("hooks") -or $rH["hooks"] -isnot [hashtable]) { $rH["hooks"] = @{} }
+  $rH["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|run_command|write_file|edit_file|read_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $gC; timeout = 10 }) })
+  $rH["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pC; timeout = 5 }) })
+  Write-SenAtomicJson -Path $fullP -InputObject $rH -Depth 10; return $fullP
 }
 
 function Resolve-SenRequestedHarnesses {
@@ -142,55 +135,45 @@ function Resolve-SenRequestedHarnesses {
 
 function Install-SenHarness {
   [CmdletBinding()] param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @("all"))
-  $sel = @(Resolve-SenRequestedHarnesses -Harness $Harness)
-  $inst = [System.Collections.Generic.List[string]]::new(); $created = [System.Collections.Generic.List[string]]::new()
-  foreach ($h in $sel) {
-    $bTxt = Build-SenHarnessBridgeText -Workspace $Workspace -HarnessId $h.Id
-    $rFull = Join-Path $Workspace $h.RuleTarget
+  $inst = [System.Collections.Generic.List[string]]::new(); $cr = [System.Collections.Generic.List[string]]::new()
+  foreach ($h in @(Resolve-SenRequestedHarnesses $Harness)) {
+    $bTxt = Build-SenHarnessBridgeText $Workspace $h.Id; $rF = Join-Path $Workspace $h.RuleTarget
     if ($h.Id -eq "antigravity") {
-      $rDir = [System.IO.Path]::GetDirectoryName($rFull)
-      if ($rDir -and -not (Test-Path -LiteralPath $rDir)) { [System.IO.Directory]::CreateDirectory($rDir) | Out-Null }
-      if (-not (Test-Path -LiteralPath $rFull)) { [System.IO.File]::WriteAllText($rFull, $bTxt, [System.Text.UTF8Encoding]::new($false)) }
-    }
-    else {
+      $d = [System.IO.Path]::GetDirectoryName($rF); if ($d -and -not (Test-Path -LiteralPath $d)) { [System.IO.Directory]::CreateDirectory($d) | Out-Null }
+      if (-not (Test-Path -LiteralPath $rF)) { [System.IO.File]::WriteAllText($rF, $bTxt, [System.Text.UTF8Encoding]::new($false)) }
+    } else {
       $fm = if ($h.Id -eq "cursor") { "---`ndescription: Sen Methodology Core Rule & Multi-Harness Bridge`nalwaysApply: true`n---" } else { "" }
-      [void](Update-SenManagedBlock -Path $rFull -Content $bTxt -FrontMatter $fm)
+      [void](Update-SenManagedBlock -Path $rF -Content $bTxt -FrontMatter $fm)
     }
-    $created.Add($h.RuleTarget)
-    if ($h.SupportsHooks -and $h.HookTarget) { [void](Install-SenHarnessHookFile -Workspace $Workspace -HarnessId $h.Id -HookRelPath $h.HookTarget); $created.Add($h.HookTarget) }
+    $cr.Add($h.RuleTarget)
+    if ($h.SupportsHooks -and $h.HookTarget) { [void](Install-SenHarnessHookFile $Workspace $h.Id $h.HookTarget); $cr.Add($h.HookTarget) }
     $inst.Add($h.Id)
   }
-  $lock = Read-SenLock -Workspace $Workspace
-  $exH = if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { @($lock["harnesses"]) } else { @() }
-  $mH = [System.Collections.Generic.List[string]]::new()
-  foreach ($eh in $exH) { if ($eh -and -not $mH.Contains([string]$eh)) { $mH.Add([string]$eh) } }
+  $lock = Read-SenLock -Workspace $Workspace; $mH = [System.Collections.Generic.List[string]]::new()
+  if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { foreach ($eh in @($lock["harnesses"])) { if ($eh -and -not $mH.Contains([string]$eh)) { $mH.Add([string]$eh) } } }
   foreach ($ih in $inst) { if (-not $mH.Contains($ih)) { $mH.Add($ih) } }
   $lock["harnesses"] = @($mH.ToArray()); Write-SenLock -Workspace $Workspace -Lock $lock
-  return [pscustomobject][ordered]@{ Workspace = $Workspace; Installed = @($inst.ToArray()); FilesCreated = @($created.ToArray()); UpdatedLock = $true }
+  return [pscustomobject][ordered]@{ Workspace=$Workspace; Installed=@($inst.ToArray()); FilesCreated=@($cr.ToArray()); UpdatedLock=$true }
 }
 
 function Uninstall-SenHarness {
   [CmdletBinding()] param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @())
-  $sel = @(Resolve-SenRequestedHarnesses -Harness $Harness)
   $rem = [System.Collections.Generic.List[string]]::new(); $upd = [System.Collections.Generic.List[string]]::new()
-  foreach ($h in $sel) {
+  foreach ($h in @(Resolve-SenRequestedHarnesses $Harness)) {
     if ($h.Id -eq "antigravity") { continue }
     if (Remove-SenManagedBlock -Path (Join-Path $Workspace $h.RuleTarget)) { $upd.Add($h.RuleTarget) }
     if ($h.SupportsHooks -and $h.HookTarget) {
-      $hFull = Join-Path $Workspace $h.HookTarget
-      $exObj = Read-SenSafeJson -Path $hFull
-      if ($null -ne $exObj) {
-        $rHash = ConvertTo-SenHashtable -InputObject $exObj
-        if ($rHash -is [hashtable] -and $rHash.ContainsKey("hooks")) { $rHash.Remove("hooks"); Write-SenAtomicJson -Path $hFull -InputObject $rHash -Depth 8; $upd.Add($h.HookTarget) }
+      $hF = Join-Path $Workspace $h.HookTarget; $ex = Read-SenSafeJson -Path $hF
+      if ($null -ne $ex) {
+        $rH = ConvertTo-SenHashtable -InputObject $ex
+        if ($rH -is [hashtable] -and $rH.ContainsKey("hooks")) { $rH.Remove("hooks"); Write-SenAtomicJson -Path $hF -InputObject $rH -Depth 8; $upd.Add($h.HookTarget) }
       }
     }
     $rem.Add($h.Id)
   }
   $lock = Read-SenLock -Workspace $Workspace
-  if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) {
-    $lock["harnesses"] = @($lock["harnesses"] | Where-Object { $rem -notcontains [string]$_ }); Write-SenLock -Workspace $Workspace -Lock $lock
-  }
-  return [pscustomobject][ordered]@{ Workspace = $Workspace; Uninstalled = @($rem.ToArray()); FilesUpdated = @($upd.ToArray()) }
+  if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { $lock["harnesses"] = @($lock["harnesses"] | Where-Object { $rem -notcontains [string]$_ }); Write-SenLock -Workspace $Workspace -Lock $lock }
+  return [pscustomobject][ordered]@{ Workspace=$Workspace; Uninstalled=@($rem.ToArray()); FilesUpdated=@($upd.ToArray()) }
 }
 
 function Test-SenHarnessStatus {
