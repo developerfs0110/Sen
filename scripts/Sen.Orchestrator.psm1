@@ -592,6 +592,7 @@ function New-SenRestorePoint {
   }
   $manifest = [ordered]@{ id = $id; label = $Label; createdAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); entries = @($entries.ToArray()) }
   Write-SenAtomicJson -Path (Join-Path -Path $rpDir -ChildPath "manifest.json") -InputObject $manifest -Depth 6
+  if (Get-Command Write-SenOfficeEvent -ErrorAction SilentlyContinue) { [void](Write-SenOfficeEvent -Workspace $resolvedWs -From "pm" -To "sys" -Lane "Safety" -EcoText "RestorePoint: $id" -FullText "Created restore point $id ($Label)") }
   return [pscustomobject]@{ Id = $id; Label = $Label; Directory = $rpDir; FileCount = $entries.Count }
 }
 

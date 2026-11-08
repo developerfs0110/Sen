@@ -137,6 +137,50 @@ function Set-SenOfficeConfig {
     return $next
 }
 
+function Start-SenOfficeIfIdle {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Workspace, [switch]$NoBrowser)
+    try {
+        if ($env:SEN_NO_AUTO_OFFICE -eq "1" -or [string]::IsNullOrWhiteSpace($Workspace)) { return $false }
+        if ($Workspace -match '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)') { return $false }
+        $cfg = Get-SenOfficeConfig -Workspace $Workspace
+        if ($cfg.mode -eq "off") { return $false }
+        $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+        if (-not (Test-Path -LiteralPath $officeDir)) { [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null }
+        $stampPath = Join-Path -Path $officeDir -ChildPath "autostart.stamp"
+        if (Test-Path -LiteralPath $stampPath) {
+            $ageSec = ([DateTime]::UtcNow - (Get-Item -LiteralPath $stampPath).LastWriteTimeUtc).TotalSeconds
+            if ($ageSec -ge 0 -and $ageSec -lt 15) { return $true }
+        }
+        $port = [int]$cfg.port
+        $alive = $false
+        $tc = [System.Net.Sockets.TcpClient]::new()
+        try {
+            $ar = $tc.BeginConnect("127.0.0.1", $port, $null, $null)
+            if ($ar.AsyncWaitHandle.WaitOne(150, $false) -and $tc.Connected) { $alive = $true }
+        }
+        catch { $alive = $false }
+        finally { try { $tc.Close() } catch { <# Ignore socket close #> } }
+        [System.IO.File]::WriteAllText($stampPath, [DateTime]::UtcNow.ToString("o"), [System.Text.UTF8Encoding]::new($false))
+        if ($alive) { return $true }
+        $startScr = Join-Path -Path $PSScriptRoot -ChildPath "start-office.ps1"
+        if (-not (Test-Path -LiteralPath $startScr)) { return $false }
+        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell.exe" }
+        $nbFlag = if ($NoBrowser.IsPresent) { " -NoBrowser" } else { "" }
+        $cmdLine = "$psExe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScr`" -Workspace `"$Workspace`"$nbFlag"
+        if (($env:OS -eq "Windows_NT") -and (Get-Command Invoke-CimMethod -ErrorAction SilentlyContinue)) {
+            [void](Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmdLine } -ErrorAction SilentlyContinue)
+        }
+        else {
+            $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"")
+            if ($NoBrowser.IsPresent) { $argList += "-NoBrowser" }
+            Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null
+        }
+        return $true
+    }
+    catch { return $false }
+}
+
 function Write-SenOfficeEvent {
     [CmdletBinding()]
     param(
@@ -161,6 +205,7 @@ function Write-SenOfficeEvent {
     try {
         $cfg = Get-SenOfficeConfig -Workspace $Workspace
         if ($cfg.mode -eq "off") { return $false }
+        [void](Start-SenOfficeIfIdle -Workspace $Workspace)
 
         $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
         if (-not (Test-Path -LiteralPath $officeDir)) {
@@ -321,6 +366,7 @@ function Write-SenOfficeShowcase {
         [hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
         [int]$Tier = 2
     )
+    [void](Start-SenOfficeIfIdle -Workspace $Workspace)
     $existing = Read-SenOfficeShowcase -Workspace $Workspace
     $merged = if ($null -ne $existing) { ConvertTo-SenHashtable -InputObject $existing } else { @{ } }
     $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")

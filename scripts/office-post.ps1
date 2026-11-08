@@ -77,6 +77,9 @@ try {
         if (Get-Command New-SenTask -ErrorAction SilentlyContinue) {
             [void](New-SenTask -Workspace $ws -Id "SUBAGENT-LIVE" -Title $ecoText -Tier 2 -RiskLevel "medium" -Module "Subagent" -Assignee $to -Status "in_progress")
         }
+        if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
+            [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "SUBAGENT-LIVE" -Title $ecoText -Phase 1 -Summary $fullText -Domain "architecture")
+        }
     }
     elseif ($toolName -eq "send_message") {
         $msgRaw = if ($argsObj.Message) { ([string]$argsObj.Message -replace '[\r\n\t]+', ' ').Trim() } else { "Subagent report" }
@@ -86,6 +89,9 @@ try {
         $fullText = "Subagent message: " + $(if ($msgRaw.Length -gt 180) { $msgRaw.Substring(0, 177) + "..." } else { $msgRaw })
         if (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue) {
             [void](Complete-SenTaskReview -Workspace $ws -Id "SUBAGENT-LIVE" -Passed $true -Reviewer "pm" -EvidenceCommand "subagent-report" -ExitCode 0 -Notes $shortMsg)
+        }
+        if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
+            [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "SUBAGENT-LIVE" -Title $ecoText -Phase 2 -Summary $fullText -Domain "architecture")
         }
     }
     elseif ($toolName -eq "manage_subagents") {
