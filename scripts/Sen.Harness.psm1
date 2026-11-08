@@ -4,37 +4,35 @@ $ErrorActionPreference = "Stop"
 function Get-SenSupportedHarnesses {
   [CmdletBinding()] param()
   return @(
-    [pscustomobject][ordered]@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full" },
-    [pscustomobject][ordered]@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true; CapabilityLevel = "full" },
-    [pscustomobject][ordered]@{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full" },
-    [pscustomobject][ordered]@{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true; CapabilityLevel = "rules-only" },
-    [pscustomobject][ordered]@{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial" },
-    [pscustomobject][ordered]@{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial" }
-  )
+    @{ Id="antigravity"; DisplayName="Google Antigravity IDE"; RuleTarget=".agents/rules/AGENTS.md"; HookTarget=".agents/plugins/sen-method/hooks.json"; SupportsHooks=$true; CapabilityLevel="full" },
+    @{ Id="claude"; DisplayName="Claude Code CLI / IDE"; RuleTarget="CLAUDE.md"; HookTarget=".claude/settings.json"; SupportsHooks=$true; CapabilityLevel="full" },
+    @{ Id="cursor"; DisplayName="Cursor AI IDE"; RuleTarget=".cursor/rules/sen-method.mdc"; HookTarget=".cursor/hooks.json"; SupportsHooks=$true; CapabilityLevel="full" },
+    @{ Id="copilot"; DisplayName="GitHub Copilot"; RuleTarget=".github/copilot-instructions.md"; HookTarget=".github/hooks/sen-hooks.json"; SupportsHooks=$true; CapabilityLevel="rules-only" },
+    @{ Id="windsurf"; DisplayName="Windsurf AI IDE"; RuleTarget=".windsurfrules"; HookTarget=".windsurf/hooks.json"; SupportsHooks=$true; CapabilityLevel="partial" },
+    @{ Id="codex"; DisplayName="Codex CLI / OpenCode"; RuleTarget="AGENTS.md"; HookTarget=".codex/hooks.json"; SupportsHooks=$true; CapabilityLevel="partial" }
+  ) | ForEach-Object { [pscustomobject]$_ }
 }
 
 function Get-SenPropValue {
   param($Obj, [string[]]$Names)
   if ($null -eq $Obj) { return "" }
-  foreach ($n in $Names) {
-    if ($Obj.PSObject.Properties.Name -contains $n -and $null -ne $Obj.$n -and -not [string]::IsNullOrWhiteSpace([string]$Obj.$n)) { return [string]$Obj.$n }
-  }
+  foreach ($n in $Names) { if ($Obj.PSObject.Properties.Name -contains $n -and $null -ne $Obj.$n -and -not [string]::IsNullOrWhiteSpace([string]$Obj.$n)) { return [string]$Obj.$n } }
   return ""
 }
 
 function ConvertFrom-SenHookPayload {
   [CmdletBinding()] param([Parameter(Mandatory = $true)]$InputObject)
-  $rawTool = ""; $argsObj = $null
+  $rawTool = ""; $a = $null
   if ($InputObject.PSObject.Properties.Name -contains "toolCall" -and $null -ne $InputObject.toolCall) {
-    $rawTool = Get-SenPropValue -Obj $InputObject.toolCall -Names @("name", "toolName")
-    if ($InputObject.toolCall.PSObject.Properties.Name -contains "args") { $argsObj = $InputObject.toolCall.args }
+    $rawTool = Get-SenPropValue $InputObject.toolCall @("name", "toolName")
+    if ($InputObject.toolCall.PSObject.Properties.Name -contains "args") { $a = $InputObject.toolCall.args }
   }
-  if ([string]::IsNullOrWhiteSpace($rawTool)) { $rawTool = Get-SenPropValue -Obj $InputObject -Names @("tool_name", "toolName", "name", "hook_event_name") }
-  if ($null -eq $argsObj) {
-    $argsObj = if ($InputObject.PSObject.Properties.Name -contains "tool_input" -and $null -ne $InputObject.tool_input) { $InputObject.tool_input }
+  if (-not $rawTool) { $rawTool = Get-SenPropValue $InputObject @("tool_name", "toolName", "name", "hook_event_name") }
+  if ($null -eq $a) {
+    $a = if ($InputObject.PSObject.Properties.Name -contains "tool_input" -and $null -ne $InputObject.tool_input) { $InputObject.tool_input }
     elseif ($InputObject.PSObject.Properties.Name -contains "toolArgs" -and $null -ne $InputObject.toolArgs) { $InputObject.toolArgs } else { $InputObject }
   }
-  $canonical = switch -Regex ($rawTool) {
+  $can = switch -Regex ($rawTool) {
     '^(?i)(run_command|bash|run_terminal_cmd|shell|exec|execute_command)$' { "run_command"; break }
     '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { "write_file"; break }
     '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { "edit_file"; break }
@@ -45,24 +43,21 @@ function ConvertFrom-SenHookPayload {
     '^(?i)(manage_subagents|manage_task)$' { "manage_subagents"; break }
     default { $rawTool }
   }
-  $cmdLine = Get-SenPropValue -Obj $argsObj -Names @("CommandLine", "command", "cmd")
-  $targetPath = Get-SenPropValue -Obj $argsObj -Names @("Path", "file_path", "target_file", "path", "SearchPath", "notebook_path")
-  $query = Get-SenPropValue -Obj $argsObj -Names @("Query", "Pattern", "pattern", "query")
   $wsList = [System.Collections.Generic.List[string]]::new()
-  foreach ($prop in @("workspacePaths", "workspace_roots")) {
-    if ($InputObject.PSObject.Properties.Name -contains $prop -and $null -ne $InputObject.$prop) {
-      foreach ($w in @($InputObject.$prop)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsList.Add([string]$w) } }
+  foreach ($p in @("workspacePaths", "workspace_roots")) {
+    if ($InputObject.PSObject.Properties.Name -contains $p -and $null -ne $InputObject.$p) {
+      foreach ($w in @($InputObject.$p)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsList.Add([string]$w) } }
     }
   }
-  $cwd = Get-SenPropValue -Obj $InputObject -Names @("cwd", "workspacePath", "workspace")
-  if (-not [string]::IsNullOrWhiteSpace($cwd) -and -not $wsList.Contains($cwd)) { $wsList.Add($cwd) }
-  $primaryWs = if ($wsList.Count -gt 0) { $wsList[0] } else { "" }
-  $enforcePaths = ($InputObject.PSObject.Properties.Name -contains "enforceTaskPaths" -and [bool]$InputObject.enforceTaskPaths) -or ($env:SEN_ENFORCE_ALLOWED_PATHS -eq "1")
-  $harness = if ($InputObject.PSObject.Properties.Name -contains "toolCall") { "antigravity" } elseif ($InputObject.PSObject.Properties.Name -contains "workspace_roots") { "cursor" } elseif ($InputObject.PSObject.Properties.Name -contains "tool_name") { "claude" } else { "generic" }
+  $cwd = Get-SenPropValue $InputObject @("cwd", "workspacePath", "workspace")
+  if ($cwd -and -not $wsList.Contains($cwd)) { $wsList.Add($cwd) }
+  $ep = ($InputObject.PSObject.Properties.Name -contains "enforceTaskPaths" -and [bool]$InputObject.enforceTaskPaths) -or ($env:SEN_ENFORCE_ALLOWED_PATHS -eq "1")
+  $hn = if ($InputObject.PSObject.Properties.Name -contains "toolCall") { "antigravity" } elseif ($InputObject.PSObject.Properties.Name -contains "workspace_roots") { "cursor" } elseif ($InputObject.PSObject.Properties.Name -contains "tool_name") { "claude" } else { "generic" }
   return [pscustomobject][ordered]@{
-    RawToolName = $rawTool; CanonicalTool = $canonical; CommandLine = $cmdLine; TargetPath = $targetPath
-    Query = $query; WorkspacePath = $primaryWs; WorkspaceList = @($wsList.ToArray())
-    EnforceTaskPaths = [bool]$enforcePaths; Harness = $harness
+    RawToolName = $rawTool; CanonicalTool = $can; CommandLine = (Get-SenPropValue $a @("CommandLine","command","cmd"))
+    TargetPath = (Get-SenPropValue $a @("Path","file_path","target_file","path","SearchPath","notebook_path"))
+    Query = (Get-SenPropValue $a @("Query","Pattern","pattern","query")); WorkspacePath = $(if ($wsList.Count -gt 0) { $wsList[0] } else { "" })
+    WorkspaceList = @($wsList.ToArray()); EnforceTaskPaths = [bool]$ep; Harness = $hn
   }
 }
 
@@ -373,140 +368,127 @@ function Test-SenSingleStepEvidence {
 function Test-SenStageGate {
   [CmdletBinding()]
   param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [ValidateRange(1, 4)][int]$Stage, [switch]$IgnoreLatched, [string]$ProjectPath = "")
-  $auditPath = Join-Path -Path $Workspace -ChildPath ".agents/office/process-audit.json"
-  $audit = Read-SenSafeJson -Path $auditPath
+  $aPath = Join-Path $Workspace ".agents/office/process-audit.json"; $audit = Read-SenSafeJson -Path $aPath
   if ($null -eq $audit) { $audit = Initialize-SenProcessAudit -Workspace $Workspace -Tier 3 -ProjectScope "core" }
   elseif ([string]$audit.manifestVersion -ne [string](Get-SenProcessCatalog).manifestVersion) {
     $audit = Initialize-SenProcessAudit -Workspace $Workspace -ProjectName ([string]$audit.projectName) -Tier ([int]$audit.tier) -ProjectScope ([string]$audit.projectScope) -PreserveLatched
   }
-  $sessStart = if ($audit.PSObject.Properties['startedAt'] -and $audit.startedAt) { [string]$audit.startedAt } else { "" }
-  $missing = [System.Collections.Generic.List[string]]::new(); $changed = $false
+  $ss = if ($audit.PSObject.Properties['startedAt'] -and $audit.startedAt) { [string]$audit.startedAt } else { "" }
+  $miss = [System.Collections.Generic.List[string]]::new(); $chg = $false
   foreach ($st in @($audit.selectedSteps)) {
     if ([int]$st.stage -gt $Stage) { continue }
-    $isFreshLatch = [bool]$st.latched -and (-not $IgnoreLatched.IsPresent) -and ([string]::IsNullOrWhiteSpace($sessStart) -or [string]$st.verifiedAt -ge $sessStart) -and ([string]$st.id -in @("S1-RISK", "S1-AUDIT-INIT") -or [string]$st.verifiedAt -gt $sessStart -or (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $sessStart -ProjectPath $ProjectPath))
-    if ($isFreshLatch) { continue }
-    if (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $sessStart -ProjectPath $ProjectPath) {
-      $st.passed = $true; $st.latched = $true; $st.verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $changed = $true
-    }
-    else {
-      if ([bool]$st.passed -or [bool]$st.latched) { $st.passed = $false; $st.latched = $false; $st.verifiedAt = $null; $changed = $true }
-      $missing.Add([string]$st.id)
+    $fresh = [bool]$st.latched -and (-not $IgnoreLatched.IsPresent) -and (-not $ss -or [string]$st.verifiedAt -ge $ss) -and ([string]$st.id -in @("S1-RISK","S1-AUDIT-INIT") -or [string]$st.verifiedAt -gt $ss -or (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $ss -ProjectPath $ProjectPath))
+    if ($fresh) { continue }
+    if (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $ss -ProjectPath $ProjectPath) {
+      $st.passed = $true; $st.latched = $true; $st.verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $chg = $true
+    } else {
+      if ([bool]$st.passed -or [bool]$st.latched) { $st.passed = $false; $st.latched = $false; $st.verifiedAt = $null; $chg = $true }
+      $miss.Add([string]$st.id)
     }
   }
-  if ($changed) { $audit.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); Write-SenAtomicJson -Path $auditPath -InputObject $audit -Depth 8 }
-  return [pscustomobject][ordered]@{ Stage = $Stage; Passed = ($missing.Count -eq 0); MissingSteps = @($missing.ToArray()); Audit = $audit }
+  if ($chg) { $audit.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); Write-SenAtomicJson -Path $aPath -InputObject $audit -Depth 8 }
+  return [pscustomobject][ordered]@{ Stage=$Stage; Passed=($miss.Count -eq 0); MissingSteps=@($miss.ToArray()); Audit=$audit }
 }
 
 function Test-SenProjectCompliance {
   [CmdletBinding()]
   param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectPath = "")
-  $finalStage = Test-SenStageGate -Workspace $Workspace -Stage 4 -ProjectPath $ProjectPath
-  $allSteps = @($finalStage.Audit.selectedSteps); $doneSteps = @($allSteps | Where-Object { [bool]$_.passed })
+  $fin = Test-SenStageGate -Workspace $Workspace -Stage 4 -ProjectPath $ProjectPath
+  $all = @($fin.Audit.selectedSteps); $done = @($all | Where-Object { [bool]$_.passed })
   return [pscustomobject][ordered]@{
-    Compliant = $finalStage.Passed; TotalSelected = $allSteps.Count; CompletedCount = $doneSteps.Count; MissingSteps = $finalStage.MissingSteps
-    StagesSummary = @(1..4 | ForEach-Object { $sNum = $_; $sItems = @($allSteps | Where-Object { [int]$_.stage -eq $sNum }); $sDone = @($sItems | Where-Object { [bool]$_.passed }); [pscustomobject][ordered]@{ Stage = $sNum; Total = $sItems.Count; Done = $sDone.Count; Passed = ($sDone.Count -eq $sItems.Count) } })
+    Compliant=$fin.Passed; TotalSelected=$all.Count; CompletedCount=$done.Count; MissingSteps=$fin.MissingSteps
+    StagesSummary=@(1..4 | ForEach-Object { $n=$_; $si=@($all | Where-Object { [int]$_.stage -eq $n }); $sd=@($si | Where-Object { [bool]$_.passed }); [pscustomobject][ordered]@{ Stage=$n; Total=$si.Count; Done=$sd.Count; Passed=($sd.Count -eq $si.Count) } })
   }
 }
 
 function Get-SenRemoteCiStatus {
   [CmdletBinding()]
   param([Parameter(Mandatory = $false)][string]$RepoSlug = "developerfs0110/Sen", [string]$HeadSha = "", [Alias("WorkspacePath", "RepositoryPath", "RepoPath", "Path")][string]$Workspace = "", [scriptblock]$RestInvoker = $null)
-  $invoker = if ($null -ne $RestInvoker) { $RestInvoker } else { { param([string]$Uri) Invoke-RestMethod -Uri $Uri -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 15 } }
-  try { $runsResp = & $invoker "https://api.github.com/repos/$RepoSlug/actions/runs?per_page=5" }
-  catch { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "error"; Conclusion = "error"; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @("API error: $($_.Exception.Message)") } }
-  $runs = if ($runsResp -and $runsResp.workflow_runs) { @($runsResp.workflow_runs) } else { @() }
-  $run = if (-not [string]::IsNullOrWhiteSpace($HeadSha)) { $runs | Where-Object { [string]$_.head_sha -like "$HeadSha*" } | Select-Object -First 1 } else { $runs | Select-Object -First 1 }
-  if ($null -eq $run) { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "not_found"; Conclusion = ""; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @() } }
-  $failedSteps = [System.Collections.Generic.List[string]]::new()
+  $inv = if ($RestInvoker) { $RestInvoker } else { { param([string]$Uri) Invoke-RestMethod -Uri $Uri -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 15 } }
+  try { $resp = & $inv "https://api.github.com/repos/$RepoSlug/actions/runs?per_page=5" }
+  catch { return [pscustomobject][ordered]@{ Found=$false; RunId=0; Status="error"; Conclusion="error"; HtmlUrl=""; HeadSha=$HeadSha; FailedSteps=@("API error: $($_.Exception.Message)") } }
+  $runs = if ($resp -and $resp.workflow_runs) { @($resp.workflow_runs) } else { @() }
+  $run = if ($HeadSha) { $runs | Where-Object { [string]$_.head_sha -like "$HeadSha*" } | Select-Object -First 1 } else { $runs | Select-Object -First 1 }
+  if ($null -eq $run) { return [pscustomobject][ordered]@{ Found=$false; RunId=0; Status="not_found"; Conclusion=""; HtmlUrl=""; HeadSha=$HeadSha; FailedSteps=@() } }
+  $failed = [System.Collections.Generic.List[string]]::new()
   if ([string]$run.conclusion -eq "failure" -and $run.jobs_url) {
-    try {
-      foreach ($j in @((& $invoker ([string]$run.jobs_url)).jobs)) {
-        foreach ($bs in @($j.steps | Where-Object { [string]$_.conclusion -eq "failure" } | ForEach-Object { "$($j.name) > $($_.name)" })) { $failedSteps.Add($bs) }
-      }
-    }
-    catch { <# Ignore job detail fetch error #> }
+    try { foreach ($j in @((& $inv ([string]$run.jobs_url)).jobs)) { foreach ($bs in @($j.steps | Where-Object { [string]$_.conclusion -eq "failure" } | ForEach-Object { "$($j.name) > $($_.name)" })) { $failed.Add($bs) } } } catch { <# Ignore #> }
   }
-  return [pscustomobject][ordered]@{ Found = $true; RunId = [long]$run.id; Status = [string]$run.status; Conclusion = [string]$run.conclusion; HtmlUrl = [string]$run.html_url; HeadSha = [string]$run.head_sha; FailedSteps = @($failedSteps.ToArray()) }
+  return [pscustomobject][ordered]@{ Found=$true; RunId=[long]$run.id; Status=[string]$run.status; Conclusion=[string]$run.conclusion; HtmlUrl=[string]$run.html_url; HeadSha=[string]$run.head_sha; FailedSteps=@($failed.ToArray()) }
 }
 
 function Invoke-SenCiPushLoop {
   [CmdletBinding()]
-  param([Parameter(Mandatory = $true)][string]$RepoPath, [Parameter(Mandatory = $true)][string]$CommitMessage, [string]$RepoSlug = "developerfs0110/Sen", [int]$PollSeconds = 5, [int]$TimeoutSeconds = 90, [int]$MaxAttempts = 3, [scriptblock]$RestInvoker = $null, [scriptblock]$HealAction = $null, [switch]$SkipPush)
-  $pushed = $false; $headSha = ""; $ci = $null; $ciOk = $false
-  for ($attempt = 1; $attempt -le [Math]::Max(1, $MaxAttempts); $attempt++) {
-    $valScript = Join-Path -Path $RepoPath -ChildPath "scripts/Validate-Repo.ps1"
-    if (Test-Path -LiteralPath $valScript) {
-      $valErrs = @(& $valScript -Root $RepoPath)
-      if ($valErrs.Count -gt 0) { return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $false; CiPassed = $false; Attempts = $attempt; HeadSha = ""; Errors = $valErrs; CiStatus = $null } }
+  param([Parameter(Mandatory = $false)][string]$RepoPath = $PWD.Path, [Parameter(Mandatory = $false)][string]$CommitMessage = "cap nhat", [string]$RepoSlug = "developerfs0110/Sen", [int]$PollSeconds = 5, [int]$TimeoutSeconds = 90, [int]$MaxAttempts = 3, [scriptblock]$RestInvoker = $null, [scriptblock]$HealAction = $null, [switch]$SkipPush)
+  $pushed = $false; $sha = ""; $ci = $null; $ciOk = $false
+  for ($att = 1; $att -le [Math]::Max(1, $MaxAttempts); $att++) {
+    $vScr = Join-Path $RepoPath "scripts/Validate-Repo.ps1"
+    if (Test-Path -LiteralPath $vScr) {
+      $vErr = @(& $vScr -Root $RepoPath)
+      if ($vErr.Count -gt 0) { return [pscustomobject][ordered]@{ LocalPassed=$false; Pushed=$false; CiPassed=$false; Attempts=$att; HeadSha=""; Errors=$vErr; CiStatus=$null } }
     }
     if (-not $SkipPush) {
-      $prevEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"; Push-Location -LiteralPath $RepoPath
+      $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"; Push-Location -LiteralPath $RepoPath
       try {
         if (@(git status --porcelain 2>&1).Count -gt 0) { [void](git add -A 2>&1); [void](git commit -m $CommitMessage 2>&1) }
-        if ($attempt -eq 1) { [void](git push 2>&1) } else { [void](git push origin HEAD 2>&1) }
-        $pushed = ($LASTEXITCODE -eq 0); $headSha = ([string](git rev-parse HEAD 2>&1)).Trim()
-      }
-      finally { Pop-Location; $ErrorActionPreference = $prevEap }
+        if ($att -eq 1) { [void](git push 2>&1) } else { [void](git push origin HEAD 2>&1) }
+        $pushed = ($LASTEXITCODE -eq 0); $sha = ([string](git rev-parse HEAD 2>&1)).Trim()
+      } finally { Pop-Location; $ErrorActionPreference = $prev }
     }
-    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    while ([DateTime]::UtcNow -lt $deadline) {
-      $ci = Get-SenRemoteCiStatus -RepoSlug $RepoSlug -HeadSha $headSha -RestInvoker $RestInvoker
+    $dl = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $dl) {
+      $ci = Get-SenRemoteCiStatus -RepoSlug $RepoSlug -HeadSha $sha -RestInvoker $RestInvoker
       if ($ci.Found -and $ci.Status -eq "completed") { break }
       if ($PollSeconds -gt 0) { Start-Sleep -Seconds $PollSeconds } else { break }
     }
     $ciOk = ($null -ne $ci -and $ci.Found -and $ci.Status -eq "completed" -and $ci.Conclusion -eq "success")
-    if ($ciOk -or $null -eq $HealAction -or $attempt -ge $MaxAttempts) { break }
-    $preSuite = if (Get-Command Test-SenSuiteIntegrity -ErrorAction SilentlyContinue) { Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") } else { $null }
+    if ($ciOk -or $null -eq $HealAction -or $att -ge $MaxAttempts) { break }
+    $preS = if (Get-Command Test-SenSuiteIntegrity -ErrorAction SilentlyContinue) { Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") } else { $null }
     & $HealAction $ci.FailedSteps
-    if ($null -ne $preSuite -and $preSuite.AssertionCount -gt 0) {
-      $postSuite = Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") -MinFiles $preSuite.FileCount -MinAssertions $preSuite.AssertionCount
-      if (-not $postSuite.Passed) { return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $pushed; CiPassed = $false; Attempts = $attempt; HeadSha = $headSha; Errors = @("TestTamperBlocked: $($postSuite.Reason)"); CiStatus = $ci } }
+    if ($null -ne $preS -and $preS.AssertionCount -gt 0) {
+      $postS = Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") -MinFiles $preS.FileCount -MinAssertions $preS.AssertionCount
+      if (-not $postS.Passed) { return [pscustomobject][ordered]@{ LocalPassed=$false; Pushed=$pushed; CiPassed=$false; Attempts=$att; HeadSha=$sha; Errors=@("TestTamperBlocked: $($postS.Reason)"); CiStatus=$ci } }
     }
   }
-  return [pscustomobject][ordered]@{ LocalPassed = $true; Pushed = $pushed; CiPassed = [bool]$ciOk; HeadSha = $headSha; Errors = if ($ci -and $ci.FailedSteps) { $ci.FailedSteps } else { @() }; CiStatus = $ci }
+  return [pscustomobject][ordered]@{ LocalPassed=$true; Pushed=$pushed; CiPassed=[bool]$ciOk; HeadSha=$sha; Errors=$(if ($ci -and $ci.FailedSteps) { $ci.FailedSteps } else { @() }); CiStatus=$ci }
 }
 
 function Invoke-SenDialecticalAudit {
   [CmdletBinding()]
   param([Parameter(Mandatory = $false)][Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectPath = "", [switch]$RequireIndependentReviewer, [scriptblock]$IndependentProbe = $null)
-  $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
-  $sDir = Join-Path $Workspace "docs/superpowers/specs"; $hasDialecticalSpec = $false
+  $targetDir = if ($ProjectPath) { $ProjectPath } else { $Workspace }
+  $sDir = Join-Path $Workspace "docs/superpowers/specs"; $hasSpec = $false
   if (Test-Path -LiteralPath $sDir) {
     foreach ($f in @(Get-ChildItem -LiteralPath $sDir -Filter "*.md" -File | Where-Object { $_.Length -gt 0 })) {
-      $txt = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
-      if ($txt -match '(?i)(Best-of-the-Best|Resource Cost|T.i nguy.n)' -and $txt -match '(?i)(Critique|Ph.n bi.n|Counterexample|Falsif|Adversarial)') { $hasDialecticalSpec = $true }
+      $t = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+      if ($t -match '(?i)(Best-of-the-Best|Resource Cost|T.i nguy.n)' -and $t -match '(?i)(Critique|Ph.n bi.n|Counterexample|Falsif|Adversarial)') { $hasSpec = $true }
     }
   }
   $ch = Measure-SenCodeHealth -Path $targetDir; $vl = Invoke-SenVnLawScan -Path $targetDir
   $evVal = if (Get-Command Test-SenEvidenceValidity -ErrorAction SilentlyContinue) { Test-SenEvidenceValidity -Workspace $Workspace } else { [pscustomobject]@{ AllValid = $true; StaleCount = 0 } }
   $hung = if (Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) { Test-SenHungTasks -Workspace $Workspace } else { [pscustomobject]@{ Healthy = $true; StaleTaskIds = @(); HungProcessIds = @() } }
   $tasks = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
-  $fakeCmdRe = '^(todo-verified|subagent-verified|manual|none|ok|pass|fake|verbal)$'
-  $badEvidence = @($tasks | Where-Object {
-    [string]$_.status -eq "done" -and ($null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 -or ([string]$_.evidence.command -notmatch '[A-Za-z0-9]{3,}') -or ([string]$_.evidence.command -match '(?i)^(manual|none|ok|pass|fake|verbal)$') -or ($RequireIndependentReviewer.IsPresent -and [string]$_.evidence.command -match "(?i)$fakeCmdRe"))
+  $badEv = @($tasks | Where-Object {
+    ([string]$_.status -ne "done" -and $RequireIndependentReviewer.IsPresent) -or ([string]$_.status -eq "done" -and ($null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 -or ([string]$_.evidence.command -notmatch '[A-Za-z0-9]{3,}') -or ([string]$_.evidence.command -match '(?i)^(manual|none|ok|pass|fake|verbal)$') -or ($RequireIndependentReviewer.IsPresent -and [string]$_.evidence.command -match '(?i)^(todo-verified|subagent-verified)$')))
   })
-  $selfReviewed = @($tasks | Where-Object {
-    [string]$_.status -eq "done" -and $_.evidence -and (-not [string]::IsNullOrWhiteSpace([string]$_.assignee)) -and (-not [string]::IsNullOrWhiteSpace([string]$_.evidence.reviewer)) -and ([string]$_.assignee -eq [string]$_.evidence.reviewer) -and ([string]$_.assignee -ne "pm" -or $RequireIndependentReviewer.IsPresent)
+  $selfRev = @($tasks | Where-Object {
+    ([string]$_.status -ne "done" -and $RequireIndependentReviewer.IsPresent) -or ([string]$_.status -eq "done" -and $_.evidence -and [string]$_.assignee -and [string]$_.evidence.reviewer -and ([string]$_.assignee -eq [string]$_.evidence.reviewer) -and ([string]$_.assignee -ne "pm" -or $RequireIndependentReviewer.IsPresent))
   })
-  $probeOk = if ($null -ne $IndependentProbe) { [bool](& $IndependentProbe) } else { $true }
-  $v3Ok = ($badEvidence.Count -eq 0) -and [bool]$evVal.AllValid -and $probeOk
-  $v6Ok = ($selfReviewed.Count -eq 0) -and $probeOk
-  $vectors = @(
-    [pscustomobject]@{ Id = "V1-DIALECTICAL-SPEC"; Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $sDir)); Detail = "AgentA:Proposal+ResourceCost" },
-    [pscustomobject]@{ Id = "V2-BOUNDARY-HEALTH"; Passed = [bool]$ch.Healthy; Detail = "AgentC:Score=$($ch.Score)" },
-    [pscustomobject]@{ Id = "V3-SOCRATIC-EVIDENCE"; Passed = [bool]$v3Ok; Detail = "Bad=$($badEvidence.Count);Stale=$($evVal.StaleCount)" },
-    [pscustomobject]@{ Id = "V4-LEGAL-PARTITION"; Passed = [bool]$vl.CompliantCodeLevel; Detail = "Red=$($vl.CodeRedFlags.Count)" },
-    [pscustomobject]@{ Id = "V5-RUNTIME-LIVENESS"; Passed = [bool]$hung.Healthy; Detail = "AgentB:Hung=$($hung.StaleTaskIds.Count + $hung.HungProcessIds.Count)" },
-    [pscustomobject]@{ Id = "V6-INDEPENDENT-REVIEW"; Passed = [bool]$v6Ok; Detail = "AgentD:SelfReview=$($selfReviewed.Count)" }
+  $pOk = if ($IndependentProbe) { [bool](& $IndependentProbe) } else { $true }
+  $v3Ok = ($badEv.Count -eq 0) -and [bool]$evVal.AllValid -and $pOk; $v6Ok = ($selfRev.Count -eq 0) -and $pOk
+  $vecs = @(
+    [pscustomobject]@{ Id="V1-DIALECTICAL-SPEC"; Passed=[bool]($hasSpec -or -not (Test-Path -LiteralPath $sDir)); Detail="AgentA:Spec" },
+    [pscustomobject]@{ Id="V2-BOUNDARY-HEALTH"; Passed=[bool]$ch.Healthy; Detail="AgentC:Score=$($ch.Score)" },
+    [pscustomobject]@{ Id="V3-SOCRATIC-EVIDENCE"; Passed=[bool]$v3Ok; Detail="Bad=$($badEv.Count);Stale=$($evVal.StaleCount)" },
+    [pscustomobject]@{ Id="V4-LEGAL-PARTITION"; Passed=[bool]$vl.CompliantCodeLevel; Detail="Red=$($vl.CodeRedFlags.Count)" },
+    [pscustomobject]@{ Id="V5-RUNTIME-LIVENESS"; Passed=[bool]$hung.Healthy; Detail="AgentB:Hung=$($hung.StaleTaskIds.Count + $hung.HungProcessIds.Count)" },
+    [pscustomobject]@{ Id="V6-INDEPENDENT-REVIEW"; Passed=[bool]$v6Ok; Detail="AgentD:SelfRev=$($selfRev.Count)" }
   )
-  $passedCount = @($vectors | Where-Object { $_.Passed }).Count; $allPassed = ($passedCount -eq $vectors.Count)
-  $indepReport = [pscustomobject][ordered]@{
-    AgentA_Proposer = [bool]($vectors[0].Passed); AgentB_FaultFinder = [bool]($vectors[4].Passed -and $v3Ok)
-    AgentC_Quantitative = [bool]($vectors[1].Passed -and $vectors[3].Passed); AgentD_Decision = if ($allPassed) { "APPROVED" } else { "REJECTED" }
-  }
-  $resObj = [pscustomobject][ordered]@{ Workspace = $Workspace; Passed = $allPassed; Score = [int][Math]::Round(($passedCount * 100.0) / $vectors.Count); Vectors = $vectors; IndependentReview = $indepReport; verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
-  if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) { Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/dialectical-audit.json") -InputObject $resObj -Depth 6 }
-  return $resObj
+  $pCnt = @($vecs | Where-Object { $_.Passed }).Count; $allOk = ($pCnt -eq $vecs.Count)
+  $ind = [pscustomobject][ordered]@{ AgentA_Proposer=[bool]$vecs[0].Passed; AgentB_FaultFinder=[bool]($vecs[4].Passed -and $v3Ok); AgentC_Quantitative=[bool]($vecs[1].Passed -and $vecs[3].Passed); AgentD_Decision=$(if ($allOk) { "APPROVED" } else { "REJECTED" }) }
+  $res = [pscustomobject][ordered]@{ Workspace=$Workspace; Passed=$allOk; Score=[int][Math]::Round(($pCnt * 100.0) / $vecs.Count); Vectors=$vecs; IndependentReview=$ind; verifiedAt=[DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
+  if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) { Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/dialectical-audit.json") -InputObject $res -Depth 6 }
+  return $res
 }
 
 function Test-SenCapabilityParity {

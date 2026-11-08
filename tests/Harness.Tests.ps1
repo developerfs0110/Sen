@@ -462,11 +462,11 @@ Test "Test-SenCapabilityParity verifies 6-Layer Zero-Amnesia Isomorphism and gua
 Test "GPT 2.3 Independent Review (Agent A/B/C/D) in Invoke-SenDialecticalAudit rejects self-review, fake verbal evidence, stale evidence, and hung tasks" {
     $ws = New-HarnessTestWorkspace
     try {
-        [void](New-SenTask -Workspace $ws -Id "IND-01" -Title "Feature A" -Assignee "dev_be")
+        [void](New-SenTask -Workspace $ws -Id "IND-01" -Title "Feature A" -Assignee "qa")
         [void](Start-SenTask -Workspace $ws -Id "IND-01")
         [void](Submit-SenTaskForReview -Workspace $ws -Id "IND-01")
-        # Self-review by same dev_be + fake verbal command "manual" must fail V3 and V6
-        [void](Complete-SenTaskReview -Workspace $ws -Id "IND-01" -Passed $true -Reviewer "dev_be" -EvidenceCommand "manual" -ExitCode 0)
+        # Self-review by same assignee ('qa' == 'qa') + fake verbal command "manual" must fail V3 and V6
+        [void](Complete-SenTaskReview -Workspace $ws -Id "IND-01" -Passed $true -Reviewer "qa" -EvidenceCommand "manual" -ExitCode 0)
 
         $auditFail = Invoke-SenDialecticalAudit -Workspace $ws -RequireIndependentReviewer
         Assert-True (-not $auditFail.Passed) "Invoke-SenDialecticalAudit must reject self-reviewed task with verbal placeholder evidence"
@@ -474,16 +474,16 @@ Test "GPT 2.3 Independent Review (Agent A/B/C/D) in Invoke-SenDialecticalAudit r
         $v3 = $auditFail.Vectors | Where-Object { $_.Id -eq "V3-SOCRATIC-EVIDENCE" }
         $v6 = $auditFail.Vectors | Where-Object { $_.Id -eq "V6-INDEPENDENT-REVIEW" }
         Assert-True (-not $v3.Passed) "V3 must fail on verbal placeholder evidence ('manual')"
-        Assert-True (-not $v6.Passed) "V6 must fail when Reviewer == Assignee ('dev_be')"
+        Assert-True (-not $v6.Passed) "V6 must fail when Reviewer == Assignee ('qa')"
 
-        # Now re-verify with an independent Reviewer ('qa') and executable test command ('tests/run.ps1')
+        # Now re-verify with an independent Reviewer ('sec' != 'qa') and executable test command ('tests/run.ps1')
         $tasks = @(Get-SenTasks -Workspace $ws)
-        $tasks[0].evidence.reviewer = "qa"
+        $tasks[0].evidence.reviewer = "sec"
         $tasks[0].evidence.command = "tests/run.ps1"
         [void](Save-SenTasks -Workspace $ws -Tasks $tasks -Internal)
 
         $auditPass = Invoke-SenDialecticalAudit -Workspace $ws -RequireIndependentReviewer -IndependentProbe { return $true }
-        Assert-True $auditPass.Passed "Invoke-SenDialecticalAudit must pass when independent reviewer ('qa' != 'dev_be') and real test evidence exist"
+        Assert-True $auditPass.Passed "Invoke-SenDialecticalAudit must pass when independent reviewer ('sec' != 'qa') and real test evidence exist"
         Assert-Equal 6 $auditPass.Vectors.Count "Must evaluate all 6 Dialectical + Independent Review vectors (V1..V6)"
         Assert-Equal "APPROVED" $auditPass.IndependentReview.AgentD_Decision "Agent D must approve when all 6 vectors pass"
     }
