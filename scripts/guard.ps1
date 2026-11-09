@@ -134,7 +134,7 @@ if ($toolName -in @("write_file", "edit_file", "read_file")) {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct tampering with Sen protected state or guard ($fullTarget). Use Sen cmdlets instead." $primaryWs $toolName $fullTarget $fullTarget
             }
             # Auto-Create or Append Restore Point before modifying any project source file (Zero-Amnesia Pre-Edit Backup)
-            if ($primaryWs -and ($normCheck -notmatch '(?i)/(\.agents|docs)/') -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
+            if ($primaryWs -and ($normCheck -notmatch '(?i)/(\.agents|docs)/') -and ($primaryWs -notmatch '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test)|TestDrive)')) {
                 $rpDir = Join-Path $primaryWs ".agents/.sen-restore"
                 $recentRp = $false; $latestRp = $null
                 if (Test-Path -LiteralPath $rpDir) {
@@ -357,7 +357,7 @@ if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
             }
         }
     }
-    if ($primaryWs -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
+    if ($primaryWs -and ($primaryWs -notmatch '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test)|TestDrive)')) {
         Import-SenRuntimeModule
         if (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue) {
             $sealPath = Join-Path $primaryWs ".agents/office/state-seal.json"
