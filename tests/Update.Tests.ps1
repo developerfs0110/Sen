@@ -781,7 +781,7 @@ Test "Test B: Move to .sen-old throws keeps dest and lock untouched without dele
                 # Lock the file right after clone finishes so Move throws
                 $script:lockedHandle = [System.IO.File]::Open((Join-Path $dest "SKILL.md"), [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
             }
-            return (& $fakeGit @GitArgs)
+            return (& $fakeGit $GitArgs)
         }
 
         try {
@@ -828,7 +828,7 @@ Test "Test C: Install fails after rename restores .sen-old back to dest with ori
         $script:cloneFileLock = $null
         $hookGit = {
             param([string[]]$GitArgs)
-            $r = & $fakeGit @GitArgs
+            $r = & $fakeGit $GitArgs
             if ($GitArgs[0] -eq "clone") {
                 $target = $GitArgs[$GitArgs.Count - 1]
                 $badFile = Join-Path $target "bad.txt"

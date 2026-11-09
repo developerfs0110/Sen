@@ -1,6 +1,15 @@
+.agents/
+.agents_backup*/
 .superpowers/
+.claude/
+.cursor/
+.codex/
+.windsurfrules
+CLAUDE.md
+clone/
 .sen-backup/
 .sen-restore/
-.agents/
-clone/
+snapshots/
+*.zip
+*.log
 *.tmp

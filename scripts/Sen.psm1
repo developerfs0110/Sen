@@ -8,7 +8,7 @@ if (Test-Path -LiteralPath $senRuntimeModulePath) {
 }
 
 function Get-SenSelfPayloadNames {
-    return @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "office", "AGENTS.md", "INSTALL.md", "LICENSE", "CHANGELOG.md")
+    return @("plugin.json", "hooks.json", "rules", "skills", "templates", "scripts", "office", "INSTALL.md", "LICENSE", "CHANGELOG.md")
 }
 
 function Test-SenDriveWritable {
