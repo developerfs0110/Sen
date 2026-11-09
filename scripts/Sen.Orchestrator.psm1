@@ -251,14 +251,15 @@ foreach ($wp in $winProcs) {
 $wpId = if ($wp) { [int]$wp.ProcessId } else { 0 }; $cmd = [string]$wp.CommandLine
 if ($wpId -le 0 -or $anc.Contains($wpId) -or $wpId -eq $keepPid -or ($cmd -match '(?i)(shellIntegration\.ps1|PowerShellEditorServices|\bvite\b|\bnpm(\.cmd)?\s+run\s+(dev|start|serve|preview)\b)')) { continue }
 if ($isTempWs -and ($cmd.Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { continue }
-$isTarget = ($cmd -match '(?i)(Test-SenDeliveryGate|Invoke-SenPostCodePipeline|Get-SenRemoteCiStatus|Measure-SenCodeHealth|Invoke-SenVnLawScan|Invoke-SenCiPushLoop)') -or (($cmd -match '(?i)start-office\.ps1') -and ($wpId -ne $keepPid)) -or ((-not $HasActiveLongRunning) -and ($cmd -match '(?i)(-Command\s+"try\s*\{\s*\$OutputEncoding|Sen\.psm1)') -and ($cmd -notmatch '(?i)\brun\.ps1\b'))
+$isTarget = ($cmd -match '(?i)(Test-SenDeliveryGate|Invoke-SenPostCodePipeline|Measure-SenCodeHealth|Invoke-SenVnLawScan)') -or (($cmd -match '(?i)start-office\.ps1') -and ($wpId -ne $keepPid)) -or ((-not $HasActiveLongRunning) -and ($cmd -match '(?i)(-Command\s+"try\s*\{\s*\$OutputEncoding|Sen\.psm1)') -and ($cmd -notmatch '(?i)\b(run\.ps1|Invoke-SenCiPushLoop)\b'))
 $proc = if ($isTarget) { Get-Process -Id $wpId -EA SilentlyContinue } else { $null }
 if ($null -ne $proc -and $proc.StartTime.ToUniversalTime() -lt $procCutoff) { $hungPids.Add($wpId) }
 }
-$psLines = if ($env:OS -ne 'Windows_NT' -and (Get-Command ps -EA SilentlyContinue)) { @(& ps -eo pid,etimes,args 2>$null) } else { @() }
+$psLines = if ($env:OS -ne 'Windows_NT' -and (Get-Command ps -EA SilentlyContinue)) { @(& ps -eo pid=,args= 2>$null) } else { @() }
 foreach ($line in $psLines) {
-if ($line -match '^\s*(\d+)\s+(\d+)\s+(.+)$' -and [int]$matches[1] -ne $PID -and [int]$matches[2] -gt $maxSec -and $matches[3] -match '(?i)(Sen\.psm1|Invoke-SenCiPushLoop|Test-SenDeliveryGate|Invoke-SenPostCodePipeline)') {
-if ((-not $isTempWs) -or ($matches[3].Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -ge 0)) { $hungPids.Add([int]$matches[1]) }
+if ($line -match '^\s*(\d+)\s+(.+)$' -and [int]$matches[1] -ne $PID -and $matches[2] -match '(?i)(Sen\.psm1|Test-SenDeliveryGate|Invoke-SenPostCodePipeline)' -and ((-not $isTempWs) -or ($matches[2].Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -ge 0))) {
+$proc = Get-Process -Id ([int]$matches[1]) -EA SilentlyContinue
+if ($null -ne $proc -and $proc.StartTime.ToUniversalTime() -lt $procCutoff) { $hungPids.Add([int]$matches[1]) }
 }
 }
 }

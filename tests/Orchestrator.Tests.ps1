@@ -508,8 +508,9 @@ Test "TASK-22 3-Signal Liveness Probe protects active long-running tasks and cat
         Assert-True ($null -ne $mixedCheck.HungProcessIds) "Test-SenHungTasks must expose HungProcessIds array"
         Assert-True ($null -ne $selectiveClear.KilledProcessIds) "Clear-SenHungTasks must expose KilledProcessIds array"
 
-        $pwshExe = if (Get-Command powershell -ErrorAction SilentlyContinue) { "powershell" } else { "pwsh" }
-        $dummy = Start-Process -FilePath $pwshExe -ArgumentList @("-NoProfile", "-WindowStyle", "Hidden", "-Command", "Start-Sleep -Seconds 30 # Test-SenDeliveryGate '$ws'") -PassThru
+        $pwshExe = if (Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        $pArgs = if ($env:OS -eq 'Windows_NT') { @("-NoProfile", "-WindowStyle", "Hidden", "-Command", "Start-Sleep -Seconds 30 # Test-SenDeliveryGate '$ws'") } else { @("-NoProfile", "-Command", "Start-Sleep -Seconds 30 # Test-SenDeliveryGate '$ws'") }
+        $dummy = Start-Process -FilePath $pwshExe -ArgumentList $pArgs -PassThru
         try {
             Start-Sleep -Seconds 6
             $osHung = Test-SenHungTasks -Workspace $ws -StaleMinutes 15 -MaxProcessSeconds 5
