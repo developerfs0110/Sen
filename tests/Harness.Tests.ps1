@@ -276,10 +276,12 @@ Test "Process Compliance 3-Tier Engine filters (*) and (**), enforces Stage Gate
         [System.IO.File]::WriteAllText((Join-Path $ws "docs/CONTEXT.md"), "# Context`nUpdated")
 
         [void](New-SenRestorePoint -Workspace $ws -Files @("docs/CONTEXT.md") -Label "test")
+        [void](Write-SenOfficeShowcase -Workspace $ws -Phase 1 -TaskId "2026-11-07-spec.md" -Title "TestApp" -Tier 3 -Blueprint "Design Blueprint" -ExpectedOutputs @("2026-11-07-spec.md"))
         [void](New-SenTask -Workspace $ws -Id "P-01" -Title "Work" -Tier 3)
         [void](Start-SenTask -Workspace $ws -Id "P-01")
         [void](Submit-SenTaskForReview -Workspace $ws -Id "P-01")
         [void](Complete-SenTaskReview -Workspace $ws -Id "P-01" -Passed $true -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+        [void](Write-SenOfficeShowcase -Workspace $ws -Phase 2 -TaskId "P-01" -Title "TestApp" -Tier 3 -Blueprint "Verified Delivery Output" -VerifiedOutputs @("docs/CONTEXT.md"))
 
         $g2After = Test-SenStageGate -Workspace $ws -Stage 2
         Assert-True $g2After.Passed "Stage 2 gate must pass once Spec, Plan, and DAG exist"

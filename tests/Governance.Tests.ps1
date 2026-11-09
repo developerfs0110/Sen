@@ -365,6 +365,21 @@ Test "Sen.Core.psm1 unified bootstrap loads all modules and guard.ps1 blocks unh
         Set-Content -LiteralPath (Join-Path $srcDir "app.js") -Value ("function escapeHtml(s) { return String(s); }`nfunction renderUser(u) {`n  document.body.innerHTML = ${bt}<div>`${escapeHtml(u.name)}</div>${bt};`n}`nrenderUser({name:'x'});") -Encoding UTF8
         $resClean = Invoke-GovGuardJson $commitPayload
         Assert-Equal "ask" $resClean.decision "guard.ps1 must allow git commit when CodeHealth is 100/100 and escapeHtml is used"
+
+        # 4. Initialize-SenIntake and Test-SenIntakeCompleteness (Anti-Amnesia Intake Lock)
+        $rulesDir = Join-Path $ws ".agents/rules"
+        New-Item -ItemType Directory -Path $rulesDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $rulesDir "profile.md") -Value "- **Name:** anh Gau" -Encoding UTF8
+        $intake = Initialize-SenIntake -Workspace $ws -Request "Build OAuth login and payment gateway" -FileCount 4
+        Assert-Equal 3 $intake.tier "OAuth + payment must be classified as Tier 3"
+        Assert-Equal "anh Gau" $intake.userName "Profile userName resolved"
+        Assert-True $intake.requiresDialecticalProof "Tier 3 requires Dialectical Proof"
+        Assert-True $intake.requiresResourceCostTable "Tier 3 requires Resource Cost table"
+        $incCheck = Test-SenIntakeCompleteness -Workspace $ws -DraftResponse "Hello without tier label or cost table"
+        Assert-True (-not $incCheck.Passed) "Incomplete draft response must fail Test-SenIntakeCompleteness"
+        [void](New-SenRestorePoint -Workspace $ws -Files @("README.md") -Label "intake-rp")
+        $compCheck = Test-SenIntakeCompleteness -Workspace $ws -DraftResponse "[Cap 3 - Thiet ke & ke hoach] Chao anh Gau, Best-of-the-Best va Resource Cost table:"
+        Assert-True $compCheck.Passed "Complete draft response with Tier label, userName, Resource Cost, and RestorePoint must pass"
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

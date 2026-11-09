@@ -8,7 +8,7 @@
 
 ## Sen là gì
 
-**Sen (`sen-method` `v0.5.0`)** là phương pháp luận và hệ điều hành điều phối đội ngũ AI agent đa nền tảng (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**), kết hợp **Luật lõi siêu gọn (`<= 5.75 KB`)** với **Runtime thực thi tất định (`115` cmdlets, `10` kỹ năng `sen-*`, `0` phụ thuộc ngoài)**. Mọi yêu cầu công việc đều tự động được chấm điểm rủi ro (`Get-SenTaskRiskScore`) và phân thành 3 cấp độ để AI biết lúc nào làm ngay, lúc nào thực thi song song lạc quan kèm chứng minh — phản biện, và lúc nào cần thiết kế, lập kế hoạch cùng đội ngũ agent chuyên trách. Bạn luôn nắm quyền kiểm soát tiến độ, chất lượng mã nguồn, pháp lý và chi phí token bằng ngôn ngữ tự nhiên mà không cần học thuộc câu lệnh phức tạp.
+**Sen (`sen-method` `v0.5.1`)** là phương pháp luận và hệ điều hành điều phối đội ngũ AI agent đa nền tảng (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**), kết hợp **Luật lõi siêu gọn (`<= 5.75 KB`)** với **Runtime thực thi tất định (`117` cmdlets, `10` kỹ năng `sen-*`, `0` phụ thuộc ngoài)**. Mọi yêu cầu công việc đều tự động được chấm điểm rủi ro (`Get-SenTaskRiskScore`) và phân thành 3 cấp độ để AI biết lúc nào làm ngay, lúc nào thực thi song song lạc quan kèm chứng minh — phản biện, và lúc nào cần thiết kế, lập kế hoạch cùng đội ngũ agent chuyên trách. Bạn luôn nắm quyền kiểm soát tiến độ, chất lượng mã nguồn, pháp lý và chi phí token bằng ngôn ngữ tự nhiên mà không cần học thuộc câu lệnh phức tạp.
 
 ## Vấn đề Sen giải quyết
 
@@ -44,7 +44,7 @@ flowchart LR
 
 *(Câu hỏi tra cứu thông tin thuần túy được AI trả lời thẳng, không gắn nhãn cấp độ — nhưng nếu câu hỏi ẩn chứa lệnh xóa dữ liệu/DB thì Sen vẫn tự động chặn ở Cấp 3.)*
 
-### 9 Trụ cột Kỹ thuật Đã Kiểm chứng Thực nghiệm (`v0.5.0`)
+### 9 Trụ cột Kỹ thuật Đã Kiểm chứng Thực nghiệm (`v0.5.1`)
 
 1. **Vòng lặp Biện chứng "Chứng minh — Phản biện — Tối ưu" (`Invoke-SenDialecticalAudit`):** Bắt buộc chứng minh phương án đề xuất là *Best-of-the-Best* kèm cột **Tài nguyên tiêu tốn** (Token, Thời gian, CPU/RAM/Ổ cứng, Bảo trì), sau đó tự đóng vai Nhà phản biện tấn công phương án qua 7 mũi nhọn (Phản ví dụ, Biên BVA, Socratic, Karl Popper, Bảng quyết định, Tương tranh, Bảo mật STRIDE) rồi mới chốt phương án tối ưu không thể bác bỏ.
 2. **Điều phối Task DAG, Khóa File, Kiểm soát Tương tranh Lạc quan & Thăm dò Sự sống 3 Tín hiệu (`Sen.Orchestrator.psm1`):** Quản lý tiến độ tại `.agents/office/tasks.json` (bảo vệ bằng khóa `Named Mutex` liên tiến trình trong `Save-SenTasks`), tự động mở khóa task khi xong phụ thuộc, khóa `allowedPaths` chống 2 Dev sửa đè cùng 1 file, kiểm soát phiên bản `_rev` trên từng Task chống mất dữ liệu đồng thời, giải phóng khóa treo qua `Unlock-SenTask`, và thăm dò sự sống 3 tín hiệu (`Test-SenHungTasks` & `Clear-SenHungTasks`: bảo vệ tuyệt đối task chạy lâu đang có heartbeat/sửa file trong `ActiveLongRunningIds`, bắt tức thì lỗi kẹt tương tác stdin trong `DeadlockedItems`, và thu dọn chọn lọc `StaleTaskIds` / `IdleSubagents`).
@@ -59,7 +59,7 @@ flowchart LR
 
 <!-- office screenshot: added with sen-office -->
 
-🏢 **Văn phòng 3D Chibi (`sen-office` `v0.5.0` tích hợp sẵn — Tự động Mở/Đề xuất ở Turn 1 cho Cấp 2–3):** Với việc Cấp 2–3, Sen tự động khởi động hoặc đề xuất mở Văn phòng 3D ngay ở Turn 1 (`officeAction: auto_start / offer_enable` qua `start-office.ps1`), hoặc bạn có thể gõ `"mở văn phòng"` bất kỳ lúc nào để mở sàn 3D trực quan theo dõi 9 nhân vật Chibi AI + Boss trên ghế sofa đỏ, bộ đàm bằng chứng thực thi (`0 token` ở chế độ Tiết kiệm), ngăn kéo 6 ô đếm, thanh tua lại lịch sử, đồng hồ hạn mức trực tiếp từ `state.vscdb` và khung **Đầu ra 2 Giai đoạn** (Đối chiếu Thiết kế vs. Nghiệm thu). Xem trực tiếp tại **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)**.
+🏢 **Văn phòng 3D Chibi (`sen-office` `v0.5.1` tích hợp sẵn — Tự động Mở/Đề xuất ở Turn 1 cho Cấp 2–3):** Với việc Cấp 2–3, Sen tự động khởi động hoặc đề xuất mở Văn phòng 3D ngay ở Turn 1 (`officeAction: auto_start / offer_enable` qua `start-office.ps1`), hoặc bạn có thể gõ `"mở văn phòng"` bất kỳ lúc nào để mở sàn 3D trực quan theo dõi 9 nhân vật Chibi AI + Boss trên ghế sofa đỏ, bộ đàm bằng chứng thực thi (`0 token` ở chế độ Tiết kiệm), ngăn kéo 6 ô đếm, thanh tua lại lịch sử, đồng hồ hạn mức trực tiếp từ `state.vscdb` và khung **Đầu ra 2 Giai đoạn** (Đối chiếu Thiết kế vs. Nghiệm thu). Xem trực tiếp tại **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)**.
 
 ## Bắt đầu nhanh
 

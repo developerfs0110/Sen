@@ -62,7 +62,7 @@ try:
             if "/.git/config" in norm_rp or "/.git/hooks" in norm_rp:
                 print("DENY_GIT:" + rp)
                 sys.exit(0)
-            if any(x in norm_rp for x in ("/.agents/office/tasks.json", "/.agents/office/process-audit.json", "/.agents/office/loops.json", "/.agents/office/bounded-loops.json", "/.agents/office/requirements.json", "/.agents/office/evidence.json", "/.agents/office/claims.json", "/.agents/office/quality-baseline.json", "/.agents/office/state-seal.json", "/.agents/office/governance-audit.json", "/.agents/plugins/sen-method/scripts/guard.")):
+            if ("/.agents/office/" in norm_rp and (norm_rp.endswith(".json") or norm_rp.endswith(".jsonl"))) or "/.agents/plugins/sen-method/scripts/guard." in norm_rp:
                 print("DENY_STATE:" + rp)
                 sys.exit(0)
             rw0 = os.path.realpath(ws_list[0])
@@ -114,7 +114,7 @@ else
     out_decision "deny" "[SEN GUARD] Blocked: access to sensitive host credential path."
   fi
   if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|Write|Edit|MultiEdit)"'; then
-    if printf '%s' "$FLAT_RAW" | grep -Eiq '(/\.git/(config|hooks)|/\.agents/office/(tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json|/\.agents/plugins/sen-method/scripts/guard\.|\.\./)'; then
+    if printf '%s' "$FLAT_RAW" | grep -Eiq '(/\.git/(config|hooks)|/\.agents/office/[^"/]+\.(json|jsonl)|/\.agents/plugins/sen-method/scripts/guard\.|\.\./)'; then
       out_decision "deny" "[SEN GUARD] Blocked: protected state, git metadata, or path traversal detected in POSIX fallback."
     fi
     out_decision "deny" "[SEN GUARD] Blocked (fail-closed): python3 is required on POSIX to verify canonical symlink/workspace boundaries for file writes."
@@ -196,7 +196,7 @@ fi
 if printf '%s' "$CMD" | grep -Eiq '\bffmpeg(\.exe)?\b[^|;&]*[[:space:]]-i[[:space:]]+["'\'']?(\./)?([^"'\''[:space:]]+)["'\'']?([[:space:]]+[^|;&]*)*[[:space:]]+["'\'']?(\./)?\3["'\'']?([[:space:]]+-(y|n))*[[:space:]]*($|[|;&])'; then
   deny "Non-destructive media guard: ffmpeg in-place overwrite of input file is prohibited. Write output to a separate file or output/ folder"
 fi
-if printf '%s' "$CMD" | grep -Eiq '(>|>>|\btee\b|\bcp\b|\bmv\b|\brm\b)[^|;&]*\.agents/office/(tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json'; then
+if printf '%s' "$CMD" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|set-content|out-file|add-content)\b|writeall(text|lines|bytes)|streamwriter|open\(|fs\.write)[^|;&]*\.agents/office/|\.agents/office/[^|;&]*(>|>>|\btee\b|\.write\()'; then
   deny "Direct shell tampering with protected .agents/office state JSON"
 fi
 

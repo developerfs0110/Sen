@@ -1,6 +1,6 @@
 # Danh Sách Việc Cần Làm (Backlog & Lộ Trình Nâng Cấp) — Sen (`sen-method`)
 
-- **Cập nhật lần cuối:** 2026-11-08 (`v0.5.0` — Hoàn tất toàn bộ 25/25 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
+- **Cập nhật lần cuối:** 2026-11-08 (`v0.5.1` — Hoàn tất toàn bộ 25/25 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
 - **Mục đích:** Lưu trữ có cấu trúc mọi công việc, ý tưởng và hạng mục cải tiến được Boss chỉ đạo `"lưu vào task cần làm"` trong quá trình trao đổi, đảm bảo không thất thoát giữa các phiên làm việc.
 - **Trạng thái ký hiệu:** `[ ]` Chờ triển khai · `[~]` Đang thực hiện · `[x]` Đã hoàn thành
 
@@ -110,26 +110,35 @@
 
 ---
 
-## Nhóm `v0.5.0` — Truy Vết Yêu Cầu 7 Mắt Xích (RTM Engine), Bằng Chứng Sống (Stale Evidence), Phân Tích Tác Động Thay Đổi & Cổng Ghi Chú Phát Hành Song Ngữ (Đã hoàn tất trong `v0.5.0`)
+## Nhóm `v0.5.1` — Truy Vết Yêu Cầu 7 Mắt Xích (RTM Engine), Bằng Chứng Sống (Stale Evidence), Phân Tích Tác Động Thay Đổi & Cổng Ghi Chú Phát Hành Song Ngữ (Đã hoàn tất trong `v0.5.1`)
 
 - [x] **TASK-23 (P0): Động cơ Truy vết Yêu cầu Toàn trình 7 Mắt xích (`Register-SenRequirement`, `Get-SenRequirementTraceability`) & Động cơ Bằng chứng Sống (`Register-SenEvidence`, `Test-SenEvidenceValidity`)**
   - **Nguồn:** Tổng hợp đánh giá chuyên sâu từ 3 báo cáo độc lập (ChatGPT EPIC 01/02/03, Claude, Grok) và chỉ đạo của anh Gấu (2026-11-08).
-  - **Kết quả (`v0.5.0`):** Đã triển khai trong `scripts/Sen.Governance.psm1` và tích hợp vào `Test-SenDeliveryGate`: quản lý đầy đủ chuỗi `REQ -> DESIGN -> TASK -> CODE -> TEST -> EVIDENCE -> ACCEPTANCE` (`.agents/office/requirements.json`, `.agents/office/evidence.json`), khử trùng lặp yêu cầu, phát hiện xung đột (`conflictWith`), chặn bàn giao khi còn `NEEDS_CLARIFICATION` hoặc thiếu kiểm thử, và tự động vô hiệu hóa bằng chứng (`status = "STALE"`, `verified = $false`) ngay khi file mã nguồn liên quan bị sửa sau mốc thời gian tạo bằng chứng.
+  - **Kết quả (`v0.5.1`):** Đã triển khai trong `scripts/Sen.Governance.psm1` và tích hợp vào `Test-SenDeliveryGate`: quản lý đầy đủ chuỗi `REQ -> DESIGN -> TASK -> CODE -> TEST -> EVIDENCE -> ACCEPTANCE` (`.agents/office/requirements.json`, `.agents/office/evidence.json`), khử trùng lặp yêu cầu, phát hiện xung đột (`conflictWith`), chặn bàn giao khi còn `NEEDS_CLARIFICATION` hoặc thiếu kiểm thử, và tự động vô hiệu hóa bằng chứng (`status = "STALE"`, `verified = $false`) ngay khi file mã nguồn liên quan bị sửa sau mốc thời gian tạo bằng chứng.
 
 - [x] **TASK-24 (P0): Máy Trạng thái Công việc Bất biến (`Invoke-SenTaskTransition`), Khóa Named Mutex Đa Tiến trình (`Save-SenTasks`), Phân tích Tác động Thay đổi DAG (`Invoke-SenChangeImpactAnalysis`) & Phục hồi Sau Sự cố (`Invoke-SenCheckpointResume`)**
   - **Nguồn:** Báo cáo ChatGPT (EPIC 04/05/06) và Claude P0 (2026-11-08).
-  - **Kết quả (`v0.5.0`):** Đã bọc `Save-SenTasks` trong Named Mutex liên tiến trình (`Local\SenTasksMutex_*`) kèm hợp nhất task mới phát sinh song song; kiểm soát chuyển đổi trạng thái hợp lệ với nhật ký bất biến (`history`) và hạn khóa (`lockExpiresAt`); tự động lan truyền trạng thái `stale` cho toàn bộ task và bằng chứng phụ thuộc phía sau khi một yêu cầu/task thay đổi; và phục hồi sau crash kết hợp `git status --porcelain` (`UncommittedFiles`, `ExpiredLocks`, `PreventDuplicateIds`).
+  - **Kết quả (`v0.5.1`):** Đã bọc `Save-SenTasks` trong Named Mutex liên tiến trình (`Local\SenTasksMutex_*`) kèm hợp nhất task mới phát sinh song song; kiểm soát chuyển đổi trạng thái hợp lệ với nhật ký bất biến (`history`) và hạn khóa (`lockExpiresAt`); tự động lan truyền trạng thái `stale` cho toàn bộ task và bằng chứng phụ thuộc phía sau khi một yêu cầu/task thay đổi; và phục hồi sau crash kết hợp `git status --porcelain` (`UncommittedFiles`, `ExpiredLocks`, `PreventDuplicateIds`).
 
 - [x] **TASK-25 (P0): Bảo vệ Đường dẫn Nhạy cảm/Symlink (`Test-SenSafeWorkspacePath`, `Resolve-SenWorkspaceRoot`), Chống Sửa Xóa Test (`Test-SenSuiteIntegrity`), Tự động Nâng Cấp Độ Giữa Chừng (`Test-SenMidTaskEscalation`), Chế độ Cấp 2 Nhanh (`ExpressMode`) & Cổng Ghi chú Phát hành Song ngữ Bắt buộc (`New-SenReleaseNote`, `Test-SenReleaseNoteGate`)**
   - **Nguồn:** Báo cáo Claude (P0/P1/P2), Grok (`ExpressMode`, `Set-SenEdition`, `Measure-SenTokenEstimate`), ChatGPT (EPIC 07) và chỉ đạo trực tiếp của anh Gấu về Ghi chú Phát hành Song ngữ (2026-11-08).
-  - **Kết quả (`v0.5.0`):** Đã bổ sung `read_file` vào `PreToolUse` hook; chặn truy cập `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `id_rsa` và thoát khỏi workspace qua Symlink/Junction (`ReparsePoint`); tự động tìm gốc workspace từ thư mục con (`Resolve-SenWorkspaceRoot`); kiểm tra toàn vẹn số lượng `Assert-` (`Test-SenSuiteIntegrity`); nâng cấp `Invoke-SenVnLawScan` lên 3 trạng thái (`PASS`/`FAIL`/`UNKNOWN` kèm `LegalDisclaimer`); bổ sung `ExpressMode` (`ComplexityLevel` `C1`–`C4`), `Set-SenEdition` (`core`/`full`), `Uninstall-SenSelf` (`uninstall.ps1`/`.sh`, `register-schedule.sh`), và cổng kiểm duyệt Ghi chú Phát hành Song ngữ bắt buộc (`docs/releases/v0.5.0.vi.md`, `v0.5.0.en.md`, `RELEASE-NOTES.vi.md`, `RELEASE-NOTES.en.md`).
+  - **Kết quả (`v0.5.1`):** Đã bổ sung `read_file` vào `PreToolUse` hook; chặn truy cập `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `id_rsa` và thoát khỏi workspace qua Symlink/Junction (`ReparsePoint`); tự động tìm gốc workspace từ thư mục con (`Resolve-SenWorkspaceRoot`); kiểm tra toàn vẹn số lượng `Assert-` (`Test-SenSuiteIntegrity`); nâng cấp `Invoke-SenVnLawScan` lên 3 trạng thái (`PASS`/`FAIL`/`UNKNOWN` kèm `LegalDisclaimer`); bổ sung `ExpressMode` (`ComplexityLevel` `C1`–`C4`), `Set-SenEdition` (`core`/`full`), `Uninstall-SenSelf` (`uninstall.ps1`/`.sh`, `register-schedule.sh`), và cổng kiểm duyệt Ghi chú Phát hành Song ngữ bắt buộc (`docs/releases/v0.5.1.vi.md`, `v0.5.1.en.md`, `RELEASE-NOTES.vi.md`, `RELEASE-NOTES.en.md`).
+
+- [x] **TASK-26 (P0): Kiểm toán Bảo đảm Vận hành (`Sen-Audit.docx`), Vá 10 lỗ hổng Red-Team (`F-01..F-10` / `AT-01..AT-10`) & Đóng 3 Chốt Chặn Vật Lý Chống Quên (`Initialize-SenIntake`, `Test-SenIntakeCompleteness`, `Dirty-Tree Watchdog`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu khi thực hiện Operational Assurance Audit & FMEA theo `Sen-Review/Sen-Audit.docx` (2026-11-09).
+  - **Kết quả (`v0.5.1`):** Đã vá toàn bộ 10 lỗ hổng `F-01..F-10` (bật mặc định `-EnforcePhysicalDiff = $true`, đóng lỗ hổng `If-Exists` cho task Cấp 2/3, nối cáp `claims.json`/`falsification-plans.json`, chặn nhảy cóc trạng thái và lệnh giả trong `Complete-SenTaskReview`, chặn `.NET`/`Python` ghi đè `.agents/office/*.json` trong `guard.ps1`, sửa Incremental Auto-Restore Point cho các file thứ 2..N, sửa Regex đường dẫn ổ đĩa Windows trong `Sync-SenPlanToTasks`, xóa hành vi tự tạo giả `showcase.json` trong `Test-SenSingleStepEvidence`), đồng thời bổ sung `Initialize-SenIntake` & `Test-SenIntakeCompleteness` và cảnh báo `[SEN WATCHDOG]` trong `office-post.ps1` (vượt qua 10/10 bài kiểm thử tấn công `AT-01..AT-10` với 0 lỗ hổng).
 
 ---
 
-## Danh Sách Chờ Xác Nhận / Bảo Lưu (Deferred & Pending Review — `.agents/office/deferred-items.json`)
+## Danh Sách Chờ Xác Nhận / Bảo Lưu (Deferred & Pending Review — `.agents/office/deferred-items.json` & Đề Xuất Từ 6 Repo GitHub)
 
-> Các hạng mục dưới đây được tách riêng từ bảng tổng hợp 3 nguồn đánh giá (**Grok**, **ChatGPT**, **Claude**), lưu trữ tại `.agents/office/deferred-items.json` (truy xuất qua `Get-SenDeferredItems`) để nhắc anh Gấu xem xét và quyết định:
+> Các hạng mục dưới đây được tách riêng từ bảng tổng hợp 3 nguồn đánh giá (**Grok**, **ChatGPT**, **Claude**) và đợt phân tích **6 kho mã nguồn GitHub** (`remotion-shorts-skill`, `quivr`, `free-services`, `pm-kit`, `cc-skills`, `dereknguyen269`), lưu trữ minh bạch để nhắc anh Gấu xem xét và quyết định:
 
+- [ ] **REPO-01 (`The-Vibe-Company/quivr` — `docs.py` & `denylist.py`) — [CHỜ ANH GẤU XÁC NHẬN]: Bổ sung `Test-SenDocPathIntegrity` (quét đường dẫn file trong Markdown & khóa báo cáo lịch sử) và `Test-SenDenylist` (băm `Salted SHA-256` chống lộ tên khách hàng/dự án mật khi commit)**
+- [ ] **REPO-02 (`kv0906/cc-skills` — `ui-ux` & `no-ai-slop`) — [CHỜ ANH GẤU XÁC NHẬN]: Xây dựng cổng `Invoke-SenUiContextAudit` 3 tầng (quét `DESIGN.md`, `package.json` và Component có sẵn chống đẻ trùng `Button`/`Modal`) + áp dụng chuẩn câu ngắn `ASD-STE100 80%`**
+- [ ] **REPO-03 (`dereknguyen269/free-services` — `services.yaml`) — [CHỜ ANH GẤU XÁC NHẬN]: Tích hợp danh mục 7 bộ kiến trúc `$0 Stack` kèm cảnh báo điểm nghẽn hạ tầng (`Where you hit the wall`) vào bước Thẩm định Chi phí Cấp 3 (`S2-EXPERT-COST`)**
+- [ ] **REPO-04 (`social-media-skills/remotion-shorts-skill`) — [CHỜ ANH GẤU XÁC NHẬN]: Tích hợp gói sáng tạo tùy chọn thứ 4 `media-shorts` (`Install-SenCreativePack -Pack "media-shorts"`) biến Release Notes / số liệu thành video dọc `1080x1920` (TikTok/Reels/Shorts) có kiểm tra Safe Zone tự động**
+- [ ] **REPO-05 (`kv0906/pm-kit` & `cc-skills/creating-client-proposals`) — [CHỜ ANH GẤU XÁC NHẬN]: Trang bị Ma trận `Product Judgment` (4 rủi ro sản phẩm + JTBD/RICE/Kano) cho BA Subagent ở Cấp 3 và mẫu xuất Proposal/Báo giá Tiếng Việt chuẩn PDF 16:10**
 - [ ] **W-09 (Grok Report) — [CHỜ ANH GẤU XÁC NHẬN]: Rút gọn văn phong marketing ("bán hàng") trong `README.md` sang thuần kỹ thuật**
   - **Lý do bảo lưu:** Tạm giữ nguyên bố cục và văn phong truyền cảm hứng, gần gũi hiện tại của anh Gấu; chờ anh Gấu xác nhận có muốn rút gọn sang văn phong kỹ thuật khô khan hay không.
 - [ ] **W-26 / IMP-19 (Claude Report) — [CHỜ ANH GẤU XÁC NHẬN]: Ẩn hoặc thay thế thông tin cá nhân công khai (SĐT, Email, STK ngân hàng nhận Donate) trong `README.md` và `docs/huong-dan.md`**

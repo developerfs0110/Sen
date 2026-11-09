@@ -664,9 +664,12 @@ function Invoke-SenPostCodePipeline {
     $health = Measure-SenCodeHealth -Path $effCodePath
 
     $parityPassed = $true
-    if (Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath "scripts/Sen.psm1")) {
-        $par = Test-SenCapabilityParity -Workspace $Workspace
+    if (Get-Command Test-SenCapabilityParity -ErrorAction SilentlyContinue) {
+        $par = Test-SenCapabilityParity -SenRoot $Workspace
         $parityPassed = [bool]$par.Passed
+    }
+    if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
+        [void](Write-SenOfficeShowcase -Workspace $Workspace -Phase 2 -TaskId $(if ($TaskId) { $TaskId } else { "POST-CODE" }) -Title (Split-Path $Workspace -Leaf) -Tier 3 -Blueprint "Verified Post-Code Pipeline Output" -VerifiedOutputs @("docs/CONTEXT.md"))
     }
 
     $patSteps = @(
@@ -678,6 +681,9 @@ function Invoke-SenPostCodePipeline {
         "Step6: Install-SenGitHooks & Invoke-SenCiPushLoop"
     )
     $pat = Register-SenActionPattern -Workspace $Workspace -PatternName "post-code-verification" -Steps $patSteps -Category "post-code" -RepeatThreshold 2
+    if ((Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath ".agents/office/process-audit.json")) -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) {
+        [void](Test-SenProjectCompliance -Workspace $Workspace -ProjectPath $Workspace)
+    }
     $seal = Sync-SenOfficeState -Workspace $Workspace -PruneStale -UpdateSeal
 
     if ($InstallHooks -or (Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath ".git"))) {

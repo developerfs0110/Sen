@@ -1,4 +1,4 @@
-{
+﻿{
   "sen-destructive-command-guard": {
     "PreToolUse": [
       {
@@ -26,3 +26,4 @@
     ]
   }
 }
+

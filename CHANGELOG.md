@@ -19,6 +19,17 @@ Mọi thay đổi quan trọng của plugin **Sen** và lộ trình các phiên 
 
 ---
 
+## [0.5.1] - 2026-11-09
+
+### Fixed & Hardened (Operational Assurance Audit F-01 .. F-10 & Anti-Amnesia Physical Locks)
+- **F-01 & F-02 (Test-SenDeliveryGate):** Enabled default SHA-256 physical diff verification (Test-SenEvidenceValidity), closed the Tier 3 missing-governance loophole (process-audit.json / equirements.json / claims.json), and enforced active adversarial claims.json status verification (REJECTED, INCONCLUSIVE, PROPOSED block delivery).
+- **F-03 (Complete-SenTaskReview):** Enforced strict state-machine transition (eady/pending/acklog/stale/ailed tasks cannot jump directly to done without Start-SenTask) and blocked trivial/echo/fake-pass EvidenceCommand strings.
+- **F-04 (hooks.json & Install-SenHarnessHookFile):** Unified workspace-relative hook paths (.agents/plugins/sen-method/scripts/guard.ps1 and office-post.ps1) and ensured Install-SenHarness updates ntigravity hook definitions.
+- **F-05 & F-06 (guard.ps1 & guard.sh):** Expanded .agents/office/ write protection to all *.json and *.jsonl files, blocked .NET/Python/Node file-write primitives targeting .agents/office/, and added incremental multi-file backup into active < 10 min restore points.
+- **F-07 (Sync-SenPlanToTasks):** Fixed Windows drive-letter regex ([A-Za-z]:\...) so absolute paths in implementation plans are preserved intact in llowedPaths.
+- **F-08 & F-09 (Test-SenSingleStepEvidence & office-post.ps1):** Removed self-fulfilling Write-SenOfficeShowcase generation from Test-SenSingleStepEvidence, wired Phase 1/2 showcase updates and Test-SenMidTaskEscalation into office-post.ps1 and Invoke-SenPostCodePipeline, and tightened test-runner detection in office-post.ps1.
+- **F-10 (Test-SenCapabilityParity):** Added graceful application-project parity mode when scripts/process-manifest.json is absent.
+- **Anti-Amnesia Physical Locks (Sen.Governance.psm1):** Added and exported Initialize-SenIntake and Test-SenIntakeCompleteness (117 exported cmdlets total).
 ## [0.5.0] - 2026-11-08
 
 ### Added & Upgraded / Bổ sung & Nâng cấp — 7-Link RTM Engine (`Sen.Governance.psm1`), Evidence Stale Detection, DAG Change Impact, Symlink/Host Guard & Bilingual Release Notes Gate

@@ -130,22 +130,37 @@ if ($toolName -in @("write_file", "edit_file", "read_file")) {
             if ($normCheck -match '(?i)/\.git/(config|hooks(/|$))') {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct modification of protected Git metadata ($fullTarget)." $primaryWs $toolName $fullTarget $fullTarget
             }
-            if ($normCheck -match '(?i)/\.agents/(office/(tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json$|plugins/sen-method/scripts/guard\.(ps1|sh)$)') {
+            if ($normCheck -match '(?i)/\.agents/(office/[^/]+\.(json|jsonl)$|plugins/sen-method/scripts/guard\.(ps1|sh)$)') {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct tampering with Sen protected state or guard ($fullTarget). Use Sen cmdlets instead." $primaryWs $toolName $fullTarget $fullTarget
             }
-            # Auto-Create Restore Point before modifying any project source file (Zero-Amnesia Pre-Edit Backup)
+            # Auto-Create or Append Restore Point before modifying any project source file (Zero-Amnesia Pre-Edit Backup)
             if ($primaryWs -and ($normCheck -notmatch '(?i)/(\.agents|docs)/') -and ($primaryWs -notmatch '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)')) {
                 $rpDir = Join-Path $primaryWs ".agents/.sen-restore"
-                $recentRp = $false
+                $recentRp = $false; $latestRp = $null
                 if (Test-Path -LiteralPath $rpDir) {
                     $latestRp = Get-ChildItem -LiteralPath $rpDir -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
                     if ($latestRp -and (([DateTime]::UtcNow - $latestRp.LastWriteTimeUtc).TotalMinutes -lt 10)) { $recentRp = $true }
                 }
+                Import-SenRuntimeModule
                 if (-not $recentRp) {
-                    Import-SenRuntimeModule
                     if (Get-Command New-SenRestorePoint -ErrorAction SilentlyContinue) {
                         try { [void](New-SenRestorePoint -Workspace $primaryWs -Files @($fullTarget) -Label "auto-pre-edit") } catch { <# Non-fatal #> }
                     }
+                }
+                elseif ($null -ne $latestRp -and (Get-Command Read-SenSafeJson -ErrorAction SilentlyContinue)) {
+                    try {
+                        $mfFile = Join-Path $latestRp.FullName "manifest.json"
+                        $mfObj = Read-SenSafeJson -Path $mfFile
+                        if ($null -ne $mfObj -and (@($mfObj.entries | Where-Object { [string]$_.fullPath -ieq $fullTarget }).Count -eq 0)) {
+                            $existed = Test-Path -LiteralPath $fullTarget -PathType Leaf
+                            $storedName = "f_$(@($mfObj.entries).Count).bak"
+                            if ($existed) { Copy-Item -LiteralPath $fullTarget -Destination (Join-Path (Join-Path $latestRp.FullName "files") $storedName) -Force }
+                            $relP = if ($fullTarget.StartsWith($primaryWs, [System.StringComparison]::OrdinalIgnoreCase)) { $fullTarget.Substring($primaryWs.Length).TrimStart('\', '/') } else { [System.IO.Path]::GetFileName($fullTarget) }
+                            $mfObj.entries = @($mfObj.entries) + @([ordered]@{ relPath = $relP; fullPath = $fullTarget; existed = [bool]$existed; storedName = $storedName })
+                            Write-SenAtomicJson -Path $mfFile -InputObject $mfObj -Depth 6
+                        }
+                    }
+                    catch { <# Non-fatal #> }
                 }
             }
             # Enforce Pre-Edit Restore Point Gate during active Tier 2/3 workflow
@@ -235,7 +250,7 @@ $rules = @(
     @{ re = '(\bcurl\b|\bwget\b)[^;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; why = 'Piped remote script execution (curl/wget | sh/bash/pwsh)' },
     @{ re = '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b)[^|;&]*([/\\]\.ssh[/\\]|[/\\]\.aws[/\\]|[/\\]\.gnupg[/\\]|[/\\]\.kube[/\\]|id_rsa|id_ed25519)'; why = 'Reading sensitive host credential/key files via shell' },
     @{ re = '\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}'; why = 'Encoded PowerShell command execution' },
-    @{ re = '(>|>>|\bset-content\b|\bout-file\b|\badd-content\b|\btee\b|\bcp\b|\bmv\b|\bcopy-item\b|\bmove-item\b|\bremove-item\b|\bdel\b|\brm\b)[^|;&]*[/\\]\.agents[/\\]office[/\\](tasks|process-audit|loops|bounded-loops|requirements|evidence|claims|quality-baseline|state-seal|governance-audit)\.json\b'; why = 'Direct shell tampering with protected .agents/office state JSON' }
+    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|cp|mv|copy-item|move-item|remove-item|del|rm)\b|writeall(text|lines|bytes)|appendall(text|lines)|streamwriter|filestream|open\s*\(|fs\.(write|append|unlink|rm))[^|;&]*[/\\]\.agents[/\\]office[/\\]|[/\\]\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b|\.write\s*\()'; why = 'Direct shell/script tampering with protected .agents/office state JSON' }
 )
 
 foreach ($r in $rules) {

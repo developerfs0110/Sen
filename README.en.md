@@ -8,7 +8,7 @@
 
 ## What Sen Is
 
-**Sen (`sen-method` `v0.5.0`)** is a structured methodology and multi-harness AI engineering operating system (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**) combining an **ultra-lean core rule (`<= 5.75 KB`)** with a **deterministic PowerShell runtime (`115` exported cmdlets, `10` `sen-*` skills, `0` external dependencies)**. Every work request is automatically scored (`Get-SenTaskRiskScore`) and classified into 3 tiers so the AI knows when to act immediately, when to run optimistic parallel execution with dialectical proof & critique, and when to design, plan, and coordinate specialist roles. You stay in complete control of progress, code health, legal compliance, and token usage in plain language without memorizing slash commands.
+**Sen (`sen-method` `v0.5.1`)** is a structured methodology and multi-harness AI engineering operating system (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**) combining an **ultra-lean core rule (`<= 5.75 KB`)** with a **deterministic PowerShell runtime (`117` exported cmdlets, `10` `sen-*` skills, `0` external dependencies)**. Every work request is automatically scored (`Get-SenTaskRiskScore`) and classified into 3 tiers so the AI knows when to act immediately, when to run optimistic parallel execution with dialectical proof & critique, and when to design, plan, and coordinate specialist roles. You stay in complete control of progress, code health, legal compliance, and token usage in plain language without memorizing slash commands.
 
 ## Problem Sen Solves
 
@@ -44,7 +44,7 @@ flowchart LR
 
 *(Pure information and lookup questions are answered directly with no tier label — while destructive prompts disguised as questions are still safely caught at Tier 3.)*
 
-### 9 Empirically Verified Engineering Pillars (`v0.5.0`)
+### 9 Empirically Verified Engineering Pillars (`v0.5.1`)
 
 1. **Dialectical "Thesis — Antithesis — Synthesis" Loop (`Invoke-SenDialecticalAudit`):** Proves why the chosen approach is *Best-of-the-Best* with a quantified **Resource Cost** column (Tokens, Time, CPU/RAM/Disk, Maintenance), attacks its own proposal across 7 adversarial vectors (Counterexamples, Boundary Value Analysis, Socratic Contradictions, Popperian Falsification, Decision Tables, Concurrency, STRIDE), and synthesizes an non-falsifiable solution before execution.
 2. **Task DAG, File Locks, Optimistic Concurrency Control & 3-Signal Liveness Probe (`Sen.Orchestrator.psm1`):** Tracks tasks in `.agents/office/tasks.json` (protected by a cross-process OS `Named Mutex` in `Save-SenTasks`), auto-promotes tasks when dependencies complete, enforces `allowedPaths` mutual exclusion, prevents lost updates via per-task `_rev` versioning, recovers stuck locks via `Unlock-SenTask`, and runs a 3-signal liveness probe & selective teardown (`Test-SenHungTasks` & `Clear-SenHungTasks`: protecting active long-running tasks via heartbeat/file activity/running subagent in `ActiveLongRunningIds`, catching interactive stdin deadlocks immediately in `DeadlockedItems`, and selectively cleaning up `StaleTaskIds` and `IdleSubagents`).
@@ -59,7 +59,7 @@ flowchart LR
 
 <!-- office screenshot: added with sen-office -->
 
-🏢 **3D Chibi AI Office (`sen-office` `v0.5.0` built-in — Turn 1 Auto-Start/Offer for Tier 2–3):** On Tier 2–3 tasks, Sen automatically starts or offers the 3D Office in Turn 1 (`officeAction: auto_start / offer_enable` via `start-office.ps1`), or you can say `"open office"` anytime to launch the 3D isometric command center featuring 9 Chibi AI roles + Boss on the red velvet sofa, zero-token hook telemetry (`Eco mode`), 6-counter Inspector Drawer, Replay Scrubber, live `state.vscdb` quota reader, and **Dual-Phase Output Visualizer** (Design Blueprint vs. Verified Delivery). Open **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)** directly to preview.
+🏢 **3D Chibi AI Office (`sen-office` `v0.5.1` built-in — Turn 1 Auto-Start/Offer for Tier 2–3):** On Tier 2–3 tasks, Sen automatically starts or offers the 3D Office in Turn 1 (`officeAction: auto_start / offer_enable` via `start-office.ps1`), or you can say `"open office"` anytime to launch the 3D isometric command center featuring 9 Chibi AI roles + Boss on the red velvet sofa, zero-token hook telemetry (`Eco mode`), 6-counter Inspector Drawer, Replay Scrubber, live `state.vscdb` quota reader, and **Dual-Phase Output Visualizer** (Design Blueprint vs. Verified Delivery). Open **[Sen Office](https://raw.githack.com/developerfs0110/Sen/main/office/index.html)** directly to preview.
 
 ## Quick Start
 

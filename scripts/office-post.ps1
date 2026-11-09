@@ -49,10 +49,14 @@ try {
     $hookMutatedOfficeJson = $false
 
     # Zero-token Auto-Orchestration: sync Plan / TODO Markdown to .agents/office/tasks.json on write/edit
-    if (($toolName -eq "write_file" -or $toolName -eq "edit_file") -and $pathArg -match '(?i)(plans[\\/][^\\/]+\.md|TODO\.md)$') {
-        if (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue) {
+    if (($toolName -eq "write_file" -or $toolName -eq "edit_file") -and $pathArg -match '(?i)((specs|plans)[\\/][^\\/]+\.md|TODO\.md)$') {
+        if ($pathArg -match '(?i)(plans[\\/][^\\/]+\.md|TODO\.md)$' -and (Get-Command Sync-SenPlanToTasks -ErrorAction SilentlyContinue)) {
             $planTarget = if ($pathArg -match '(?i)plans[\\/][^\\/]+\.md$') { $pathArg } else { "" }
             [void](Sync-SenPlanToTasks -Workspace $ws -PlanPath $planTarget)
+            $hookMutatedOfficeJson = $true
+        }
+        if ($pathArg -match '(?i)(specs|plans)[\\/][^\\/]+\.md$' -and (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue)) {
+            [void](Write-SenOfficeShowcase -Workspace $ws -Phase 1 -TaskId $shortFile -Title (Split-Path $ws -Leaf) -Tier 3 -Blueprint "Design Blueprint: $shortFile" -ExpectedOutputs @($shortFile))
             $hookMutatedOfficeJson = $true
         }
         if ((Test-Path -LiteralPath (Join-Path $ws ".agents/office/process-audit.json")) -and (Get-Command Test-SenStageGate -ErrorAction SilentlyContinue)) {
@@ -163,6 +167,10 @@ try {
                 [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title "Modifying $shortFile" -Phase 1 -Summary "Editing $pathArg" -Domain "code")
                 $hookMutatedOfficeJson = $true
             }
+            if (Get-Command Test-SenMidTaskEscalation -ErrorAction SilentlyContinue) {
+                $esc = Test-SenMidTaskEscalation -Workspace $ws -ModifiedFiles @($pathArg)
+                if ($esc.Escalated) { $hookMutatedOfficeJson = $true }
+            }
         }
         if ($pathArg -match '(?i)\.(html|css|tsx|jsx|vue|svg)$') {
             $from = "fe"
@@ -180,7 +188,8 @@ try {
             $model = "pro"
             $ecoText = "Edit code: $shortFile"
         }
-        $fullText = if ($pathArg) { "$ecoText ($pathArg)" } else { $ecoText }
+        $wdNote = if ($pathArg -and ($pathArg.Replace('\', '/') -notmatch '(?i)/(\.agents|docs)/')) { " [SEN WATCHDOG] Run Invoke-SenPostCodePipeline & Test-SenDeliveryGate before completion." } else { "" }
+        $fullText = $(if ($pathArg) { "$ecoText ($pathArg)" } else { $ecoText }) + $wdNote
     }
     elseif ($toolName -eq "run_command") {
         $cleanCmd = ($cmdArg -replace '[\r\n\t]+', ' ').Trim()
@@ -190,7 +199,7 @@ try {
             $model = "pro"
             $ecoText = "Security/Repo check"
         }
-        elseif ($cmdArg -match '(?i)(test|run\.ps1|pytest|jest|vitest)') {
+        elseif (($cmdArg -match '(?i)\b(npm\s+test|pnpm\s+test|yarn\s+test|npx\s+(jest|vitest|playwright)|pytest|cargo\s+test|go\s+test|dotnet\s+test|Invoke-Pester|tests[/\\]run\.ps1|run\.ps1)\b') -and ($cmdArg -notmatch '^(?i)\s*(echo|write-host|write-output|true|rem|::)\b')) {
             $from = "qa"
             $lane = "QA Gate"
             $ecoText = "Run test suite"
