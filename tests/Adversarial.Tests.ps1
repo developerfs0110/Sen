@@ -342,13 +342,14 @@ Test "Cross-Session Skill Capture & Pattern Automation: Register-SenActionPatter
 Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Path Protection, Skill Anti-Poisoning, TreeHash Tamper Detection, and Strict Test Runner Hook" {
     $ws = New-AdversarialTestWorkspace
     try {
+        $pwshExe     = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
         $guardScript = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/guard.ps1"
         $postScript  = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/office-post.ps1"
 
         # 1. FIX-04: Obfuscated command blocking (r\m -rf, r"m" -rf, base64 -d | bash) in guard.ps1
         foreach ($obfCmd in @('r\m -rf /tmp/x', 'r"m" -rf /tmp/x', "r'm' -rf /tmp/x", 'echo cm0gLXJmIC8= | base64 -d | bash')) {
             $pObf = @{ workspacePaths = @($ws); toolCall = @{ name = "run_command"; args = @{ CommandLine = $obfCmd } } } | ConvertTo-Json -Depth 6 -Compress
-            $resObf = ($pObf | & powershell -NoProfile -ExecutionPolicy Bypass -File $guardScript) | ConvertFrom-Json
+            $resObf = ($pObf | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $guardScript) | ConvertFrom-Json
             Assert-Equal "deny" $resObf.decision "guard.ps1 must block obfuscated destructive command: $obfCmd"
         }
 
@@ -356,7 +357,7 @@ Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Pa
         foreach ($protRel in @(".agents/plugins/sen-method/scripts/office-post.ps1", ".claude/settings.json", ".cursor/hooks.json", ".agents/sen.lock.json")) {
             $protFull = Join-Path $ws $protRel
             $pWrite = @{ workspacePaths = @($ws); toolCall = @{ name = "write_file"; args = @{ Path = $protFull } } } | ConvertTo-Json -Depth 6 -Compress
-            $resWrite = ($pWrite | & powershell -NoProfile -ExecutionPolicy Bypass -File $guardScript) | ConvertFrom-Json
+            $resWrite = ($pWrite | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $guardScript) | ConvertFrom-Json
             Assert-Equal "deny" $resWrite.decision "guard.ps1 must block direct write_file to protected path: $protRel"
         }
 
@@ -393,7 +394,7 @@ Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Pa
             toolCall = @{ name = "run_command"; args = @{ CommandLine = 'git commit -m "fix pytest"' } }
             toolResult = @{ exitCode = 0 }
         } | ConvertTo-Json -Depth 6 -Compress
-        $pFakeTest | & powershell -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
+        $pFakeTest | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
         $tAfterFake = Get-SenTasks -Workspace $ws | Where-Object { $_.id -eq "AUTO-WORK" } | Select-Object -First 1
         Assert-Equal "in_progress" $tAfterFake.status "git commit -m 'fix pytest' must NOT auto-complete AUTO-WORK"
 
@@ -402,7 +403,7 @@ Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Pa
             toolCall = @{ name = "run_command"; args = @{ CommandLine = "pytest tests/" } }
             toolResult = @{ exitCode = 0 }
         } | ConvertTo-Json -Depth 6 -Compress
-        $pRealTest | & powershell -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
+        $pRealTest | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
         $tAfterReal = Get-SenTasks -Workspace $ws | Where-Object { $_.id -eq "AUTO-WORK" } | Select-Object -First 1
         Assert-Equal "done" $tAfterReal.status "Real 'pytest tests/' with exitCode=0 must complete AUTO-WORK"
     }
@@ -425,6 +426,7 @@ Test "OA-01..OA-04 Operational Assurance Regression: Plugin Hook Paths, Paramete
         Assert-True ($hookTxt -match '\.agents/plugins/sen-method/scripts/office-post\.ps1') "Plugin hooks.json must reference .agents/plugins/sen-method/scripts/office-post.ps1"
 
         # 2. OA-03: office-post.ps1 on invoke_subagent auto-initializes current-intake.json and showcase.json (Phase 1)
+        $pwshExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
         $postScript = Join-Path $repoRoot "scripts/office-post.ps1"
         [void](Set-SenOfficeConfig -Workspace $ws -Mode "eco")
         $pSub = @{
@@ -434,7 +436,7 @@ Test "OA-01..OA-04 Operational Assurance Regression: Plugin Hook Paths, Paramete
                 args = @{ TypeName = "self"; Role = "Dev Subagent"; Prompt = "Implement zero-amnesia operational assurance fixes across 4 files" }
             }
         } | ConvertTo-Json -Depth 6 -Compress
-        $pSub | & powershell -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
+        $pSub | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
 
         $intakeFile = Join-Path $ws ".agents/office/current-intake.json"
         $showcaseFile = Join-Path $ws ".agents/office/showcase.json"
