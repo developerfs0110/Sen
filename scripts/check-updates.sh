@@ -97,8 +97,9 @@ if [[ -f "$PACKAGES_FILE" ]]; then
           if git clone --depth 5 --quiet "$REPO" "$TMP_CLONE" 2>/dev/null; then
             LOG_LINES=$(git -C "$TMP_CLONE" log -5 --oneline 2>/dev/null | head -n 3 || true)
             while IFS= read -r line; do
-              if [[ -n "$line" ]]; then
-                NOTICE_BODY="${NOTICE_BODY}  * ${line}"$'\n'
+              clean_line="$(printf '%s' "$line" | tr -d '<>`$|;' | cut -c1-100)"
+              if [[ -n "$clean_line" ]]; then
+                NOTICE_BODY="${NOTICE_BODY}  * ${clean_line}"$'\n'
               fi
             done <<< "$LOG_LINES"
           fi

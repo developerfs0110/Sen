@@ -205,7 +205,13 @@ try {
             $ecoText = "Run test suite"
             if ($hasEc -and ($ecVal -eq 0) -and (-not $isErr)) {
                 if (Get-Command Register-SenEvidence -ErrorAction SilentlyContinue) {
-                    [void](Register-SenEvidence -Workspace $ws -EvidenceId "EV-AUTO-TEST" -TaskId "AUTO-WORK" -Type "unit" -Command $cleanCmd -ExitCode $ecVal)
+                    $evPaths = @()
+                    if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
+                        foreach ($at in @(Get-SenTasks -Workspace $ws | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })) {
+                            foreach ($ap in @($at.allowedPaths)) { if ($ap -and ($evPaths -notcontains [string]$ap)) { $evPaths += [string]$ap } }
+                        }
+                    }
+                    [void](Register-SenEvidence -Workspace $ws -EvidenceId "EV-AUTO-TEST" -TaskId "AUTO-WORK" -Type "unit" -Command $cleanCmd -ExitCode $ecVal -CodePaths $evPaths)
                     $hookMutatedOfficeJson = $true
                 }
                 if (Get-Command Complete-SenTaskReview -ErrorAction SilentlyContinue) {

@@ -4,7 +4,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0, Mandatory = $false)]
-    [string]$Root = "."
+    [string]$Root = ".",
+    [Parameter(Mandatory = $false)]
+    [string]$ExportZipPath = ""
 )
 
 $resolvedRoot = $null
@@ -231,6 +233,16 @@ if ((Test-Path -LiteralPath $senModPath) -and (Test-Path -LiteralPath $senManife
                 $errors.Add("capability parity gap: $mi")
             }
         }
+    }
+}
+
+if ($errors.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($ExportZipPath))) {
+    $zipDir = Split-Path -Parent $ExportZipPath
+    if ($zipDir -and (-not (Test-Path -LiteralPath $zipDir))) { [System.IO.Directory]::CreateDirectory($zipDir) | Out-Null }
+    if (Test-Path -LiteralPath $ExportZipPath) { Remove-Item -LiteralPath $ExportZipPath -Force -ErrorAction SilentlyContinue }
+    & git -C $resolvedRoot archive --format=zip -o $ExportZipPath HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or (-not (Test-Path -LiteralPath $ExportZipPath))) {
+        $errors.Add("failed to export clean release archive to $ExportZipPath")
     }
 }
 

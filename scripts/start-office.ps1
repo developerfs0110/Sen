@@ -68,10 +68,12 @@ if (-not $NoBrowser) {
     try { Start-Process $url } catch { <# Ignore headless environments without browser #> }
 }
 
-function Send-HttpResponse($stream, [int]$statusCode, [string]$statusText, [string]$contentType, [byte[]]$bodyBytes, [int]$allowedPort = 47890) {
+function Send-HttpResponse($stream, [int]$statusCode, [string]$statusText, [string]$contentType, [byte[]]$bodyBytes, [int]$allowedPort = 47890, [string]$etag = "") {
+    $etagHdr = if (-not [string]::IsNullOrEmpty($etag)) { "ETag: `"$etag`"`r`n" } else { "" }
     $header = "HTTP/1.1 $statusCode $statusText`r`n" +
               "Content-Type: $contentType`r`n" +
               "Content-Length: $($bodyBytes.Length)`r`n" +
+              $etagHdr +
               "Cache-Control: no-store`r`n" +
               "Access-Control-Allow-Origin: http://127.0.0.1:$allowedPort`r`n" +
               "X-Content-Type-Options: nosniff`r`n" +
@@ -99,6 +101,9 @@ try {
 
             $contentLen = 0
             $originHdr = ""
+            $hostHdr = ""
+            $contentTypeHdr = ""
+            $ifNoneMatchHdr = ""
             while ($true) {
                 $hLine = $reader.ReadLine()
                 if ([string]::IsNullOrEmpty($hLine)) { break }
@@ -108,6 +113,21 @@ try {
                 elseif ($hLine -match '(?i)^Origin:\s*(.+)$') {
                     $originHdr = $matches[1].Trim()
                 }
+                elseif ($hLine -match '(?i)^Host:\s*(.+)$') {
+                    $hostHdr = $matches[1].Trim()
+                }
+                elseif ($hLine -match '(?i)^Content-Type:\s*(.+)$') {
+                    $contentTypeHdr = $matches[1].Trim()
+                }
+                elseif ($hLine -match '(?i)^If-None-Match:\s*(.+)$') {
+                    $ifNoneMatchHdr = $matches[1].Trim()
+                }
+            }
+
+            if ((-not [string]::IsNullOrEmpty($hostHdr)) -and ($hostHdr -notmatch '^(?i)(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$')) {
+                $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"forbidden host header"}')
+                Send-HttpResponse $stream 403 "Forbidden" "application/json; charset=utf-8" $errBytes $usePort
+                continue
             }
 
             if ($contentLen -gt 65536) {
@@ -119,6 +139,12 @@ try {
             if ($method -eq "POST" -and (-not [string]::IsNullOrEmpty($originHdr)) -and ($originHdr -notmatch '^https?://(127\.0\.0\.1|localhost)(:\d+)?$')) {
                 $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"forbidden origin"}')
                 Send-HttpResponse $stream 403 "Forbidden" "application/json; charset=utf-8" $errBytes $usePort
+                continue
+            }
+
+            if ($method -eq "POST" -and $path -eq "/api/config" -and $contentLen -gt 0 -and (-not [string]::IsNullOrEmpty($contentTypeHdr)) -and ($contentTypeHdr -notmatch '(?i)application/json')) {
+                $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"application/json required"}')
+                Send-HttpResponse $stream 415 "Unsupported Media Type" "application/json; charset=utf-8" $errBytes $usePort
                 continue
             }
 
@@ -160,7 +186,13 @@ try {
                     lessons   = $les
                 }
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $st -Depth 8 -Compress))
-                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
+                $etagVal = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($jBytes))).Replace("-", "").Substring(0, 16).ToLowerInvariant()
+                if ($ifNoneMatchHdr -and ($ifNoneMatchHdr.Trim('"') -eq $etagVal)) {
+                    Send-HttpResponse $stream 304 "Not Modified" "application/json; charset=utf-8" ([byte[]]@()) $usePort $etagVal
+                }
+                else {
+                    Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort $etagVal
+                }
             }
             elseif ($method -eq "POST" -and $path -eq "/api/config") {
                 $reqObj = ConvertFrom-Json -InputObject $bodyStr

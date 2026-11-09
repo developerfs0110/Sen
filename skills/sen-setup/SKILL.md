@@ -75,19 +75,19 @@ flowchart LR
 Run the non-interactive installer script, which performs Spec steps 3, 4, and 7 atomically without overwriting existing files:
 - Creates workspace skeleton from `templates/workspace/`: `.agents/rules/`, `.agents/plugins/`, `.agents/skills/`, `Code/`, `Templates/`, `docs/`.
 - Installs Sen into `<WORKSPACE>/.agents/plugins/sen-method/`.
-- Fetches the latest shallow clones (`--depth 1`) of `superpowers` into `.agents/plugins/superpowers/`, `security-audit` into `.agents/skills/security-audit/`, and (if selected) `vn-law-check` into `.agents/skills/vn-law-check/`.
+- Fetches the pinned commits (or shallow clones `--depth 1`) of `superpowers` into `.agents/plugins/superpowers/`, `security-audit` into `.agents/skills/security-audit/`, and `vn-law-check` into `.agents/skills/vn-law-check/` by default.
 - Creates `<WORKSPACE>/.agents/rules/safety.md` from `templates/safety.template.md` with `{{WORKSPACE_ROOT}}` set to `<WORKSPACE>` (if not already present).
 - Writes `<WORKSPACE>/.agents/sen.lock.json` with package repo URLs, subPaths, commits, and timestamps (only when all required packages succeed).
 
 **Windows command:**
 ```powershell
-# Add -WithVnLawCheck if the user opted in at Step 3
+# vn-law-check is installed by default (pass -SkipVnLaw only if explicitly skipped; -SenSource defaults to repo root)
 powershell -NoProfile -ExecutionPolicy Bypass -File "<SEN_REPO>/scripts/install.ps1" -Workspace "<WORKSPACE>" -SenSource "<SEN_REPO>"
 ```
 
 **macOS / Linux command:**
 ```bash
-# Add --with-vn-law-check if the user opted in at Step 3
+# vn-law-check is installed by default (pass --skip-vn-law only if explicitly skipped; --sen-source defaults to repo root)
 bash "<SEN_REPO>/scripts/install.sh" --workspace "<WORKSPACE>" --sen-source "<SEN_REPO>"
 ```
 

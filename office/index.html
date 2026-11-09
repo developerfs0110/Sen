@@ -529,7 +529,11 @@ function resumeLiveSnapshot() { manualDemoActive = false; clearInterval(timer); 
 async function pollLiveServer(isInitialLoad) {
   if (location.protocol === 'file:') return;
   try {
-    const res = await fetch('/api/state', { cache: 'no-store' }); if (!res.ok) return;
+    const hdrs = (!isInitialLoad && window._lastStateEtag) ? { 'If-None-Match': window._lastStateEtag } : {};
+    const res = await fetch('/api/state', { cache: 'no-store', headers: hdrs });
+    if (res.status === 304) return;
+    if (!res.ok) return;
+    const etag = res.headers.get('ETag'); if (etag) window._lastStateEtag = etag;
     const data = await res.json(); isLiveServer = true;
     if (data.config && data.config.mode && data.config.mode !== camMode) { camMode = data.config.mode; document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === camMode)); document.getElementById('offov').classList.toggle('show', camMode === 'off'); }
     if (data.quota && data.quota.available && Array.isArray(data.quota.models) && data.quota.models.length) { document.getElementById('quotaPct').textContent = `${data.quota.models[0].pctLeft}%`; document.getElementById('quotaRows').innerHTML = data.quota.models.map(m => `• ${escapeHtml(m.label)}: <b>${escapeHtml(m.pctLeft)}% còn lại</b>`).join('<br>'); }

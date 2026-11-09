@@ -25,15 +25,17 @@ deny() {
   out_decision "deny" "[SEN GUARD] Blocked: $1. If you truly need this command, run it manually in your terminal."
 }
 
-# Check write_file / edit_file workspace boundary via python3 when available
+# Check write_file / edit_file workspace boundary and state seal via python3 when available
 if command -v python3 >/dev/null 2>&1; then
   PY_CHECK="$(python3 -c '
-import json, os, sys
+import hashlib, json, os, re, sys
 try:
     d = json.loads(sys.stdin.read())
     tc = d.get("toolCall") or {}
-    tname = tc.get("name") or ""
-    args = tc.get("args") or {}
+    tname = tc.get("name") or d.get("tool_name") or ""
+    args = tc.get("args") or d.get("tool_input") or {}
+    ws_list = [w for w in (d.get("workspacePaths") or d.get("workspace_roots") or []) if w]
+    if not ws_list and d.get("cwd"): ws_list = [d.get("cwd")]
     if tname in ("write_file", "edit_file", "read_file", "Write", "Edit", "MultiEdit", "Read"):
         p = args.get("Path") or args.get("file_path") or args.get("target_file") or args.get("path") or ""
         norm_raw = p.replace("\\", "/").lower()
@@ -43,7 +45,6 @@ try:
         if tname in ("read_file", "Read"):
             print("SAFE_TOOL")
             sys.exit(0)
-        ws_list = [w for w in (d.get("workspacePaths") or d.get("workspace_roots") or []) if w]
         if p and ws_list:
             rp = os.path.realpath(p)
             inside = False
@@ -77,7 +78,21 @@ try:
                         sys.exit(0)
         print("SAFE_TOOL")
         sys.exit(0)
-    print("CMD:" + (args.get("CommandLine") or ""))
+    cmd = args.get("CommandLine") or args.get("command") or args.get("cmd") or ""
+    if cmd and ws_list and re.search(r"(?i)\bgit\b[^|;&]*\b(commit|push)\b", cmd):
+        off_dir = os.path.join(os.path.realpath(ws_list[0]), ".agents", "office")
+        seal_p = os.path.join(off_dir, "state-seal.json")
+        if os.path.isfile(seal_p):
+            saved = json.load(open(seal_p, "r", encoding="utf-8"))
+            fh = {}
+            for fn in sorted(os.listdir(off_dir)):
+                if fn.endswith(".json") and fn != "state-seal.json" and os.path.isfile(os.path.join(off_dir, fn)):
+                    fh[fn] = hashlib.sha256(open(os.path.join(off_dir, fn), "rb").read()).hexdigest().lower()
+            comp = hashlib.sha256(";".join(f"{k}={fh[k]}" for k in fh).encode("utf-8")).hexdigest().lower()
+            if saved.get("compositeHash") and saved.get("compositeHash") != comp:
+                print("DENY_SEAL:state-seal.json")
+                sys.exit(0)
+    print("CMD:" + cmd)
 except Exception:
     print("FALLBACK")
 ' <<< "$RAW" 2>/dev/null || echo "FALLBACK")"
@@ -97,6 +112,9 @@ except Exception:
       ;;
     DENY_RP:*)
       out_decision "deny" "[SEN GUARD] Blocked: Tier 2/3 workflow requires New-SenRestorePoint before modifying project files (${PY_CHECK#DENY_RP:})."
+      ;;
+    DENY_SEAL:*)
+      out_decision "deny" "[SEN GUARD] Blocked: .agents/office state seal is tampered (${PY_CHECK#DENY_SEAL:}). Restore or verify state before committing/pushing."
       ;;
     SAFE_TOOL)
       out_decision "ask" ""
@@ -130,74 +148,111 @@ if [ -z "${CMD:-}" ]; then
   out_decision "ask" ""
 fi
 
-if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])rm\b[^|;&]*([[:space:]]-[a-zA-Z]*r|[[:space:]]--recursive\b)'; then
-  deny "Recursive delete (rm -r / rm -rf / rm --recursive)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])(remove-item|ri|del|erase|rd|rmdir)\b[^|;&]*[[:space:]]-r(ec(urse)?)?\b'; then
-  deny "Recursive delete (Remove-Item -Recurse)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])(get-childitem|gci|dir|ls)\b[^;]*-r(ec(urse)?)?\b[^;]*\|[[:space:]]*(remove-item|ri|del|erase)\b'; then
-  deny "Piped recursive delete (Get-ChildItem -Recurse | Remove-Item)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])(rd|rmdir|del|erase)\b[^|;&]*[[:space:]]/s\b'; then
-  deny "Recursive delete (rd/del /s)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bfind\b[^|;&]*[[:space:]]-delete\b'; then
-  deny "Recursive find -delete"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bshutil\.rmtree[[:space:]]*\('; then
-  deny "Python shutil.rmtree recursive delete"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\b(drop[[:space:]]+(database|table|schema)|truncate[[:space:]]+table)\b'; then
-  deny "Destructive SQL (DROP / TRUNCATE)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])format(\.com)?[[:space:]]+[a-zA-Z]:'; then
-  deny "Disk format command"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(^|[^a-zA-Z0-9_])(diskpart|clear-disk|format-volume|remove-partition|initialize-disk)\b'; then
-  deny "Disk or partition modification"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgit\b[^|;&]*\bpush\b[^|;&]*([[:space:]]--force(-with-lease)?\b|[[:space:]]-f\b|[[:space:]]--delete\b|[[:space:]]-d\b|[[:space:]]--mirror\b|[[:space:]]--no-verify\b|[[:space:]]["'\'']?\+[^[:space:]]|[[:space:]]["'\'']?:[^[:space:]])'; then
-  deny "Force push, remote branch delete, or hook bypass"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgit\b[^|;&]*\breset\b[^|;&]*--hard'; then
-  deny "git reset --hard (discards uncommitted work)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgit\b[^|;&]*\bclean\b[^|;&]*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)'; then
-  deny "git clean -f/--force (deletes untracked files)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgit\b[^|;&]*\b(checkout|restore)\b[^|;&]*([[:space:]](--[[:space:]]+)?\.([[:space:]]|$)|[[:space:]]-f\b|[[:space:]]--force\b)'; then
-  deny "git checkout/restore . or -f (discards working tree changes)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgit\b[^|;&]*\bstash[[:space:]]+(drop|clear)\b'; then
-  deny "git stash drop/clear"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgit\b[^|;&]*\b(filter-branch|filter-repo)\b'; then
-  deny "Git history rewrite"
-fi
-if printf '%s' "$CMD" | grep -Eiq '\bgh[[:space:]]+repo[[:space:]]+delete\b'; then
-  deny "GitHub repository deletion"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(\biex\b|\binvoke-expression\b)[[:space:]]*\(?[[:space:]]*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b)'; then
-  deny "Remote script download and execution (IEX / IRM)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(\bcurl\b|\bwget\b)[^;]*\|[[:space:]]*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; then
-  deny "Piped remote script execution (curl/wget | sh/bash/pwsh)"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b)[^|;&]*(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519)'; then
+if printf '%s' "$CMD" | grep -Eiq '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b|\bgrep\b|\brg\b|\bselect-string\b)[^|;&]*([/\\]\.ssh[/\\]|[/\\]\.aws[/\\]|[/\\]\.gnupg[/\\]|[/\\]\.kube[/\\]|id_rsa|id_ed25519)'; then
   deny "Reading sensitive host credential/key files via shell"
 fi
-if printf '%s' "$CMD" | grep -Eiq '\b(powershell|pwsh)(\.exe)?\b[^|;&]*[[:space:]]-(e|ec|enc|encodedcommand)[[:space:]]+[A-Za-z0-9+/=]{8,}'; then
-  deny "Encoded PowerShell command execution"
+
+CMD_SCAN="$(printf '%s' "$CMD" | sed -E 's/(\bgit\b[^|;&]*\bcommit\b[^|;&]*[[:space:]](-m|--message)[[:space:]]+)("[^"`$]+"|'\''[^'\'']+'\'')/\1""/Ig' 2>/dev/null || printf '%s' "$CMD")"
+if printf '%s' "$CMD_SCAN" | grep -Eiq '^[[:space:]]*(echo|write-host|write-output|grep|rg|select-string)\b' && ! printf '%s' "$CMD_SCAN" | grep -Eq '[|;&`$><]'; then
+  CMD_SCAN=""
 fi
-if printf '%s' "$CMD" | grep -Eq '\bgit\b[^|;&]*\bbranch\b[^|;&]*([[:space:]]-D\b|--delete[[:space:]]+--force|--force[[:space:]]+--delete)'; then
-  deny "git branch -D (force-deletes unmerged branch)"
+
+if [ -n "$CMD_SCAN" ]; then
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(^|[^a-zA-Z0-9_])rm\b[^|;&]*([[:space:]]-[a-zA-Z]*r|[[:space:]]--recursive\b)'; then
+    deny "Recursive delete (rm -r / rm -rf / rm --recursive)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(^|[^a-zA-Z0-9_])(remove-item|ri|del|erase|rd|rmdir)\b[^|;&]*[[:space:]]-r(e(c(u(r(s(e)?)?)?)?)?)?\b'; then
+    deny "Recursive delete (Remove-Item -Recurse)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(^|[^a-zA-Z0-9_])(get-childitem|gci|dir|ls)\b[^;]*-r(e(c(u(r(s(e)?)?)?)?)?)?\b[^;]*\|[[:space:]]*(remove-item|ri|del|erase)\b'; then
+    deny "Piped recursive delete (Get-ChildItem -Recurse | Remove-Item)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(^|[^a-zA-Z0-9_])(rd|rmdir|del|erase)\b[^|;&]*[[:space:]]/s\b'; then
+    deny "Recursive delete (rd/del /s)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bfs\.(rm|rmdir)(Sync)?[[:space:]]*\(|\b(npx[[:space:]]+)?rimraf\b|\brobocopy(\.exe)?\b[^|;&]*[[:space:]]/mir\b'; then
+    deny "Recursive delete (fs.rm / rimraf / robocopy /MIR)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bfind\b[^|;&]*[[:space:]]-delete\b'; then
+    deny "Recursive find -delete"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\b(shutil[[:space:]]*\.[[:space:]]*rmtree|from[[:space:]]+shutil[[:space:]]+import[[:space:]]+rmtree)\b|\brmtree[[:space:]]*\('; then
+    deny "Python shutil.rmtree recursive delete"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\b(drop[[:space:]]+(database|table|schema)|truncate[[:space:]]+(table[[:space:]]+)?[a-zA-Z0-9_."`]+)\b'; then
+    deny "Destructive SQL (DROP / TRUNCATE)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bdelete[[:space:]]+from[[:space:]]+[a-zA-Z0-9_."`]+[[:space:]]*(;|$)'; then
+    deny "Unbounded SQL DELETE FROM without WHERE clause"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(^|[^a-zA-Z0-9_])format(\.com)?[[:space:]]+[a-zA-Z]:'; then
+    deny "Disk format command"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(^|[^a-zA-Z0-9_])(diskpart|clear-disk|format-volume|remove-partition|initialize-disk)\b'; then
+    deny "Disk or partition modification"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\bpush\b[^|;&]*([[:space:]]--force(-with-lease)?\b|[[:space:]]-f\b|[[:space:]]--delete\b|[[:space:]]-d\b|[[:space:]]--mirror\b|[[:space:]]--no-verify\b|[[:space:]]["'\'']?\+[^[:space:]]|[[:space:]]["'\'']?:[^[:space:]])'; then
+    deny "Force push, remote branch delete, or hook bypass"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\bcommit\b[^|;&]*[[:space:]](--no-verify|-n)\b'; then
+    deny "git commit --no-verify/-n (hook bypass)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\breset\b[^|;&]*--hard'; then
+    deny "git reset --hard (discards uncommitted work)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\bclean\b[^|;&]*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)'; then
+    deny "git clean -f/--force (deletes untracked files)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\bcheckout\b[^|;&]*([[:space:]](--[[:space:]]+)?\.([[:space:]]|$)|[[:space:]]-f\b|[[:space:]]--force\b)'; then
+    deny "git checkout . or -f (discards working tree changes)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\brestore\b[^|;&]*([[:space:]](--[[:space:]]+)?\.([[:space:]]|$)|[[:space:]]-f\b|[[:space:]]--force\b|[[:space:]]-W\b|[[:space:]]--worktree\b)'; then
+    if ! (printf '%s' "$CMD_SCAN" | grep -Eq '\bgit\b[^|;&]*\brestore\b[^|;&]*[[:space:]](--staged|-S)\b' && ! printf '%s' "$CMD_SCAN" | grep -Eq '\bgit\b[^|;&]*\brestore\b[^|;&]*[[:space:]](--worktree|-W|-f|--force)\b'); then
+      deny "git checkout/restore . or -f (discards working tree changes)"
+    fi
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\bstash[[:space:]]+(drop|clear)\b'; then
+    deny "git stash drop/clear"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\breflog[[:space:]]+(expire|delete)\b'; then
+    deny "git reflog expire/delete"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgit\b[^|;&]*\b(filter-branch|filter-repo)\b'; then
+    deny "Git history rewrite"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bgh[[:space:]]+repo[[:space:]]+delete\b'; then
+    deny "GitHub repository deletion"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bdocker(-compose|[[:space:]]+compose)\b[^|;&]*\bdown\b[^|;&]*[[:space:]](-v|--volumes)\b|\b(terraform[[:space:]]+destroy|prisma[[:space:]]+migrate[[:space:]]+reset)\b'; then
+    deny "Destructive container volume or database/infra reset"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(\biex\b|\binvoke-expression\b)[[:space:]]*\(?[[:space:]]*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b)'; then
+    deny "Remote script download and execution (IEX / IRM)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b)[^|;]*\|[[:space:]]*(\biex\b|\binvoke-expression\b)'; then
+    deny "Piped remote script execution (IRM/IWR/curl | IEX)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(\bcurl\b|\bwget\b)[^;]*\|[[:space:]]*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; then
+    deny "Piped remote script execution (curl/wget | sh/bash/pwsh)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\b(powershell|pwsh)(\.exe)?\b[^|;&]*[[:space:]]-(e|ec|enc|encodedcommand)[[:space:]]+[A-Za-z0-9+/=]{8,}'; then
+    deny "Encoded PowerShell command execution"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eq '\bgit\b[^|;&]*\bbranch\b[^|;&]*([[:space:]]-D\b|--delete[[:space:]]+--force|--force[[:space:]]+--delete)'; then
+    deny "git branch -D (force-deletes unmerged branch)"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bffmpeg(\.exe)?\b[^|;&]*[[:space:]]-i[[:space:]]+["'\'']?(\./)?([^"'\''[:space:]]+)["'\'']?([[:space:]]+[^|;&]*)*[[:space:]]+["'\'']?(\./)?\3["'\'']?([[:space:]]+-(y|n))*[[:space:]]*($|[|;&])'; then
+    deny "Non-destructive media guard: ffmpeg in-place overwrite of input file is prohibited. Write output to a separate file or output/ folder"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes)|streamwriter|open\(|fs\.write)[^|;&]*(^|[[:space:]"'\''/\\])\.agents[/\\]office([/\\]|$)|(^|[[:space:]"'\''/\\])\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b|\.write\()'; then
+    deny "Direct shell tampering with protected .agents/office state JSON"
+  fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes))[^|;&]*(^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|(^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b[^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b)'; then
+    deny "Direct shell tampering with guard.ps1/guard.sh"
+  fi
 fi
-if printf '%s' "$CMD" | grep -Eiq '\bffmpeg(\.exe)?\b[^|;&]*[[:space:]]-i[[:space:]]+["'\'']?(\./)?([^"'\''[:space:]]+)["'\'']?([[:space:]]+[^|;&]*)*[[:space:]]+["'\'']?(\./)?\3["'\'']?([[:space:]]+-(y|n))*[[:space:]]*($|[|;&])'; then
-  deny "Non-destructive media guard: ffmpeg in-place overwrite of input file is prohibited. Write output to a separate file or output/ folder"
-fi
-if printf '%s' "$CMD" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|set-content|out-file|add-content)\b|writeall(text|lines|bytes)|streamwriter|open\(|fs\.write)[^|;&]*\.agents/office/|\.agents/office/[^|;&]*(>|>>|\btee\b|\.write\()'; then
-  deny "Direct shell tampering with protected .agents/office state JSON"
+if [ "${SEN_TRUSTED_HOOK:-0}" != "1" ] && printf '%s' "$CMD" | grep -Eiq '\bSync-SenOfficeState\b[^|;&]*[[:space:]]-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*[[:space:]]-Force\b'; then
+  deny "Untrusted self-resealing of state-seal.json or quality-baseline.json via run_command"
 fi
 
 out_decision "ask" ""

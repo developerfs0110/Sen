@@ -6,9 +6,16 @@ set -u
 RAW="$(cat 2>/dev/null || true)"
 [ -z "$RAW" ] && exit 0
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ "${SEN_FORCE_POSIX_PY:-0}" != "1" ] && command -v pwsh >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/office-post.ps1" ]; then
+  printf '%s' "$RAW" | SEN_TRUSTED_HOOK=1 pwsh -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT_DIR/office-post.ps1" >/dev/null 2>&1 || true
+  exit 0
+fi
+
 if command -v python3 >/dev/null 2>&1; then
   python3 -c '
-import json, os, re, sys, time, uuid
+import hashlib, json, os, re, sys, time, uuid
+from datetime import datetime, timezone
 
 def redact(s):
     if not s: return ""
@@ -21,6 +28,25 @@ def redact(s):
     s = re.sub(r"(//[^/\s:@]+:)[^/\s@]+(@)", r"\1[REDACTED]\2", s)
     return s
 
+def calc_seal(off_dir):
+    fhashes = {}
+    if os.path.isdir(off_dir):
+        for fn in sorted(os.listdir(off_dir)):
+            if fn.endswith(".json") and fn != "state-seal.json":
+                fp = os.path.join(off_dir, fn)
+                if os.path.isfile(fp):
+                    fhashes[fn] = hashlib.sha256(open(fp, "rb").read()).hexdigest().lower()
+    raw_pairs = ";".join(f"{k}={fhashes[k]}" for k in fhashes)
+    comp = hashlib.sha256(raw_pairs.encode("utf-8")).hexdigest().lower()
+    return comp, fhashes
+
+def write_atomic(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp, path)
+
 try:
     d = json.loads(sys.stdin.read())
     ws_list = [w for w in (d.get("workspacePaths") or d.get("workspace_roots") or []) if w]
@@ -28,13 +54,23 @@ try:
     if not ws_list: sys.exit(0)
     ws = ws_list[0]
     off_dir = os.path.join(ws, ".agents", "office")
+    seal_p = os.path.join(off_dir, "state-seal.json")
+    seal_intact = True
+    if os.path.isfile(seal_p):
+        try:
+            saved = json.load(open(seal_p, "r", encoding="utf-8"))
+            comp_now, _ = calc_seal(off_dir)
+            seal_intact = (saved.get("compositeHash") == comp_now)
+        except Exception:
+            seal_intact = False
+    mutated = False
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     cfg_path = os.path.join(off_dir, "config.json")
     mode = "eco"
     if os.path.isfile(cfg_path):
-        try:
-            mode = json.load(open(cfg_path, "r", encoding="utf-8")).get("mode", "eco")
-        except Exception:
-            mode = "eco"
+        try: mode = json.load(open(cfg_path, "r", encoding="utf-8")).get("mode", "eco")
+        except Exception: mode = "eco"
     if mode == "off": sys.exit(0)
 
     tc = d.get("toolCall") or {}
@@ -43,51 +79,86 @@ try:
     path_arg = args.get("Path") or args.get("file_path") or args.get("target_file") or args.get("path") or args.get("SearchPath") or ""
     cmd_arg = args.get("CommandLine") or args.get("command") or args.get("cmd") or ""
     short_file = os.path.basename(path_arg) if path_arg else ""
+    resp = d.get("tool_response") or d.get("toolResult") or d
+    ec_raw = resp.get("exit_code") if "exit_code" in resp else resp.get("exitCode")
+    has_ec = isinstance(ec_raw, int) or (isinstance(ec_raw, str) and re.match(r"^-?\d+$", ec_raw))
+    ec_val = int(ec_raw) if has_ec else -1
+    is_err = bool(resp.get("is_error") or resp.get("isError")) or (has_ec and ec_val != 0)
+
+    tasks_p = os.path.join(off_dir, "tasks.json")
+    def load_tasks():
+        if not os.path.isfile(tasks_p): return []
+        try:
+            o = json.load(open(tasks_p, "r", encoding="utf-8"))
+            return o.get("tasks", []) if isinstance(o, dict) else o
+        except Exception: return []
+    def save_tasks(tlist):
+        write_atomic(tasks_p, {"version": 1, "updatedAt": now_iso, "tasks": tlist})
 
     role, lane, model, eco = "be", "Execution", "inherit", tname
-    if tname in ("grep_search", "find_by_name"):
+    if tname in ("invoke_subagent", "Task"):
+        r_arg = args.get("Role") or args.get("TypeName") or "Subagent"
+        role, lane, eco = "pm", "Subagent", f"Subagent [{r_arg}]"
+        tlist = [t for t in load_tasks() if t.get("id") != "SUBAGENT-LIVE"]
+        tlist.append({"id": "SUBAGENT-LIVE", "title": eco, "tier": 2, "status": "in_progress", "assignee": "be", "isTelemetryOnly": True, "updatedAt": now_iso, "_rev": 1})
+        save_tasks(tlist); mutated = True
+    elif tname == "send_message":
+        role, lane, eco = "be", "Subagent", "Report: Subagent message"
+        tlist = load_tasks()
+        for t in tlist:
+            if t.get("id") == "SUBAGENT-LIVE": t["status"] = "done"; t["isTelemetryOnly"] = True; t["updatedAt"] = now_iso; mutated = True
+        if mutated: save_tasks(tlist)
+    elif tname in ("grep_search", "find_by_name"):
         role, lane, model = "r1", "Scout", "flash_lite"
         eco = "Search: " + (args.get("Query") or args.get("Pattern") or short_file)
-    elif tname == "read_file":
+    elif tname in ("read_file", "Read"):
         if re.search(r"(?i)(specs|templates|README|docs)", path_arg):
             role, lane, eco = "ba", "Design", "Read spec: " + short_file
         else:
             role, lane, model, eco = "r2", "Scout", "flash", "Read: " + short_file
-    elif tname in ("write_file", "edit_file"):
+    elif tname in ("write_file", "edit_file", "Write", "Edit", "MultiEdit"):
         loops_p = os.path.join(off_dir, "loops.json")
         if os.path.isfile(loops_p):
-            try: os.remove(loops_p)
+            try: os.remove(loops_p); mutated = True
             except Exception: pass
+        if path_arg and not re.search(r"(?i)/(\.agents|docs)/", path_arg.replace("\\", "/")):
+            tlist = load_tasks()
+            if not any(t.get("status") in ("in_progress", "reviewing") for t in tlist):
+                tlist.append({"id": "AUTO-WORK", "title": f"Edit {short_file}", "tier": 1, "status": "in_progress", "assignee": "be", "isTelemetryOnly": True, "updatedAt": now_iso, "_rev": 1})
+                save_tasks(tlist); mutated = True
         if re.search(r"(?i)\.(html|css|tsx|jsx|vue|svg)$", path_arg):
             role, lane, eco = "fe", "FE Track", "Edit UI: " + short_file
         else:
             role, lane, model, eco = "be", "BE Track", "pro", "Edit code: " + short_file
-    elif tname == "run_command":
+    elif tname in ("run_command", "Bash", "run_terminal_cmd"):
         if re.search(r"(?i)(Validate-Repo|security|audit)", cmd_arg):
             role, lane, model, eco = "sec", "Security Gate", "pro", "Security/Repo check"
-        elif re.search(r"(?i)(test|run\.ps1|pytest|jest|vitest)", cmd_arg):
+        elif re.search(r"(?i)\b(npm\s+test|pnpm\s+test|yarn\s+test|pytest|jest|vitest|run\.ps1)\b", cmd_arg) and not re.search(r"^(?i)\s*(echo|true|rem)\b", cmd_arg):
             role, lane, eco = "qa", "QA Gate", "Run test suite"
+            if has_ec and ec_val == 0 and not is_err:
+                ev_p = os.path.join(off_dir, "evidence.json")
+                evs = []
+                if os.path.isfile(ev_p):
+                    try:
+                        eo = json.load(open(ev_p, "r", encoding="utf-8"))
+                        evs = eo.get("evidence", []) if isinstance(eo, dict) else eo
+                    except Exception: evs = []
+                evs = [e for e in evs if e.get("evidence_id") != "EV-AUTO-TEST"]
+                evs.append({"evidence_id": "EV-AUTO-TEST", "task_id": "AUTO-WORK", "type": "unit", "status": "PASS", "command": cmd_arg.strip(), "exitCode": 0, "timestamp": now_iso, "verified": True})
+                write_atomic(ev_p, {"updatedAt": now_iso, "evidence": evs}); mutated = True
         else:
             role, lane, eco = "be", "System Cmd", "Run: " + cmd_arg[:48]
+
+    if seal_intact and mutated and os.path.isfile(seal_p):
+        comp_after, fh_after = calc_seal(off_dir)
+        write_atomic(seal_p, {"timestamp": now_iso, "compositeHash": comp_after, "fileHashes": fh_after})
 
     os.makedirs(off_dir, exist_ok=True)
     ev_path = os.path.join(off_dir, "events.jsonl")
     ts = int(time.time() * 1000)
     ev = {
-        "id": f"ev-{ts}-{uuid.uuid4().hex[:6]}",
-        "ts": ts,
-        "from": role,
-        "to": "sys",
-        "lane": lane,
-        "kind": "ok",
-        "hold": 1,
-        "ecoText": redact(eco),
-        "fullText": redact(eco),
-        "source": "hook-post",
-        "tool": tname,
-        "target": redact(path_arg or cmd_arg),
-        "command": redact(cmd_arg),
-        "model": model
+        "id": f"ev-{ts}-{uuid.uuid4().hex[:6]}", "ts": ts, "from": role, "to": "sys", "lane": lane, "kind": "ok", "hold": 1,
+        "ecoText": redact(eco), "fullText": redact(eco), "source": "hook-post", "tool": tname, "target": redact(path_arg or cmd_arg), "command": redact(cmd_arg), "model": model
     }
     lines = []
     if os.path.isfile(ev_path):

@@ -189,13 +189,17 @@ if (-not [string]::IsNullOrWhiteSpace($SubjectPath) -and (-not $cleanPaths.Conta
 $subjRel = if (-not [string]::IsNullOrWhiteSpace($SubjectPath)) { $SubjectPath } elseif ($cleanPaths.Count -gt 0) { $cleanPaths[0] } else { "" }
 $subjFull = if (-not $subjRel) { "" } elseif ([IO.Path]::IsPathRooted($subjRel)) { $subjRel } else { Join-Path $Workspace $subjRel }
 $subjHash = if ($subjFull -and (Test-Path -LiteralPath $subjFull -PathType Leaf)) { (Get-FileHash -LiteralPath $subjFull -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
+$gitCommit = "uncommitted"
+if (Test-Path -LiteralPath (Join-Path $Workspace ".git")) {
+try { $gc = (& git -C $Workspace rev-parse --short=12 HEAD 2>$null); if ($LASTEXITCODE -eq 0 -and $gc) { $gitCommit = ([string]$gc).Trim() } } catch { <# Ignore #> }
+}
 $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $expIso = (Get-Date).ToUniversalTime().AddMinutes($TTLMinutes).ToString("o")
 $verified = ($Status -eq "PASS" -and $ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($Command))
 $entry = [pscustomobject]@{
 evidence_id = $EvidenceId; requirement_id = $RequirementId; task_id = $TaskId; type = $Type
 status = if ($verified) { "PASS" } elseif ($Status -eq "STALE") { "STALE" } else { "FAIL" }
 source = $Source; command = $Command; exitCode = $ExitCode; codePaths = @($cleanPaths.ToArray())
-subjectPath = $subjRel; subjectHash = $subjHash; ttlMinutes = $TTLMinutes; expiresAt = $expIso; timestamp = $now; verified = [bool]$verified
+subjectPath = $subjRel; subjectHash = $subjHash; gitCommit = $gitCommit; ttlMinutes = $TTLMinutes; expiresAt = $expIso; timestamp = $now; verified = [bool]$verified
 }
 $list.Add($entry)
 Write-SenAtomicJson -Path $evPath -InputObject ([ordered]@{ updatedAt = $now; evidence = @($list.ToArray()) }) -Depth 8

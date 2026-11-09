@@ -661,7 +661,8 @@ function Measure-SenCodeHealth {
         [int]$MaxLogicLines = 800, [int]$MaxLogicBytes = 46080,
         [int]$MaxUiLines = 1500,   [int]$MaxUiBytes = 81920,
         [int]$MaxTestLines = 1000, [int]$MaxTestBytes = 61440,
-        [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4
+        [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4,
+        [switch]$UseNativeLinters
     )
     $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
     $exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
@@ -712,11 +713,21 @@ function Measure-SenCodeHealth {
     $healthy = ($issueCount -eq 0)
     $score = [Math]::Max(0, 100 - ($oversized.Count * 15) - ($longFuncs.Count * 10) - ($deepNest.Count * 10) - ($dupBlocks.Count * 10) - ($emptyCat.Count * 5) - ($deadFuncs.Count * 5))
     $rec = if ($healthy) { "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)." } else { "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'." }
-
+    $nativeRep = $null
+    if ($UseNativeLinters.IsPresent) {
+        $psaOk = $null -ne (Get-Command Invoke-ScriptAnalyzer -ErrorAction SilentlyContinue)
+        $esOk  = $null -ne (Get-Command eslint -ErrorAction SilentlyContinue)
+        $rfOk  = $null -ne (Get-Command ruff -ErrorAction SilentlyContinue)
+        $nFind = [System.Collections.Generic.List[object]]::new()
+        if ($psaOk) {
+            try { foreach ($r in @(Invoke-ScriptAnalyzer -Path $root -Recurse -Severity Warning,Error -ErrorAction SilentlyContinue | Select-Object -First 25)) { $nFind.Add([pscustomobject]@{ tool = "PSScriptAnalyzer"; rule = [string]$r.RuleName; file = [string]$r.ScriptName; line = [int]$r.Line }) } } catch { <# Ignore #> }
+        }
+        $nativeRep = [pscustomobject][ordered]@{ AvailableLinters = [ordered]@{ PSScriptAnalyzer = $psaOk; ESLint = $esOk; Ruff = $rfOk }; FindingsCount = $nFind.Count; Findings = @($nFind.ToArray()) }
+    }
     return [pscustomobject][ordered]@{
-        Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = "AST+ScopedHeuristic"; ScannedFiles = [int]$files.Count; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
+        Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = $(if ($UseNativeLinters.IsPresent) { "AST+ScopedHeuristic+NativeLinters" } else { "AST+ScopedHeuristic" }); ScannedFiles = [int]$files.Count; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
         OversizedFiles = @($oversized.ToArray()); LongFunctions = @($longFuncs.ToArray()); DeepNesting = @($deepNest.ToArray())
-        DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray())
+        DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray()); NativeLinterReport = $nativeRep
         Standards = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
         Recommendation = $rec
     }

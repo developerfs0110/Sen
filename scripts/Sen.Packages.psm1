@@ -25,33 +25,34 @@ function ConvertTo-SenHashtable {
 }
 
 function Read-SenLock {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
+    [CmdletBinding()] param([Parameter(Mandatory = $true)][string]$Workspace)
     $lockPath = Get-SenLockPath -Workspace $Workspace
     $lock = @{ lockVersion = 1; packages = @{}; lastUpdateCheck = $null }
     $rawObj = Read-SenSafeJson -Path $lockPath
     if ($null -eq $rawObj) { return $lock }
     $parsed = ConvertTo-SenHashtable -InputObject $rawObj
-    if ($parsed -is [hashtable]) {
-        foreach ($k in $parsed.Keys) { $lock[$k] = $parsed[$k] }
-    }
+    if ($parsed -is [hashtable]) { foreach ($k in $parsed.Keys) { $lock[$k] = $parsed[$k] } }
     if ($lock.packages -isnot [hashtable]) { $lock.packages = @{} }
     return $lock
 }
 
 function Write-SenLock {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [hashtable]$Lock
-    )
-    $lockPath = Get-SenLockPath -Workspace $Workspace
-    Write-SenAtomicJson -Path $lockPath -InputObject $Lock -Depth 10
+    [CmdletBinding()] param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][hashtable]$Lock)
+    Write-SenAtomicJson -Path (Get-SenLockPath -Workspace $Workspace) -InputObject $Lock -Depth 10
+}
+
+function Get-SenDirectoryTreeHash {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return "" }
+    $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
+    $entries = [System.Collections.Generic.List[string]]::new()
+    foreach ($f in @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Name -notin @(".sen-commit", ".sen-tree-hash") } | Sort-Object FullName)) {
+        $rel = $f.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
+        $fh = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        $entries.Add("${rel}:${fh}")
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($entries -join "`n"))
+    return ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
 }
 
 function Get-SenDefaultGit {
@@ -103,40 +104,35 @@ function Get-SenGitCommit {
 
 function Install-SenPackage {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        $Package,
-        [scriptblock]$Git = $null
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)]$Package, [scriptblock]$Git = $null, [switch]$VerifyPinnedCommit)
     if ($null -eq $Git) { $Git = Get-SenDefaultGit }
     $id = [string]$Package.id
     $dest = Join-Path -Path $Workspace -ChildPath ([string]$Package.dest)
+    $pinned = if ($Package.PSObject.Properties.Name -contains "pinnedCommit" -and -not [string]::IsNullOrWhiteSpace([string]$Package.pinnedCommit)) { ([string]$Package.pinnedCommit).Trim() } else { "" }
 
     if (Test-Path -LiteralPath $dest) {
         $commit = "unknown"
-        if (Test-Path -LiteralPath (Join-Path $dest ".git")) {
-            $commit = Get-SenGitCommit -Path $dest -Git $Git
-        }
+        if (Test-Path -LiteralPath (Join-Path $dest ".git")) { $commit = Get-SenGitCommit -Path $dest -Git $Git }
         elseif (Test-Path -LiteralPath (Join-Path $dest ".sen-commit")) {
             $marker = ([System.IO.File]::ReadAllText((Join-Path $dest ".sen-commit"))).Trim()
             if ($marker) { $commit = $marker }
         }
-        return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "exists"; Error = $null }
+        $treeHash = Get-SenDirectoryTreeHash -Path $dest
+        $commitOk = [string]::IsNullOrWhiteSpace($pinned) -or ($commit -ne "unknown" -and ($commit.StartsWith($pinned, [System.StringComparison]::OrdinalIgnoreCase) -or $pinned.StartsWith($commit, [System.StringComparison]::OrdinalIgnoreCase)))
+        $st = if ($VerifyPinnedCommit.IsPresent -and (-not $commitOk)) { "mismatch" } else { "exists" }
+        return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = [bool]$commitOk; TreeHash = $treeHash; Status = $st; Error = $(if ($st -eq "mismatch") { "Pinned commit mismatch: expected $pinned, found $commit" } else { $null }) }
     }
 
     $tmpRoot = New-SenTempDir
     $clone = Join-Path $tmpRoot "src"
     try {
         $isSparse = ($Package.PSObject.Properties.Name -contains "sparse" -and [bool]$Package.sparse -and -not [string]::IsNullOrWhiteSpace([string]$Package.subPath))
-        $pinned = if ($Package.PSObject.Properties.Name -contains "pinnedCommit" -and -not [string]::IsNullOrWhiteSpace([string]$Package.pinnedCommit)) { ([string]$Package.pinnedCommit).Trim() } else { "" }
         $cloneArgs = if ($isSparse) { @("clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--quiet", [string]$Package.repo, $clone) } else { @("clone", "--depth", "1", "--quiet", [string]$Package.repo, $clone) }
         $r = & $Git $cloneArgs
         if ($r.ExitCode -ne 0) {
             $msg = "git clone failed for $($Package.repo) (exit $($r.ExitCode))"
             if ($r.Output) { $msg += ": " + $r.Output }
-            return [pscustomobject]@{ Id = $id; Commit = $null; Status = "failed"; Error = $msg }
+            return [pscustomobject]@{ Id = $id; Commit = $null; ExpectedCommit = $pinned; CommitVerified = $false; TreeHash = ""; Status = "failed"; Error = $msg }
         }
         if ($isSparse) {
             try {
@@ -169,28 +165,26 @@ function Install-SenPackage {
             }
         }
         $commit = Get-SenGitCommit -Path $clone -Git $Git
-        if (($commit -eq "unknown" -or [string]::IsNullOrWhiteSpace($commit)) -and $pinned) {
-            $commit = $pinned
-        }
+        if (($commit -eq "unknown" -or [string]::IsNullOrWhiteSpace($commit)) -and $pinned) { $commit = $pinned }
         if (-not (Test-Path -LiteralPath $src)) {
-            return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "failed"; Error = "subPath '$($Package.subPath)' not found in $($Package.repo)" }
+            return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = $false; TreeHash = ""; Status = "failed"; Error = "subPath '$($Package.subPath)' not found in $($Package.repo)" }
         }
+        $treeHash = ""
         try {
             Copy-SenTree -Source $src -Destination $dest
             [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", [System.Text.UTF8Encoding]::new($false))
+            $treeHash = Get-SenDirectoryTreeHash -Path $dest
+            [System.IO.File]::WriteAllText((Join-Path $dest ".sen-tree-hash"), $treeHash + "`n", [System.Text.UTF8Encoding]::new($false))
         }
         catch {
-            if (Test-Path -LiteralPath $dest) {
-                Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "failed"; Error = "copy failed: $($_.Exception.Message)" }
+            if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue }
+            return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = $false; TreeHash = ""; Status = "failed"; Error = "copy failed: $($_.Exception.Message)" }
         }
-        return [pscustomobject]@{ Id = $id; Commit = $commit; Status = "installed"; Error = $null }
+        $commitOk = [string]::IsNullOrWhiteSpace($pinned) -or ($commit -ne "unknown" -and ($commit.StartsWith($pinned, [System.StringComparison]::OrdinalIgnoreCase) -or $pinned.StartsWith($commit, [System.StringComparison]::OrdinalIgnoreCase)))
+        return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = [bool]$commitOk; TreeHash = $treeHash; Status = "installed"; Error = $null }
     }
     finally {
-        if (Test-Path -LiteralPath $tmpRoot) {
-            Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        if (Test-Path -LiteralPath $tmpRoot) { Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -475,7 +469,10 @@ function Get-SenRemoteLogSummary {
         if ($cRes.ExitCode -ne 0) { return "" }
         $lRes = & $Git @("-C", $cloneTmp, "log", "-5", "--oneline")
         if ($lRes.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($lRes.Output)) { return "" }
-        $lines = @($lRes.Output -split "[\r\n]+") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        $lines = @($lRes.Output -split "[\r\n]+") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
+            $s = ($_ -replace '[<>`$|;]', '').Trim()
+            if ($s.Length -gt 100) { $s.Substring(0, 100) } else { $s }
+        }
         return (($lines | Select-Object -First 5) -join "`n").Trim()
     }
     catch {

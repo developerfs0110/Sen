@@ -72,7 +72,9 @@ try {
                     # Cap commit summary at 3 lines per package to conserve token budget in the notice rule.
                     $lines = @($u.Summary -split "[\r\n]+") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
                     foreach ($sl in ($lines | Select-Object -First 3)) {
-                        [void]$sb.AppendLine("  * $sl")
+                        $cleanSl = ($sl -replace '[<>`$|;]', '').Trim()
+                        if ($cleanSl.Length -gt 100) { $cleanSl = $cleanSl.Substring(0, 100) }
+                        [void]$sb.AppendLine("  * $cleanSl")
                     }
                 }
             }

@@ -51,12 +51,12 @@ try {
     Import-SenRuntimeModule
     if (Get-Command ConvertFrom-SenHookPayload -ErrorAction SilentlyContinue) {
         $norm = ConvertFrom-SenHookPayload -InputObject $payload
-        $rawTool   = $norm.RawToolName
-        $toolName  = $norm.CanonicalTool
-        $wsList    = @($norm.WorkspaceList)
+        $rawTool = $norm.RawToolName
+        $toolName = $norm.CanonicalTool
+        $wsList = @($norm.WorkspaceList)
         $primaryWs = $norm.WorkspacePath
         $normTarget = $norm.TargetPath
-        $normCmd    = $norm.CommandLine
+        $normCmd = $norm.CommandLine
     }
     else {
         $rawTool = if ($payload.toolCall -and $payload.toolCall.name) { [string]$payload.toolCall.name } elseif ($payload.tool_name) { [string]$payload.tool_name } else { "" }
@@ -84,6 +84,7 @@ catch {
     Out-Decision "ask" "guard: failed to parse payload, falling back to user confirmation"
 }
 
+try {
 # 1. Enforce sensitive host path, symlink escape, and workspace boundary on read_file / write_file / edit_file
 if ($toolName -in @("write_file", "edit_file", "read_file")) {
     $targetPath = if (-not [string]::IsNullOrWhiteSpace($normTarget)) { $normTarget } elseif ($toolArgs -and $toolArgs.Path) { [string]$toolArgs.Path } elseif ($toolArgs -and $toolArgs.file_path) { [string]$toolArgs.file_path } elseif ($toolArgs -and $toolArgs.target_file) { [string]$toolArgs.target_file } elseif ($toolArgs -and $toolArgs.path) { [string]$toolArgs.path } else { "" }
@@ -115,7 +116,7 @@ if ($toolName -in @("write_file", "edit_file", "read_file")) {
                 }
             }
             # Also allow Antigravity appData / scratch / .gemini paths
-            $userProfile = $env:USERPROFILE
+            $userProfile = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
             if (-not $inside -and $userProfile) {
                 $geminiDir = [System.IO.Path]::GetFullPath((Join-Path $userProfile ".gemini")).TrimEnd('\', '/')
                 if ($fullTarget.StartsWith($geminiDir + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -227,36 +228,65 @@ if ((-not $isReadOnlyDiag) -and (-not [string]::IsNullOrWhiteSpace($primaryWs)) 
 }
 
 # 3. Case-insensitive destructive command patterns for run_command
+if ($cmd -match '(?i)(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b|\bgrep\b|\brg\b|\bselect-string\b)[^|;&]*([/\\]\.ssh[/\\]|[/\\]\.aws[/\\]|[/\\]\.gnupg[/\\]|[/\\]\.kube[/\\]|id_rsa|id_ed25519)') {
+    Out-Decision "deny" "[SEN GUARD] Blocked: Reading sensitive host credential/key files via shell. If you truly need this command, run it manually in your terminal." $primaryWs $toolName $cmd $cmd
+}
+
+$cmdScan = [regex]::Replace($cmd, '(?i)(\bgit\b[^|;&]*\bcommit\b[^|;&]*\s(?:-m|--message)\s+)(?:"[^"`$]+"|''[^'']+'')', '$1""')
+if ($cmdScan -match '(?i)^\s*(echo|write-host|write-output|grep|rg|select-string)\b' -and $cmdScan -notmatch '[|;&`$><]') {
+    $cmdScan = ""
+}
+
 $rules = @(
     @{ re = '\brm\b[^|;&]*(\s-[a-z]*r|\s--recursive\b)'; why = 'Recursive delete (rm -r / rm -rf / rm --recursive)' },
-    @{ re = '\b(remove-item|ri|del|erase|rd|rmdir)\b[^|;&]*\s-r(ec(urse)?)?\b'; why = 'Recursive delete (Remove-Item -Recurse)' },
-    @{ re = '\b(get-childitem|gci|dir|ls)\b[^;]*-r(ec(urse)?)?\b[^;]*\|\s*(remove-item|ri|del|erase)\b'; why = 'Piped recursive delete (Get-ChildItem -Recurse | Remove-Item)' },
+    @{ re = '\b(remove-item|ri|del|erase|rd|rmdir)\b[^|;&]*\s-r(e(c(u(r(s(e)?)?)?)?)?)?\b'; why = 'Recursive delete (Remove-Item -Recurse)' },
+    @{ re = '\b(get-childitem|gci|dir|ls)\b[^;]*-r(e(c(u(r(s(e)?)?)?)?)?)?\b[^;]*\|\s*(remove-item|ri|del|erase)\b'; why = 'Piped recursive delete (Get-ChildItem -Recurse | Remove-Item)' },
     @{ re = '\b(rd|rmdir|del|erase)\b[^|;&]*\s/s\b'; why = 'Recursive delete (rd/del /s)' },
     @{ re = '\b(system\.io\.)?directory\]::delete\s*\('; why = '.NET Directory::Delete call' },
-    @{ re = '\bfs\.(rm|rmdir)Sync\s*\('; why = 'Node.js fs.rmSync/rmdirSync delete' },
+    @{ re = '\bfs\.(rm|rmdir)(Sync)?\s*\('; why = 'Node.js fs.rm/rmdir delete' },
+    @{ re = '\b(npx\s+)?rimraf\b'; why = 'rimraf recursive delete' },
+    @{ re = '\brobocopy(\.exe)?\b[^|;&]*\s/mir\b'; why = 'robocopy /MIR mirror delete' },
     @{ re = '\bfind\b[^|;&]*\s-delete\b'; why = 'Recursive find -delete' },
-    @{ re = '\bshutil\.rmtree\s*\('; why = 'Python shutil.rmtree recursive delete' },
-    @{ re = '\b(drop\s+(database|table|schema)|truncate\s+table)\b'; why = 'Destructive SQL (DROP / TRUNCATE)' },
+    @{ re = '\b(shutil\s*\.\s*rmtree|from\s+shutil\s+import\s+rmtree)\b|\brmtree\s*\('; why = 'Python shutil.rmtree recursive delete' },
+    @{ re = '\b(drop\s+(database|table|schema)|truncate\s+(table\s+)?[a-z0-9_."`\[\]]+)\b'; why = 'Destructive SQL (DROP / TRUNCATE)' },
+    @{ re = '\bdelete\s+from\s+[a-z0-9_."`\[\]]+\s*(;|$)'; why = 'Unbounded SQL DELETE FROM without WHERE clause' },
     @{ re = '\bformat(\.com)?\s+[a-z]:'; why = 'Disk format command' },
     @{ re = '\b(diskpart|clear-disk|format-volume|remove-partition|initialize-disk)\b'; why = 'Disk or partition modification' },
     @{ re = '\bgit\b[^|;&]*\bpush\b[^|;&]*(\s--force(-with-lease)?\b|\s-f\b|\s--delete\b|\s-d\b|\s--mirror\b|\s--no-verify\b|\s["'']?\+\S|\s["'']?:\S)'; why = 'Force push, remote branch delete, or hook bypass' },
+    @{ re = '\bgit\b[^|;&]*\bcommit\b[^|;&]*\s(--no-verify|-n)\b'; why = 'git commit --no-verify/-n (hook bypass)' },
     @{ re = '\bgit\b[^|;&]*\breset\b[^|;&]*--hard'; why = 'git reset --hard (discards uncommitted work)' },
     @{ re = '\bgit\b[^|;&]*\bclean\b[^|;&]*(\s-[a-z]*f|\s--force\b)'; why = 'git clean -f/--force (deletes untracked files)' },
-    @{ re = '\bgit\b[^|;&]*\b(checkout|restore)\b[^|;&]*(\s(--\s+)?\.(\s|$)|\s-f\b|\s--force\b)'; why = 'git checkout/restore . or -f (discards working tree changes)' },
+    @{ re = '\bgit\b[^|;&]*\bcheckout\b[^|;&]*(\s(--\s+)?\.(\s|$)|\s-f\b|\s--force\b)'; why = 'git checkout . or -f (discards working tree changes)' },
     @{ re = '\bgit\b[^|;&]*\bstash\s+(drop|clear)\b'; why = 'git stash drop/clear' },
+    @{ re = '\bgit\b[^|;&]*\breflog\s+(expire|delete)\b'; why = 'git reflog expire/delete' },
     @{ re = '\bgit\b[^|;&]*\b(filter-branch|filter-repo)\b'; why = 'Git history rewrite' },
     @{ re = '\bgh\s+repo\s+delete\b'; why = 'GitHub repository deletion' },
+    @{ re = '\bdocker(-compose|\s+compose)\b[^|;&]*\bdown\b[^|;&]*\s(-v|--volumes)\b'; why = 'docker compose down -v (destroys volumes)' },
+    @{ re = '\b(terraform\s+destroy|prisma\s+migrate\s+reset)\b'; why = 'Destructive infrastructure/database reset' },
     @{ re = '(\biex\b|\binvoke-expression\b)\s*\(?\s*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b|new-object\s+net\.webclient)'; why = 'Remote script download and execution (IEX / IRM)' },
+    @{ re = '(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b)[^|;\r\n]*\|\s*(\biex\b|\binvoke-expression\b)'; why = 'Piped remote script execution (IRM/IWR/curl | IEX)' },
     @{ re = '(\bcurl\b|\bwget\b)[^;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; why = 'Piped remote script execution (curl/wget | sh/bash/pwsh)' },
-    @{ re = '(\bcat\b|\btype\b|\bget-content\b|\bgc\b|\bhead\b|\btail\b)[^|;&]*([/\\]\.ssh[/\\]|[/\\]\.aws[/\\]|[/\\]\.gnupg[/\\]|[/\\]\.kube[/\\]|id_rsa|id_ed25519)'; why = 'Reading sensitive host credential/key files via shell' },
     @{ re = '\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}'; why = 'Encoded PowerShell command execution' },
-    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|cp|mv|copy-item|move-item|remove-item|del|rm)\b|writeall(text|lines|bytes)|appendall(text|lines)|streamwriter|filestream|open\s*\(|fs\.(write|append|unlink|rm))[^|;&]*[/\\]\.agents[/\\]office[/\\]|[/\\]\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b|\.write\s*\()'; why = 'Direct shell/script tampering with protected .agents/office state JSON' }
+    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|cp|mv|copy-item|move-item|remove-item|del|rm)\b|writeall(text|lines|bytes)|appendall(text|lines)|streamwriter|filestream|open\s*\(|fs\.(write|append|unlink|rm))[^|;&]*(^|[\s"''/\\])\.agents[/\\]office([/\\]|$)|(^|[\s"''/\\])\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b|\.write\s*\()'; why = 'Direct shell/script tampering with protected .agents/office state JSON' },
+    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|remove-item|del|rm)\b|writeall(text|lines|bytes))[^|;&]*(^|[\s"''/\\])guard\.(ps1|sh)\b|(^|[\s"''/\\])guard\.(ps1|sh)\b[^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b)'; why = 'Direct shell tampering with guard.ps1/guard.sh' }
 )
 
-foreach ($r in $rules) {
-    if ($cmd -match $r.re) {
-        Out-Decision "deny" ("[SEN GUARD] Blocked: " + $r.why + ". If you truly need this command, run it manually in your terminal.") $primaryWs $toolName $cmd $cmd
+if (-not [string]::IsNullOrWhiteSpace($cmdScan)) {
+    foreach ($r in $rules) {
+        if ($cmdScan -match $r.re) {
+            Out-Decision "deny" ("[SEN GUARD] Blocked: " + $r.why + ". If you truly need this command, run it manually in your terminal.") $primaryWs $toolName $cmd $cmd
+        }
     }
+    if ($cmdScan -match '(?i)\bgit\b[^|;&]*\brestore\b[^|;&]*(\s(--\s+)?\.(\s|$)|\s-f\b|\s--force\b|\s-W\b|\s--worktree\b)') {
+        $isStageOnly = ($cmdScan -match '(?i)\bgit\b[^|;&]*\brestore\b[^|;&]*\s(--staged|-S)\b') -and ($cmdScan -notmatch '(?i)\bgit\b[^|;&]*\brestore\b[^|;&]*\s(--worktree|-W|-f|--force)\b')
+        if (-not $isStageOnly) {
+            Out-Decision "deny" "[SEN GUARD] Blocked: git checkout/restore . or -f (discards working tree changes). If you truly need this command, run it manually in your terminal." $primaryWs $toolName $cmd $cmd
+        }
+    }
+}
+
+if (($env:SEN_TRUSTED_HOOK -ne "1") -and ($cmd -match '(?i)\bSync-SenOfficeState\b[^|;&]*\s-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*\s-Force\b')) {
+    Out-Decision "deny" "[SEN GUARD] Blocked: Untrusted self-resealing of state-seal.json or quality-baseline.json via run_command is prohibited." $primaryWs $toolName $cmd $cmd
 }
 
 # 4. Non-destructive media safety rule: block ffmpeg in-place overwrite of the same input file path
@@ -352,8 +382,10 @@ if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
         $uiScripts = @(Get-ChildItem -LiteralPath $targetSrc -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(js|ts|jsx|tsx)$' })
         foreach ($uf in $uiScripts) {
             $uTxt = [System.IO.File]::ReadAllText($uf.FullName, [System.Text.Encoding]::UTF8)
-            if ($uTxt -match '\.innerHTML\s*\+?=\s*`[^`]*\$\{' -and $uTxt -notmatch '(?i)\b(escapeHtml|DOMPurify)\b') {
-                Out-Decision "deny" "[SEN GUARD] Blocked: Potential DOM XSS (CWE-79) unescaped innerHTML interpolation detected." $primaryWs $toolName $uf.FullName $cmd
+            foreach ($uLine in ($uTxt -split '\r?\n')) {
+                if ($uLine -match '\.innerHTML\s*\+?=\s*(`[^`]*\$\{|[^;]*\+\s*[a-zA-Z_$(])' -and $uLine -notmatch '(?i)\b(escapeHtml|DOMPurify|sanitize|esc)\b') {
+                    Out-Decision "deny" "[SEN GUARD] Blocked: Potential DOM XSS (CWE-79) unescaped innerHTML interpolation detected." $primaryWs $toolName $uf.FullName $cmd
+                }
             }
         }
     }
@@ -367,7 +399,7 @@ if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
                     Out-Decision "deny" "[SEN GUARD] Blocked: .agents/office state seal is tampered ($($sealVerify.TamperedFiles -join ', ')). Restore or verify state before committing/pushing." $primaryWs $toolName $cmd $cmd
                 }
             }
-            try { [void](Sync-SenOfficeState -Workspace $primaryWs -PruneStale -UpdateSeal) } catch { <# Non-fatal #> }
+            try { $env:SEN_TRUSTED_HOOK = "1"; [void](Sync-SenOfficeState -Workspace $primaryWs -PruneStale -UpdateSeal) } catch { <# Non-fatal #> }
         }
         if (Get-Command Install-SenGitHooks -ErrorAction SilentlyContinue) {
             try { [void](Install-SenGitHooks -Workspace $primaryWs) } catch { <# Non-fatal #> }
@@ -376,3 +408,7 @@ if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
 }
 
 Out-Decision "ask" $null
+}
+catch {
+    Out-Decision "deny" ("[SEN GUARD] Internal guard error (fail-closed): " + $_.Exception.Message) $primaryWs $toolName $normTarget $normCmd
+}

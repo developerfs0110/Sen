@@ -7,12 +7,12 @@ Import-Module -Name $senAdversarialPath -Global -Force
 function Get-SenSupportedHarnesses {
 [CmdletBinding()] param()
 return @(
-@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full" },
-@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true; CapabilityLevel = "full" },
-@{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full" },
-@{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true; CapabilityLevel = "rules-only" },
-@{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial" },
-@{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial" }
+@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("antigravity") },
+@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("claude") },
+@{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("cursor") },
+@{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true; CapabilityLevel = "rules-only"; CapabilityAlias = "rules-only"; ToolsCovered = @("copilot") },
+@{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial"; CapabilityAlias = "rules-and-skills"; ToolsCovered = @("windsurf") },
+@{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial"; CapabilityAlias = "rules-and-skills"; ToolsCovered = @("codex", "opencode") }
 ) | ForEach-Object { [pscustomobject]$_ }
 }
 function Get-SenPropValue {

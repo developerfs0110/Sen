@@ -53,6 +53,8 @@ function Set-SenVerificationPolicy {
         [int]$MaxTestRetries = 1,
         [int]$TokenBudget = 50000,
         [int]$TimeBudgetSeconds = 900,
+        [int]$MaxToolCalls = 50,
+        [double]$CostBudgetUsd = 5.0,
         [string[]]$ScopePaths = @(),
         [string[]]$AcceptanceCriteria = @(),
         [string]$RestorePointId = "",
@@ -80,11 +82,15 @@ function Set-SenVerificationPolicy {
         maxTestRetries      = [int]$MaxTestRetries
         tokenBudget         = [int]$TokenBudget
         timeBudgetSeconds   = [int]$TimeBudgetSeconds
+        maxToolCalls        = [int]$MaxToolCalls
+        costBudgetUsd       = [double]$CostBudgetUsd
         currentRound        = 0
         repairAttempts      = 0
         regressionCount     = 0
         tokensUsed          = 0
         elapsedSeconds      = 0
+        toolCallsUsed       = 0
+        estimatedCostUsd    = 0.0
         scopePaths          = @($ScopePaths)
         acceptanceCriteria  = @($AcceptanceCriteria)
         criteriaHash        = $critHash
@@ -349,7 +355,9 @@ function Invoke-SenBoundedRepairRound {
         [object[]]$RemainingFindings = @(),
         [string[]]$CurrentAcceptanceCriteria = @(),
         [int]$TokensSpent = 1000,
-        [int]$SecondsSpent = 30
+        [int]$SecondsSpent = 30,
+        [int]$ToolCallsSpent = 1,
+        [double]$CostSpentUsd = 0.01
     )
     $loop = (Read-SenBoundedLoops -Workspace $Workspace) | Where-Object { [string]$_.claimId -eq $ClaimId } | Select-Object -First 1
     if ($null -eq $loop) { throw "Bounded loop for '$ClaimId' not initialized. Call Set-SenVerificationPolicy first." }
@@ -372,12 +380,20 @@ function Invoke-SenBoundedRepairRound {
     $prog = Measure-SenAdversarialProgress -PreviousFindings @($loop.unresolvedFindings) -CurrentFindings $RemainingFindings -HistoricalResolvedIds @($loop.resolvedFindingIds)
     $totTokens = [int]$loop.tokensUsed + $TokensSpent
     $totTime = [int]$loop.elapsedSeconds + $SecondsSpent
-    $budgetExceeded = ($repAttempt -ge [int]$loop.maxRepairAttempts) -or ($totTokens -gt [int]$loop.tokenBudget) -or ($totTime -gt [int]$loop.timeBudgetSeconds)
+    $prevCalls = if ($loop.PSObject.Properties['toolCallsUsed']) { [int]$loop.toolCallsUsed } else { 0 }
+    $prevCost = if ($loop.PSObject.Properties['estimatedCostUsd']) { [double]$loop.estimatedCostUsd } else { 0.0 }
+    $maxCalls = if ($loop.PSObject.Properties['maxToolCalls'] -and [int]$loop.maxToolCalls -gt 0) { [int]$loop.maxToolCalls } else { 50 }
+    $maxCost = if ($loop.PSObject.Properties['costBudgetUsd'] -and [double]$loop.costBudgetUsd -gt 0) { [double]$loop.costBudgetUsd } else { 5.0 }
+    $totCalls = $prevCalls + $ToolCallsSpent
+    $totCost = [Math]::Round($prevCost + $CostSpentUsd, 4)
+    $budgetExceeded = ($repAttempt -ge [int]$loop.maxRepairAttempts) -or ($totTokens -gt [int]$loop.tokenBudget) -or ($totTime -gt [int]$loop.timeBudgetSeconds) -or ($totCalls -gt $maxCalls) -or ($totCost -gt $maxCost)
 
     $loop | Add-Member -NotePropertyName "repairAttempts" -NotePropertyValue $repAttempt -Force
     $loop | Add-Member -NotePropertyName "regressionCount" -NotePropertyValue ([int]$loop.regressionCount + $prog.Regressions) -Force
     $loop | Add-Member -NotePropertyName "tokensUsed" -NotePropertyValue $totTokens -Force
     $loop | Add-Member -NotePropertyName "elapsedSeconds" -NotePropertyValue $totTime -Force
+    $loop | Add-Member -NotePropertyName "toolCallsUsed" -NotePropertyValue $totCalls -Force
+    $loop | Add-Member -NotePropertyName "estimatedCostUsd" -NotePropertyValue $totCost -Force
     $loop | Add-Member -NotePropertyName "unresolvedFindings" -NotePropertyValue $prog.ValidRemaining -Force
     $loop | Add-Member -NotePropertyName "resolvedFindingIds" -NotePropertyValue $prog.UpdatedResolvedIds -Force
 

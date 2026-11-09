@@ -50,6 +50,7 @@ function Get-SenDriveCandidates {
                 foreach ($d in $drives) {
                     try {
                         if (-not $d.IsReady) { continue }
+                        if ($null -ne $d.PSObject.Properties['DriveType'] -and $null -ne $d.DriveType -and ([string]$d.DriveType -ne 'Fixed')) { continue }
                         $r = $d.RootDirectory.FullName
                         $freeBytes = $d.AvailableFreeSpace
                         $freeGB = [double]($freeBytes / 1GB)
@@ -73,6 +74,7 @@ function Get-SenDriveCandidates {
 
     foreach ($item in $raw) {
         if ($null -eq $item) { continue }
+        if ($null -ne $item.PSObject.Properties['DriveType'] -and $null -ne $item.DriveType -and ([string]$item.DriveType -ne 'Fixed')) { continue }
 
         $root = $null
         if ($item.PSObject.Properties['Root']) {
