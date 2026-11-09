@@ -9,6 +9,8 @@ function Get-SenLockPath {
 function ConvertTo-SenHashtable {
     param($InputObject)
     if ($null -eq $InputObject) { return $null }
+    if ($InputObject -is [DateTime]) { return $InputObject.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") }
+    if ($InputObject -is [DateTimeOffset]) { return $InputObject.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ") }
     if ($InputObject -is [System.Management.Automation.PSCustomObject]) {
         $h = @{}
         foreach ($p in $InputObject.PSObject.Properties) {

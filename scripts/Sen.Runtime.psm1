@@ -39,6 +39,9 @@ function Read-SenSafeJson {
     try {
         $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path, [System.Text.Encoding]::UTF8)
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) {
+            return ConvertFrom-Json -InputObject $raw -DateKind String
+        }
         return ConvertFrom-Json -InputObject $raw
     }
     catch {
