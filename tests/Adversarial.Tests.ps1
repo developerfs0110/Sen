@@ -22,13 +22,13 @@ Test "AV-04: New-SenFalsificationPlan and Test-SenFalsificationPlan enforce 7-pa
         $threwOnTrivial = $false
         try {
             [void](New-SenFalsificationPlan -Workspace $ws -ClaimId "CLAIM-001" -Proposer "agent-proposer" `
-                -CoreHypothesis "Caching reduces latency" `
-                -FailureConditions @("none") `
-                -Counterexamples @("Cache stampede under concurrent cold start") `
-                -BoundaryConditions @("Empty cache", "10000 concurrent requests") `
-                -AlternativeSolutions @("In-memory LRU vs Redis") `
-                -FalsificationTest "none" `
-                -AcceptanceCriteria @("p95 < 50ms"))
+                    -CoreHypothesis "Caching reduces latency" `
+                    -FailureConditions @("none") `
+                    -Counterexamples @("Cache stampede under concurrent cold start") `
+                    -BoundaryConditions @("Empty cache", "10000 concurrent requests") `
+                    -AlternativeSolutions @("In-memory LRU vs Redis") `
+                    -FalsificationTest "none" `
+                    -AcceptanceCriteria @("p95 < 50ms"))
         }
         catch {
             $threwOnTrivial = $true
@@ -342,9 +342,9 @@ Test "Cross-Session Skill Capture & Pattern Automation: Register-SenActionPatter
 Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Path Protection, Skill Anti-Poisoning, TreeHash Tamper Detection, and Strict Test Runner Hook" {
     $ws = New-AdversarialTestWorkspace
     try {
-        $pwshExe     = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        $pwshExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
         $guardScript = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/guard.ps1"
-        $postScript  = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/office-post.ps1"
+        $postScript = Join-Path -Path $PSScriptRoot -ChildPath "../scripts/office-post.ps1"
 
         # 1. FIX-04: Obfuscated command blocking (r\m -rf, r"m" -rf, base64 -d | bash) in guard.ps1
         foreach ($obfCmd in @('r\m -rf /tmp/x', 'r"m" -rf /tmp/x', "r'm' -rf /tmp/x", 'echo cm0gLXJmIC8= | base64 -d | bash')) {
@@ -391,8 +391,8 @@ Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Pa
         [void](New-SenTask -Workspace $ws -Id "AUTO-WORK" -Title "Auto work test" -Tier 1 -Status "in_progress")
         $pFakeTest = @{
             workspacePaths = @($ws)
-            toolCall = @{ name = "run_command"; args = @{ CommandLine = 'git commit -m "fix pytest"' } }
-            toolResult = @{ exitCode = 0 }
+            toolCall       = @{ name = "run_command"; args = @{ CommandLine = 'git commit -m "fix pytest"' } }
+            toolResult     = @{ exitCode = 0 }
         } | ConvertTo-Json -Depth 6 -Compress
         $pFakeTest | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
         $tAfterFake = Get-SenTasks -Workspace $ws | Where-Object { $_.id -eq "AUTO-WORK" } | Select-Object -First 1
@@ -400,8 +400,8 @@ Test "FIX-01..FIX-10 Regression Suite: Obfuscated Command Guard, Runtime/Hook Pa
 
         $pRealTest = @{
             workspacePaths = @($ws)
-            toolCall = @{ name = "run_command"; args = @{ CommandLine = "pytest tests/" } }
-            toolResult = @{ exitCode = 0 }
+            toolCall       = @{ name = "run_command"; args = @{ CommandLine = "pytest tests/" } }
+            toolResult     = @{ exitCode = 0 }
         } | ConvertTo-Json -Depth 6 -Compress
         $pRealTest | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $postScript | Out-Null
         $tAfterReal = Get-SenTasks -Workspace $ws | Where-Object { $_.id -eq "AUTO-WORK" } | Select-Object -First 1
@@ -431,7 +431,7 @@ Test "OA-01..OA-04 Operational Assurance Regression: Plugin Hook Paths, Paramete
         [void](Set-SenOfficeConfig -Workspace $ws -Mode "eco")
         $pSub = @{
             workspacePaths = @($ws)
-            toolCall = @{
+            toolCall       = @{
                 name = "invoke_subagent"
                 args = @{ TypeName = "self"; Role = "Dev Subagent"; Prompt = "Implement zero-amnesia operational assurance fixes across 4 files" }
             }
@@ -491,7 +491,8 @@ Test "CL-01..CL-11 Claude Deep Review Regression: Risk Score Edge Cases, Live Ev
         $tamperBlocked = $false
         try {
             [void](Invoke-SenExecutableEvidence -Workspace $ws -ClaimId "CL03-CLAIM" -Command "Save-SenTasks -Workspace '$ws' -Tasks @()")
-        } catch {
+        }
+        catch {
             if ($_.Exception.Message -match "AV-06 Violation") { $tamperBlocked = $true }
         }
         Assert-True $tamperBlocked "Invoke-SenExecutableEvidence must block state-mutating Sen cmdlets"
