@@ -140,12 +140,28 @@ function Set-SenOfficeConfig {
     return $next
 }
 
+function Sync-SenOfficeActiveWorkspace {
+    param([int]$Port, [string]$Workspace)
+    $normWs = try { [System.IO.Path]::GetFullPath($Workspace).TrimEnd('\', '/') } catch { <# Fallback #> $Workspace.TrimEnd('\', '/') }
+    $srvWs = ""
+    try { $st = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/state" -Method Get -TimeoutSec 1 -EA Stop; if ($st -and $st.workspace) { $srvWs = ([string]$st.workspace).TrimEnd('\', '/') } } catch { <# Ignore #> }
+    if (-not $srvWs -or $srvWs.Equals($normWs, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    try { $sw = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/switch-workspace" -Method Post -ContentType "application/json" -Body (ConvertTo-Json @{ workspace = $normWs } -Compress) -TimeoutSec 1 -EA Stop; if ($sw -and $sw.switched) { return $true } } catch { <# Restart stale server #> }
+    try {
+        foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -EA SilentlyContinue)) {
+            if ($wp -and [int]$wp.ProcessId -ne $PID -and [string]$wp.CommandLine -match 'start-office\.ps1') { Stop-Process -Id ([int]$wp.ProcessId) -Force -EA SilentlyContinue }
+        }
+        Start-Sleep -Milliseconds 150
+    } catch { <# Ignore #> }
+    return $false
+}
+
 function Start-SenOfficeIfIdle {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Workspace, [switch]$NoBrowser)
     try {
         if ($env:SEN_NO_AUTO_OFFICE -eq "1" -or [string]::IsNullOrWhiteSpace($Workspace)) { return $false }
-        if ($Workspace -match '(?i)([\\/]temp[\\/]|sen-.*-test|TestDrive)') { return $false }
+        if ($Workspace -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test|test_)|TestDrive)') { return $false }
         $cfg = Get-SenOfficeConfig -Workspace $Workspace
         if ($cfg.mode -eq "off") { return $false }
         $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
@@ -165,23 +181,33 @@ function Start-SenOfficeIfIdle {
         catch { $alive = $false }
         finally { try { $tc.Close() } catch { <# Ignore socket close #> } }
         [System.IO.File]::WriteAllText($stampPath, [DateTime]::UtcNow.ToString("o"), [System.Text.UTF8Encoding]::new($false))
-        if ($alive) { return $true }
+        if ($alive -and (Sync-SenOfficeActiveWorkspace -Port $port -Workspace $Workspace)) { return $true }
         $startScr = Join-Path -Path $PSScriptRoot -ChildPath "start-office.ps1"
         if (-not (Test-Path -LiteralPath $startScr)) { return $false }
         $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell.exe" }
-        $nbFlag = if ($NoBrowser.IsPresent) { " -NoBrowser" } else { "" }
-        $cmdLine = "$psExe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScr`" -Workspace `"$Workspace`"$nbFlag"
-        if (($env:OS -eq "Windows_NT") -and (Get-Command Invoke-CimMethod -ErrorAction SilentlyContinue)) {
-            [void](Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmdLine } -ErrorAction SilentlyContinue)
-        }
-        else {
-            $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"")
-            if ($NoBrowser.IsPresent) { $argList += "-NoBrowser" }
-            Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null
-        }
+        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"")
+        if ($NoBrowser.IsPresent) { $argList += "-NoBrowser" }
+        Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null
         return $true
     }
     catch { return $false }
+}
+Set-Item -Path "Function:\global:Start-SenOfficeIfIdle" -Value ${function:Start-SenOfficeIfIdle} -Force
+
+function Invoke-SenWithFileMutex {
+    param([Parameter(Mandatory = $true)][string]$FilePath, [Parameter(Mandatory = $true)][scriptblock]$Action)
+    $canonPath = try { [System.IO.Path]::GetFullPath($FilePath).Replace('\', '/').ToLowerInvariant() } catch { <# Fallback #> $FilePath.Replace('\', '/').ToLowerInvariant() }
+    $shaHex = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($canonPath)))).Replace("-", "").Substring(0, 24).ToLowerInvariant()
+    $mtx = [System.Threading.Mutex]::new($false, "Local\SenStateMutex_$shaHex")
+    $hasLock = $false
+    try {
+        try { $hasLock = $mtx.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
+        return (& $Action)
+    }
+    finally {
+        if ($hasLock) { try { $mtx.ReleaseMutex() } catch { <# Ignore release error #> } }
+        $mtx.Dispose()
+    }
 }
 
 function Write-SenOfficeEvent {
@@ -236,20 +262,22 @@ function Write-SenOfficeEvent {
             model    = $Model
         }
         $line = ConvertTo-Json -InputObject $entry -Compress -Depth 5
-        $existing = [System.Collections.Generic.List[string]]::new()
-        if (Test-Path -LiteralPath $evPath) {
-            foreach ($l in [System.IO.File]::ReadAllLines($evPath, [System.Text.Encoding]::UTF8)) {
-                if (-not [string]::IsNullOrWhiteSpace($l)) { $existing.Add($l) }
+        return (Invoke-SenWithFileMutex -FilePath $evPath -Action {
+            $existing = [System.Collections.Generic.List[string]]::new()
+            if (Test-Path -LiteralPath $evPath) {
+                foreach ($l in [System.IO.File]::ReadAllLines($evPath, [System.Text.Encoding]::UTF8)) {
+                    if (-not [string]::IsNullOrWhiteSpace($l)) { $existing.Add($l) }
+                }
             }
-        }
-        $existing.Add($line)
-        while ($existing.Count -gt 200) {
-            $existing.RemoveAt(0)
-        }
-        $tmpEv = "$evPath.$PID.tmp"
-        [System.IO.File]::WriteAllText($tmpEv, ($existing -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
-        Move-Item -LiteralPath $tmpEv -Destination $evPath -Force
-        return $true
+            $existing.Add($line)
+            while ($existing.Count -gt 200) {
+                $existing.RemoveAt(0)
+            }
+            $tmpEv = "$evPath.$PID.tmp"
+            [System.IO.File]::WriteAllText($tmpEv, ($existing -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+            Move-Item -LiteralPath $tmpEv -Destination $evPath -Force
+            return $true
+        })
     }
     catch {
         return $false
@@ -468,6 +496,7 @@ function Get-SenTaskRiskScore {
     param(
         [AllowEmptyString()][string]$Request = "",
         [int]$FileCount = 1,
+        [Alias("ModifiedFiles", "Paths")][string[]]$Files = @(),
         [switch]$TouchesDatabase, [switch]$TouchesAuth, [switch]$TouchesPayments,
         [switch]$DeletesData, [switch]$NewProjectOrArchitecture, [switch]$SharedComponent,
         [switch]$PublicApi, [switch]$ConfigOrMigration, [switch]$NewDependency,
@@ -478,19 +507,29 @@ function Get-SenTaskRiskScore {
     $reasons = [System.Collections.Generic.List[string]]::new()
     $hardFloorTier3 = $false
     $req = ([string]$Request).Trim().ToLowerInvariant()
+    $validFiles = @($Files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    $effFileCount = [Math]::Max($FileCount, $validFiles.Count)
+    $fAuth = $false; $fDb = $false; $fPay = $false; $fCfg = $false
+    foreach ($fp in $validFiles) {
+        $nfp = ([string]$fp).Replace('\', '/')
+        if ($nfp -match '(?i)(^|/)(auth|login|password|oauth|jwt|rbac|sso|security|crypto|guard\.(ps1|sh))([/._-]|$)') { $fAuth = $true }
+        if ($nfp -match '(?i)(^|/)(migrations?|schema|prisma|database|db|sql)([/._-]|$)|\.(sql|prisma)$') { $fDb = $true }
+        if ($nfp -match '(?i)(^|/)(payments?|billing|stripe|vnpay|momo|checkout|wallet)([/._-]|$)') { $fPay = $true }
+        if ($nfp -match '(?i)(^|/)(\.github/workflows|docker|Dockerfile|terraform|k8s|helm|\.env)([/._-]|$)') { $fCfg = $true }
+    }
 
     $forceTier1Override = $req -match '(\bjust\s+do\s+it\b|l.m\s+lu.n(\s+.i)?|lam\s+luon(\s+di)?)'
-    $forceTier3Override = $req -match '(\bthis\s+is\s+tier\s*3\b|\btier\s*3\b|c.p\s*3|cap\s*3)'
-    $hasCompoundRisk    = $req -match '\b(rewrite|migrate|drop|delete|truncate|purge|wipe|jwt|oauth|microservice|postgres|mysql|mongodb|stripe|vnpay|momo)\b'
+    $forceTier3Override = $req -match '(^|[\s"''(\[])(\bthis\s+is\s+tier\s*3\b|\btier\s*3\b|c.p\s*3\b|cap\s*3\b)'
+    $hasCompoundRisk    = $req -match '\b(rewrite|migrate|migration|drop|delete|truncate|purge|wipe|jwt|oauth|auth|authentication|authorization|password|passkey|2fa|mfa|sso|rbac|permission|encryption|microservice|postgres|mysql|mongodb|sqlite|prisma|schema|stripe|paypal|vnpay|momo|payment|billing|checkout|refund|wallet|and\s+(add|create|implement|build))\b'
     $isCosmeticUiOnly   = (-not $hasCompoundRisk) -and ($req -match '^(doi\s+mau\s+nut|..i\s+m.u\s+n.t|change\s+button\s+color|tang\s+co\s+chu|t.ng\s+c.\s+ch.|fix\s+the\s+typo|the\s+footer\s+overlaps)')
 
-    $hasDb   = $TouchesDatabase.IsPresent -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
-    $hasAuth = $TouchesAuth.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
-    $hasPay  = $TouchesPayments.IsPresent -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
+    $hasDb   = $TouchesDatabase.IsPresent -or $fDb -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
+    $hasAuth = $TouchesAuth.IsPresent -or $fAuth -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
+    $hasPay  = $TouchesPayments.IsPresent -or $fPay -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
     $hasDel  = $DeletesData.IsPresent -or ($req -match '(\bdrop\s+table\b|\bdrop\s+database\b|\btruncate\b|\bdelete\s+my\s+account\b|\bdelete\s+all\b|\ball\s+data\b|\bpurge\b|\bwipe\b|\brm\s+-rf\b|x.a\s+to.n\s+b.|xoa\s+toan\s+bo|x.a\s+d.\s+li.u|xoa\s+du\s+lieu|x.a\s+t.i\s+kho.n|x.a\s+b.ng\b|xoa\s+bang\b)')
     $hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|\bkubernetes\b|\bterraform\b|\bproduction\s+deploy\b|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
 
-    $hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or $TouchesPersonalDataOrLegal.IsPresent -or ($FileCount -gt 1)
+    $hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or $TouchesPersonalDataOrLegal.IsPresent -or ($effFileCount -gt 1) -or $fAuth -or $fDb -or $fPay -or $fCfg
     $isPureQuestion = (-not $hasExplicitSwitches) -and (-not ($hasDb -or $hasAuth -or $hasPay -or $hasDel -or $hasArch)) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
     if ($isPureQuestion) {
         return [pscustomobject]@{
@@ -510,14 +549,14 @@ function Get-SenTaskRiskScore {
     $hasApi    = $PublicApi.IsPresent -or ($req -match '(\bapi\b|\bendpoint\b|\brest\b|\bgraphql\b|\bwebhook\b|\bcontract\b|\bbreaking\s+change\b|\bcontrollers,\s+services\s+and\s+routes\b)')
     $hasShared = $SharedComponent.IsPresent -or ($req -match '(\bshared\s+component\b|\bcore\s+module\b|\bglobal\s+state\b|\bcommon\s+util\b|\bconcurrency\b|\bmutex\b|\brace\s+condition\b|d.ng\s+chung|dung\s+chung)')
     $hasDep    = $NewDependency.IsPresent -or ($req -match '(\bnpm\s+install\b|\bpip\s+install\b|\bnew\s+library\b|\bnew\s+package\b|\badd\s+dependency\b|\bdayjs\b|\bzod\b|th.\s+vi.n|thu\s+vien)')
-    $hasCfg    = $ConfigOrMigration.IsPresent -or ($req -match '(\bwebpack\b|\bvite\.config\b|\btsconfig\b|\bdockerfile\b|\bdocker-compose\b|\bgithub\s+actions\b|\bgitlab-ci\b)')
+    $hasCfg    = $ConfigOrMigration.IsPresent -or $fCfg -or ($req -match '(\bwebpack\b|\bvite\.config\b|\btsconfig\b|\bdockerfile\b|\bdocker-compose\b|\bgithub\s+actions\b|\bgitlab-ci\b)')
     $hasLegal  = $TouchesPersonalDataOrLegal.IsPresent -or $hasPay -or $hasAuth -or $hasArch -or ($req -match '(\bprivacy\s+policy\b|\bcookie\s+banner\b|\bconsent\b|\bgtag\b|\bfbq\b|\btiktok\s+pixel\b|\bpersonal\s+data\b|\bpdpl\b|\bnd\s*356\b|\bluat\s*91\b|d.\s+li.u\s+c.\s+nh.n|du\s+lieu\s+ca\s+nhan|ch.nh\s+s.ch\s+b.o\s+m.t|chinh\s+sach\s+bao\s+mat)')
 
-    if ($hasApi)         { $score += 3; $reasons.Add("API/Endpoint Change (+3)") }
-    if ($hasShared)      { $score += 3; $reasons.Add("Shared Component/Blast Radius (+3)") }
-    if ($hasDep)         { $score += 3; $reasons.Add("New Dependency (+3)") }
-    if ($hasCfg)         { $score += 3; $reasons.Add("Build/Infra Config (+3)") }
-    if ($FileCount -ge 3){ $score += 3; $reasons.Add("Touches $FileCount files (+3)") }
+    if ($hasApi)             { $score += 3; $reasons.Add("API/Endpoint Change (+3)") }
+    if ($hasShared)          { $score += 3; $reasons.Add("Shared Component/Blast Radius (+3)") }
+    if ($hasDep)             { $score += 3; $reasons.Add("New Dependency (+3)") }
+    if ($hasCfg)             { $score += 3; $reasons.Add("Build/Infra Config (+3)") }
+    if ($effFileCount -ge 3) { $score += 3; $reasons.Add("Touches $effFileCount files (+3)") }
 
     $hasLogic = $BusinessLogic.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bfeature\b|\bdark\s+mode\b|\bexport\b|\bimport\b|\bexcel\b|\bcsv\b|\bfilter\b|\bsearch\b|\bpagination\b|\bvalidation\b|\bworkflow\b|ch.c\s+n.ng\s+l.c|chuc\s+nang\s+loc|xu.t\s+danh\s+s.ch|xuat\s+danh\s+sach|ph.n\s+trang|phan\s+trang)'))
     if ($hasLogic) { $score += 2; $reasons.Add("Business Logic/Feature (+2)") }
@@ -672,9 +711,10 @@ function Measure-SenCodeHealth {
     $oversized = [System.Collections.Generic.List[object]]::new(); $longFuncs = [System.Collections.Generic.List[object]]::new()
     $deepNest  = [System.Collections.Generic.List[object]]::new(); $emptyCat  = [System.Collections.Generic.List[object]]::new()
     $deadFuncs = [System.Collections.Generic.List[object]]::new(); $definedFn = [System.Collections.Generic.List[object]]::new()
-    $subLines  = @{}; $corpusSb = [System.Text.StringBuilder]::new(); $todoCount = 0; $totalLines = 0
+    $subLines  = @{}; $corpusSb = [System.Text.StringBuilder]::new(); $todoCount = 0; $totalLines = 0; $astCount = 0; $heurCount = 0
 
     foreach ($f in $files) {
+        if ($f.Extension -match '(?i)^\.psm?1$') { $astCount++ } else { $heurCount++ }
         $rel = $f.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
         $isTest = $rel -match '(?i)(\.Tests\.ps1|\.test\.[jt]sx?|\.spec\.[jt]sx?|^tests?[\\/]|_test\.(py|go))$'
         $isUi   = (-not $isTest) -and ($f.Extension -match '(?i)^\.(html|css|vue)$')
@@ -725,7 +765,7 @@ function Measure-SenCodeHealth {
         $nativeRep = [pscustomobject][ordered]@{ AvailableLinters = [ordered]@{ PSScriptAnalyzer = $psaOk; ESLint = $esOk; Ruff = $rfOk }; FindingsCount = $nFind.Count; Findings = @($nFind.ToArray()) }
     }
     return [pscustomobject][ordered]@{
-        Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = $(if ($UseNativeLinters.IsPresent) { "AST+ScopedHeuristic+NativeLinters" } else { "AST+ScopedHeuristic" }); ScannedFiles = [int]$files.Count; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
+        Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = $(if ($UseNativeLinters.IsPresent) { "AST+ScopedHeuristic+NativeLinters" } else { "AST+ScopedHeuristic" }); ScannedFiles = [int]$files.Count; AstAnalyzedCount = [int]$astCount; HeuristicAnalyzedCount = [int]$heurCount; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
         OversizedFiles = @($oversized.ToArray()); LongFunctions = @($longFuncs.ToArray()); DeepNesting = @($deepNest.ToArray())
         DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray()); NativeLinterReport = $nativeRep
         Standards = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")

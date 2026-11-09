@@ -27,7 +27,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 python3 - "$WORKSPACE" "$PORT" "$HTML_PATH" <<'PY'
-import hashlib, http.server, json, os, sys
+import hashlib, http.server, json, os, re, sys
 
 ws, port, html_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 off_dir = os.path.join(ws, ".agents", "office")
@@ -45,7 +45,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if b: self.wfile.write(b)
     def do_GET(self):
         host = self.headers.get("Host", "")
-        if host and not host.startswith(("127.0.0.1", "localhost", "[::1]")):
+        if host and not re.match(r"^(?i)(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", host):
             self._send(403, "application/json", '{"error":"forbidden host"}')
             return
         p = self.path.split("?")[0]
@@ -100,11 +100,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         p = self.path.split("?")[0]
         origin = self.headers.get("Origin", "")
         host = self.headers.get("Host", "")
-        if origin and not origin.startswith(("http://127.0.0.1", "http://localhost", "https://127.0.0.1", "https://localhost")):
+        ctype = self.headers.get("Content-Type", "")
+        if origin and not re.match(r"^(?i)https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", origin):
             self._send(403, "application/json", '{"error":"forbidden origin"}')
             return
-        if host and not host.startswith(("127.0.0.1", "localhost")):
+        if host and not re.match(r"^(?i)(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", host):
             self._send(403, "application/json", '{"error":"forbidden host"}')
+            return
+        if p in ("/api/config", "/api/clear") and not re.search(r"(?i)application/json", ctype):
+            self._send(415, "application/json", '{"error":"application/json required"}')
             return
         n = int(self.headers.get("Content-Length", "0"))
         if n > 65536:

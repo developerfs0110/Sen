@@ -99,6 +99,11 @@ try:
     if tname in ("invoke_subagent", "Task"):
         r_arg = args.get("Role") or args.get("TypeName") or "Subagent"
         role, lane, eco = "pm", "Subagent", f"Subagent [{r_arg}]"
+        in_p = os.path.join(off_dir, "current-intake.json")
+        if not os.path.isfile(in_p):
+            write_atomic(in_p, {"taskId": "SUBAGENT-LIVE", "userName": "User", "request": eco, "tier": 2, "requiresDialecticalProof": True, "requiresResourceCostTable": True, "requiresRestorePoint": True, "requiresSubagentInTurn1": True, "requiresMermaidDiagrams": False, "createdAt": now_iso})
+        sc_p = os.path.join(off_dir, "showcase.json")
+        write_atomic(sc_p, {"projectTitle": eco, "domain": "architecture", "tier": 2, "phase1": {"summary": eco, "specPath": "SUBAGENT-LIVE", "expectedOutputs": ["SUBAGENT-LIVE"], "updatedAt": now_iso}, "updatedAt": now_iso})
         tlist = [t for t in load_tasks() if t.get("id") != "SUBAGENT-LIVE"]
         tlist.append({"id": "SUBAGENT-LIVE", "title": eco, "tier": 2, "status": "in_progress", "assignee": "be", "isTelemetryOnly": True, "updatedAt": now_iso, "_rev": 1})
         save_tasks(tlist); mutated = True
@@ -133,9 +138,25 @@ try:
     elif tname in ("run_command", "Bash", "run_terminal_cmd"):
         if re.search(r"(?i)(Validate-Repo|security|audit)", cmd_arg):
             role, lane, model, eco = "sec", "Security Gate", "pro", "Security/Repo check"
-        elif re.search(r"(?i)\b(npm\s+test|pnpm\s+test|yarn\s+test|pytest|jest|vitest|run\.ps1)\b", cmd_arg) and not re.search(r"^(?i)\s*(echo|true|rem)\b", cmd_arg):
+        elif (not re.search(r"(?i)^\s*(git\s+(commit|log|grep|diff|status|add|push)|grep|rg|select-string|cat|type|get-content|echo|write-host|write-output|true|rem|::)\b", cmd_arg)) and re.search(r"(?i)(^|[;&|]\s*)(&\s*)?((pwsh|powershell|bash|sh)(\.exe)?(\s+-[A-Za-z]+(\s+[^\s;|\"&]+)?)*\s+|python3?(\.exe)?\s+-m\s+)?[\"'']?([^\"''|;&]*[\\/])?(npm\s+test|pnpm\s+test|yarn\s+test|npx\s+(jest|vitest|playwright)|pytest|cargo\s+test|go\s+test|dotnet\s+test|Invoke-Pester|tests[/\\]run\.ps1|run\.ps1)\b", cmd_arg):
             role, lane, eco = "qa", "QA Gate", "Run test suite"
             if has_ec and ec_val == 0 and not is_err:
+                tlist = load_tasks()
+                ev_paths = []
+                code_hashes = {}
+                for t in tlist:
+                    if t.get("status") in ("in_progress", "reviewing"):
+                        for ap in (t.get("allowedPaths") or []):
+                            if ap and ap not in ev_paths:
+                                ev_paths.append(ap)
+                                fp = ap if os.path.isabs(ap) else os.path.join(ws, ap)
+                                if os.path.isfile(fp):
+                                    code_hashes[ap] = hashlib.sha256(open(fp, "rb").read()).hexdigest().lower()
+                    if t.get("id") == "AUTO-WORK":
+                        t["status"] = "done"
+                        t["updatedAt"] = now_iso
+                        t["evidence"] = {"command": cmd_arg.strip(), "exitCode": 0, "verifiedAt": now_iso, "reviewer": "qa"}
+                save_tasks(tlist)
                 ev_p = os.path.join(off_dir, "evidence.json")
                 evs = []
                 if os.path.isfile(ev_p):
@@ -144,7 +165,9 @@ try:
                         evs = eo.get("evidence", []) if isinstance(eo, dict) else eo
                     except Exception: evs = []
                 evs = [e for e in evs if e.get("evidence_id") != "EV-AUTO-TEST"]
-                evs.append({"evidence_id": "EV-AUTO-TEST", "task_id": "AUTO-WORK", "type": "unit", "status": "PASS", "command": cmd_arg.strip(), "exitCode": 0, "timestamp": now_iso, "verified": True})
+                subj_p = ev_paths[0] if ev_paths else ""
+                subj_h = code_hashes.get(subj_p, "")
+                evs.append({"evidence_id": "EV-AUTO-TEST", "task_id": "AUTO-WORK", "type": "unit", "status": "PASS", "command": cmd_arg.strip(), "exitCode": 0, "codePaths": ev_paths, "subjectPath": subj_p, "subjectHash": subj_h, "code_hashes": code_hashes, "timestamp": now_iso, "verified": True})
                 write_atomic(ev_p, {"updatedAt": now_iso, "evidence": evs}); mutated = True
         else:
             role, lane, eco = "be", "System Cmd", "Run: " + cmd_arg[:48]

@@ -118,9 +118,15 @@ function Install-SenPackage {
             if ($marker) { $commit = $marker }
         }
         $treeHash = Get-SenDirectoryTreeHash -Path $dest
+        $thFile = Join-Path $dest ".sen-tree-hash"
+        $savedTreeHash = if (Test-Path -LiteralPath $thFile) { ([System.IO.File]::ReadAllText($thFile)).Trim() } else { "" }
         $commitOk = [string]::IsNullOrWhiteSpace($pinned) -or ($commit -ne "unknown" -and ($commit.StartsWith($pinned, [System.StringComparison]::OrdinalIgnoreCase) -or $pinned.StartsWith($commit, [System.StringComparison]::OrdinalIgnoreCase)))
-        $st = if ($VerifyPinnedCommit.IsPresent -and (-not $commitOk)) { "mismatch" } else { "exists" }
-        return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = [bool]$commitOk; TreeHash = $treeHash; Status = $st; Error = $(if ($st -eq "mismatch") { "Pinned commit mismatch: expected $pinned, found $commit" } else { $null }) }
+        $treeOk = [string]::IsNullOrWhiteSpace($savedTreeHash) -or $savedTreeHash.Equals($treeHash, [System.StringComparison]::OrdinalIgnoreCase)
+        if ($VerifyPinnedCommit.IsPresent -and (-not $commitOk -or -not $treeOk)) {
+            $errMsg = if (-not $commitOk) { "Pinned commit mismatch: expected $pinned, found $commit" } else { "Package tree hash mismatch: expected $savedTreeHash, found $treeHash" }
+            return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = $false; TreeHash = $treeHash; Status = "mismatch"; Error = $errMsg }
+        }
+        return [pscustomobject]@{ Id = $id; Commit = $commit; ExpectedCommit = $pinned; CommitVerified = [bool]$commitOk; TreeHash = $treeHash; Status = "exists"; Error = $null }
     }
 
     $tmpRoot = New-SenTempDir

@@ -573,4 +573,62 @@ if (Test-Path -LiteralPath $senBoundedLoopModulePath) {
     Import-Module -Name $senBoundedLoopModulePath -Global -Force
 }
 
-Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack
+function Format-SenReleaseBullets {
+    param([string[]]$Items, [string]$EmptyText)
+    $valid = @($Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($valid.Count -eq 0) { return "- $EmptyText" }
+    return (($valid | ForEach-Object { "- " + $_.Trim() }) -join "`n")
+}
+
+function Update-SenReleaseNotesIndex {
+    param([string]$ReleasesDir)
+    $viF = @(Get-ChildItem -LiteralPath $ReleasesDir -Filter "v*.vi.md" -File -EA SilentlyContinue | Sort-Object Name -Descending)
+    $enF = @(Get-ChildItem -LiteralPath $ReleasesDir -Filter "v*.en.md" -File -EA SilentlyContinue | Sort-Object Name -Descending)
+    $viH = [regex]::Unescape('# T\u1ed5ng H\u1ee3p Release Notes (Ti\u1ebfng Vi\u1ec7t) \u2014 Sen (`sen-method`)\n\n| Phi\u00ean b\u1ea3n | T\u00e0i li\u1ec7u | Tr\u1ea1ng th\u00e1i |\n|---|---|---|')
+    $viR = foreach ($f in $viF) { $t = $f.BaseName -replace '\.vi$', ''; "| **$t** | [$t ($($f.Name))]($($f.Name)) | Released / Verified |" }
+    $enH = "# Master Release Notes Index (English) - Sen (``sen-method``)`n`n| Version | Release Note | Status |`n|---|---|---|"
+    $enR = foreach ($f in $enF) { $t = $f.BaseName -replace '\.en$', ''; "| **$t** | [$t ($($f.Name))]($($f.Name)) | Released / Verified |" }
+    $u8 = [Text.UTF8Encoding]::new($false)
+    [IO.File]::WriteAllText((Join-Path $ReleasesDir "RELEASE-NOTES.vi.md"), ($viH + "`n" + ($viR -join "`n") + "`n"), $u8)
+    [IO.File]::WriteAllText((Join-Path $ReleasesDir "RELEASE-NOTES.en.md"), ($enH + "`n" + ($enR -join "`n") + "`n"), $u8)
+}
+
+function New-SenReleaseNote {
+    [CmdletBinding()]
+    param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Parameter(Mandatory)][string]$Version, [string]$Date = "", [string[]]$Fixed = @(), [string[]]$Removed = @(), [string[]]$Improved = @(), [string[]]$Deferred = @(), [string]$SummaryVi = "", [string]$SummaryEn = "")
+    $v = ($Version.Trim() -replace '^[vV]', ''); $dt = if ($Date) { $Date } else { [DateTime]::UtcNow.ToString("yyyy-MM-dd") }
+    $relDir = Join-Path $Workspace "docs/releases"; if (-not (Test-Path -LiteralPath $relDir)) { [IO.Directory]::CreateDirectory($relDir) | Out-Null }
+    $u = { param($s) [regex]::Unescape($s) }
+    $sVi = if ($SummaryVi) { $SummaryVi } else { & $u "B\u1ea3n ph\u00e1t h\u00e0nh Sen ``v$v`` ($dt)." }
+    $sEn = if ($SummaryEn) { $SummaryEn } else { "Sen release ``v$v`` ($dt)." }
+    $viBody = @((& $u "# Release Notes ``v$v`` (Ti\u1ebfng Vi\u1ec7t) \u2014 Sen (``sen-method``)"), "", (& $u "- **Phi\u00ean b\u1ea3n:** ``v$v`` (`$dt`) | [v$v.en.md](v$v.en.md) | [RELEASE-NOTES.vi.md](RELEASE-NOTES.vi.md)"), "", (& $u "## 1. T\u00f3m t\u1eaft (Summary)"), $sVi, "", (& $u "## 2. \u0110\u00e3 s\u1eeda (Fixed)"), (Format-SenReleaseBullets $Fixed "None"), "", (& $u "## 3. \u0110\u00e3 x\u00f3a (Removed)"), (Format-SenReleaseBullets $Removed "None"), "", (& $u "## 4. C\u1ea3i ti\u1ebfn (Improved & Added)"), (Format-SenReleaseBullets $Improved "Updated"), "", (& $u "## 5. B\u1ea3o L\u01b0u (Deferred)"), (Format-SenReleaseBullets $Deferred "None")) -join "`n"
+    $enBody = @("# Release Notes ``v$v`` (English) - Sen (``sen-method``)", "", "- **Version:** ``v$v`` ($dt) | [v$v.vi.md](v$v.vi.md) | [RELEASE-NOTES.en.md](RELEASE-NOTES.en.md)", "", "## 1. Summary", $sEn, "", "## 2. Fixed", (Format-SenReleaseBullets $Fixed "None"), "", "## 3. Removed", (Format-SenReleaseBullets $Removed "None"), "", "## 4. Improved & Added", (Format-SenReleaseBullets $Improved "Updated"), "", "## 5. Deferred & Pending Review", (Format-SenReleaseBullets $Deferred "None")) -join "`n"
+    $viP = Join-Path $relDir "v$v.vi.md"; $enP = Join-Path $relDir "v$v.en.md"; $u8 = [Text.UTF8Encoding]::new($false)
+    [IO.File]::WriteAllText($viP, $viBody + "`n", $u8); [IO.File]::WriteAllText($enP, $enBody + "`n", $u8); Update-SenReleaseNotesIndex -ReleasesDir $relDir
+    return [pscustomobject]@{ Version = $v; ViPath = $viP; EnPath = $enP; IndexViPath = (Join-Path $relDir "RELEASE-NOTES.vi.md"); IndexEnPath = (Join-Path $relDir "RELEASE-NOTES.en.md") }
+}
+
+function Test-SenReleaseNoteGate {
+    [CmdletBinding()]
+    param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$Version = "")
+    $cleanVer = ($Version.Trim() -replace '^[vV]', '')
+    if (-not $cleanVer) {
+        $pJson = Read-SenSafeJson -Path (Join-Path $Workspace "plugin.json")
+        if ($null -eq $pJson) { $pJson = Read-SenSafeJson -Path (Join-Path $Workspace ".agents-plugin/plugin.json") }
+        $cleanVer = if ($null -ne $pJson -and $pJson.version) { ([string]$pJson.version).Trim() } else { "0.5.0" }
+    }
+    $relDir = Join-Path $Workspace "docs/releases"; $viPath = Join-Path $relDir "v$cleanVer.vi.md"; $enPath = Join-Path $relDir "v$cleanVer.en.md"
+    $missing = [Collections.Generic.List[string]]::new()
+    foreach ($pair in @(
+        @{ name = "v$cleanVer.vi.md"; path = $viPath; s = $true }, @{ name = "v$cleanVer.en.md"; path = $enPath; s = $true },
+        @{ name = "RELEASE-NOTES.vi.md"; path = (Join-Path $relDir "RELEASE-NOTES.vi.md"); s = $false }, @{ name = "RELEASE-NOTES.en.md"; path = (Join-Path $relDir "RELEASE-NOTES.en.md"); s = $false }
+    )) {
+        if (-not (Test-Path -LiteralPath $pair.path)) { $missing.Add("MissingFile:$($pair.name)"); continue }
+        $txt = [IO.File]::ReadAllText($pair.path, [Text.Encoding]::UTF8)
+        if ($pair.s) { foreach ($sec in @("Fixed", "Removed", "Improved")) { if ($txt -notmatch "(?i)\b$sec\b") { $missing.Add("MissingSection:$($pair.name):$sec") } } }
+        elseif ($txt -notmatch [regex]::Escape("v$cleanVer")) { $missing.Add("MissingIndexEntry:$($pair.name):v$cleanVer") }
+    }
+    return [pscustomobject]@{ Passed = ($missing.Count -eq 0); Version = $cleanVer; ViPath = $viPath; EnPath = $enPath; Missing = @($missing.ToArray()) }
+}
+
+Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack, New-SenReleaseNote, Test-SenReleaseNoteGate

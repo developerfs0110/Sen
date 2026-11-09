@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guard.ps1",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .agents/plugins/sen-method/scripts/guard.ps1",
             "timeout": 10
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/office-post.ps1",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .agents/plugins/sen-method/scripts/office-post.ps1",
             "timeout": 5
           }
         ]

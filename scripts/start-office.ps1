@@ -136,13 +136,13 @@ try {
                 continue
             }
 
-            if ($method -eq "POST" -and (-not [string]::IsNullOrEmpty($originHdr)) -and ($originHdr -notmatch '^https?://(127\.0\.0\.1|localhost)(:\d+)?$')) {
+            if ($method -eq "POST" -and (-not [string]::IsNullOrEmpty($originHdr)) -and ($originHdr -notmatch '^(?i)https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$')) {
                 $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"forbidden origin"}')
                 Send-HttpResponse $stream 403 "Forbidden" "application/json; charset=utf-8" $errBytes $usePort
                 continue
             }
 
-            if ($method -eq "POST" -and $path -eq "/api/config" -and $contentLen -gt 0 -and (-not [string]::IsNullOrEmpty($contentTypeHdr)) -and ($contentTypeHdr -notmatch '(?i)application/json')) {
+            if ($method -eq "POST" -and ($path -in @("/api/config", "/api/clear", "/api/event", "/api/switch-workspace")) -and (($contentLen -gt 0) -or [string]::IsNullOrEmpty($originHdr)) -and ($contentTypeHdr -notmatch '(?i)application/json')) {
                 $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"application/json required"}')
                 Send-HttpResponse $stream 415 "Unsupported Media Type" "application/json; charset=utf-8" $errBytes $usePort
                 continue
@@ -204,6 +204,14 @@ try {
             elseif ($method -eq "POST" -and $path -eq "/api/clear") {
                 Clear-SenOfficeEvents -Workspace $resolvedWs
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes('{"cleared":true}')
+                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
+            }
+            elseif ($method -eq "POST" -and $path -eq "/api/switch-workspace") {
+                $reqObj = ConvertFrom-Json -InputObject $bodyStr
+                if ($reqObj -and $reqObj.workspace -and (Test-Path -LiteralPath ([string]$reqObj.workspace))) {
+                    $resolvedWs = (Resolve-Path -LiteralPath ([string]$reqObj.workspace)).Path
+                }
+                $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject @{ switched = $true; workspace = $resolvedWs } -Compress))
                 Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
             }
             else {

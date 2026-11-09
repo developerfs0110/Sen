@@ -201,15 +201,9 @@ function Invoke-SenEscalationQuarantine {
 
 function Invoke-SenFindingTriage {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$ClaimId,
-        [Parameter(Mandatory = $true)][object[]]$Findings
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$ClaimId, [Parameter(Mandatory = $true)][object[]]$Findings)
     $loop = (Read-SenBoundedLoops -Workspace $Workspace) | Where-Object { [string]$_.claimId -eq $ClaimId } | Select-Object -First 1
-    if ($null -eq $loop) {
-        $loop = Set-SenVerificationPolicy -Workspace $Workspace -ClaimId $ClaimId
-    }
+    if ($null -eq $loop) { $loop = Set-SenVerificationPolicy -Workspace $Workspace -ClaimId $ClaimId }
     if ([string]$loop.state -in @("ESCALATED", "REJECTED", "ACCEPTED")) {
         throw "BVC-01/BVC-09 Terminal State Lock: Claim '$ClaimId' is locked in terminal state '$($loop.state)' and cannot re-enter triage."
     }
@@ -232,14 +226,15 @@ function Invoke-SenFindingTriage {
         $hasEv = (-not [string]::IsNullOrWhiteSpace($cmd)) -and ($cmd -notmatch '^(?i)\s*(none|manual|verbal|n/a|ok)\s*$')
         if ($f.PSObject.Properties['hasEvidence'] -and (-not [bool]$f.hasEvidence)) { $hasEv = $false }
 
-        # Scenario 1: Adversary critique without executable evidence is ignored and cannot trigger repair
         if (-not $hasEv) {
             $ignoredNoEv.Add([pscustomobject][ordered]@{ id = $fid; title = $title; action = "IGNORED_NO_EVIDENCE" })
             continue
         }
 
         # BVC-03 Anti-downgrade floor for critical security/data-loss findings
-        $sev = if ($title -match '(?i)\b(sqli|sql\s+injection|xss|rce|auth\s+bypass|data\s+loss|drop\s+table|secret\s+leak)\b') { "C0" } else { $rawSev }
+        $c0Re = '(?i)(\bsqli\b|sql\s*injection|command\s*injection|\brce\b|path\s*traversal|symlink\s*escape|privilege\s*escalation|secret\s*leak|auth(entication|orization)?\s*bypass|state\s*tamper|data\s*loss|drop\s*table|corruption|security\s*breach)'
+        $c1Re = '(?i)(\bxss\b|race\s*condition|deadlock|memory\s*poison|\bcsrf\b|dns\s*rebinding)'
+        $sev = if ($title -match $c0Re) { "C0" } elseif ($rawSev -eq "C3" -and $title -match $c1Re) { "C1" } else { $rawSev }
         $path = if ($f.PSObject.Properties['path']) { [string]$f.path } else { "" }
         $inScope = ($scopeList.Count -eq 0) -or ([string]::IsNullOrWhiteSpace($path)) -or (Test-SenPathOverlap -PathsA $scopeList -PathsB @($path))
         $isSubj = ($f.PSObject.Properties['isSubjective'] -and [bool]$f.isSubjective) -or ($sev -eq "C3")
@@ -248,13 +243,9 @@ function Invoke-SenFindingTriage {
         $item = [pscustomobject][ordered]@{ id = $fid; title = $title; severity = $sev; path = $path; inScope = [bool]$inScope; testCommand = $cmd }
         if ($sev -eq "C3" -or ((-not $inScope) -and $sev -ne "C0")) {
             $gate2Backlog.Add($item)
-            if (Get-Command Add-SenBacklogItem -ErrorAction SilentlyContinue) {
-                [void](Add-SenBacklogItem -Workspace $Workspace -Id "BL-$fid" -Title "[Gate2-$sev] $title (from $ClaimId)")
-            }
+            if (Get-Command Add-SenBacklogItem -ErrorAction SilentlyContinue) { [void](Add-SenBacklogItem -Workspace $Workspace -Id "BL-$fid" -Title "[Gate2-$sev] $title (from $ClaimId)") }
         }
-        else {
-            $gate1Blockers.Add($item)
-        }
+        else { $gate1Blockers.Add($item) }
     }
 
     $prevBacklog = [System.Collections.Generic.List[object]]::new()
@@ -264,39 +255,28 @@ function Invoke-SenFindingTriage {
     $loop | Add-Member -NotePropertyName "unresolvedFindings" -NotePropertyValue @($gate1Blockers.ToArray()) -Force
     $loop | Add-Member -NotePropertyName "residualRisks" -NotePropertyValue @($gate2Backlog.ToArray()) -Force
 
-    $nextState = "ACCEPTED"
-    $dossier = $null
+    $nextState = "ACCEPTED"; $dossier = $null
     if ($subjectiveConflicts -gt 0 -and $newRound -ge 2) {
         $nextState = "ESCALATED"
         $dossier = New-SenEscalationDossier -LoopRecord $loop -EscalationReason "BVC-07: Conflicting subjective dispute between agents"
     }
-    elseif ($gate1Blockers.Count -eq 0) {
-        $nextState = "ACCEPTED"
-    }
+    elseif ($gate1Blockers.Count -eq 0) { $nextState = "ACCEPTED" }
     elseif ($newRound -ge [int]$loop.maxReviewRounds -or [int]$loop.repairAttempts -ge [int]$loop.maxRepairAttempts) {
         $nextState = "ESCALATED"
         $dossier = New-SenEscalationDossier -LoopRecord $loop -EscalationReason "BVC-01/BVC-09: Max review/repair budget reached with $($gate1Blockers.Count) unresolved C0/C1 finding(s)"
     }
-    else {
-        $nextState = "REPAIR"
-    }
+    else { $nextState = "REPAIR" }
 
     $loop | Add-Member -NotePropertyName "state" -NotePropertyValue $nextState -Force
     $loop | Add-Member -NotePropertyName "escalationDossier" -NotePropertyValue $dossier -Force
     $loop | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")) -Force
     [void](Save-SenBoundedLoopRecord -Workspace $Workspace -Record $loop)
-    if ($nextState -eq "ESCALATED") {
-        [void](Invoke-SenEscalationQuarantine -Workspace $Workspace -ClaimId $ClaimId)
-    }
+    if ($nextState -eq "ESCALATED") { [void](Invoke-SenEscalationQuarantine -Workspace $Workspace -ClaimId $ClaimId) }
 
     return [pscustomobject][ordered]@{
-        ClaimId            = $ClaimId
-        Round              = $newRound
-        State              = $nextState
-        Gate1Blockers      = @($gate1Blockers.ToArray())
-        Gate2Deferred      = @($gate2Backlog.ToArray())
-        IgnoredNoEvidence  = @($ignoredNoEv.ToArray())
-        EscalationDossier  = $dossier
+        ClaimId = $ClaimId; Round = $newRound; State = $nextState
+        Gate1Blockers = @($gate1Blockers.ToArray()); Gate2Deferred = @($gate2Backlog.ToArray())
+        IgnoredNoEvidence = @($ignoredNoEv.ToArray()); EscalationDossier = $dossier
     }
 }
 
@@ -596,6 +576,15 @@ function New-SenCapturedSkill {
     if (($cleanSkill -match '^sen-') -and (-not $AllowCorePrefix.IsPresent)) {
         throw "SkillName '$cleanSkill' cannot use reserved 'sen-' prefix. Choose a project/workspace name without 'sen-'."
     }
+    $combinedText = (@($Description) + @($Steps) + @($Commands)) -join "`n"
+    if ($combinedText -match '(?i)(ignore\s+(all\s+)?previous\s+instructions|disregard\s+.*rules|system\s+override|SEN_TRUSTED_HOOK|SEN_TRUSTED_INSTALLER|Sync-SenOfficeState\s+.*-UpdateSeal|Lock-SenQualityBaseline\s+.*-Force)') {
+        throw "Skill capture blocked: prompt-injection or guard-bypass directive detected in skill content."
+    }
+    foreach ($cmdItem in @($Commands)) {
+        if ([string]$cmdItem -match '(?i)(\brm\s+-[a-z]*r|\bRemove-Item\b[^|;&]*\s-r(e(c(u(r(s(e)?)?)?)?)?)?\b|\b(Invoke-Expression|iex)\b|(\bcurl\b|\bwget\b)[^|;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell)\b|[/\\](\.ssh|\.aws|\.gnupg|\.kube)[/\\]|id_rsa|id_ed25519|\.agents[/\\]office|guard\.(ps1|sh))') {
+            throw "Skill capture blocked: destructive or unsafe command pattern detected in 0-token runner script."
+        }
+    }
 
     $skillDir = Join-Path -Path $Workspace -ChildPath ".agents/skills/$cleanSkill"
     $skillMdPath = Join-Path -Path $skillDir -ChildPath "SKILL.md"
@@ -652,6 +641,7 @@ function New-SenCapturedSkill {
     return [pscustomobject][ordered]@{
         SkillName     = $cleanSkill
         SkillPath     = $skillMdPath
+        SkillHash     = (Get-SenTextSha256 -Text $mdSb.ToString())
         ScriptPs1Path = $ps1Path
         ScriptShPath  = $shPath
         PatternId     = $effPatId
@@ -662,22 +652,28 @@ function New-SenCapturedSkill {
 function Invoke-SenPostCodePipeline {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace,
         [string]$CodePath = "",
         [string]$TaskId = "",
         [string]$SubjectPath = "",
-        [switch]$InstallHooks
+        [string[]]$ModifiedFiles = @(),
+        [string]$EvidenceCommand = "",
+        [int]$ExitCode = 0,
+        [switch]$InstallHooks,
+        [switch]$SkipHealth
     )
 
     $effCodePath = if (-not [string]::IsNullOrWhiteSpace($CodePath)) { $CodePath } else { Join-Path -Path $Workspace -ChildPath "scripts" }
     if (-not (Test-Path -LiteralPath $effCodePath)) { $effCodePath = $Workspace }
+    if ([string]::IsNullOrWhiteSpace($SubjectPath) -and $ModifiedFiles.Count -gt 0) { $SubjectPath = $ModifiedFiles[0] }
+    $evCmd = if (-not [string]::IsNullOrWhiteSpace($EvidenceCommand)) { $EvidenceCommand } else { "Invoke-SenPostCodePipeline" }
 
-    if (-not [string]::IsNullOrWhiteSpace($TaskId) -and -not [string]::IsNullOrWhiteSpace($SubjectPath)) {
-        [void](Register-SenEvidence -Workspace $Workspace -EvidenceId "EV-$TaskId" -TaskId $TaskId -Type "unit" -Command "Invoke-SenPostCodePipeline" -ExitCode 0 -SubjectPath $SubjectPath)
+    if (-not [string]::IsNullOrWhiteSpace($TaskId) -and (-not [string]::IsNullOrWhiteSpace($SubjectPath) -or $ModifiedFiles.Count -gt 0)) {
+        [void](Register-SenEvidence -Workspace $Workspace -EvidenceId "EV-$TaskId" -TaskId $TaskId -Type "unit" -Command $evCmd -ExitCode $ExitCode -SubjectPath $SubjectPath -CodePaths $ModifiedFiles)
     }
     $evCheck = Test-SenEvidenceValidity -Workspace $Workspace
     $evValid = if ($evCheck.PSObject.Properties['AllValid']) { [bool]$evCheck.AllValid } else { [bool]$evCheck.Valid }
-    $health = Measure-SenCodeHealth -Path $effCodePath
+    $health = if ($SkipHealth.IsPresent) { [pscustomobject]@{ Healthy = $true; Score = 100 } } else { Measure-SenCodeHealth -Path $effCodePath }
 
     $parityPassed = $true
     if (Get-Command Test-SenCapabilityParity -ErrorAction SilentlyContinue) {

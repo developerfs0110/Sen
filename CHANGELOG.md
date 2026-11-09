@@ -21,15 +21,17 @@ Mọi thay đổi quan trọng của plugin **Sen** và lộ trình các phiên 
 
 ## [0.5.1] - 2026-11-09
 
-### Fixed & Hardened (Operational Assurance Audit F-01 .. F-10 & Anti-Amnesia Physical Locks)
-- **F-01 & F-02 (Test-SenDeliveryGate):** Enabled default SHA-256 physical diff verification (Test-SenEvidenceValidity), closed the Tier 3 missing-governance loophole (process-audit.json / equirements.json / claims.json), and enforced active adversarial claims.json status verification (REJECTED, INCONCLUSIVE, PROPOSED block delivery).
-- **F-03 (Complete-SenTaskReview):** Enforced strict state-machine transition (eady/pending/acklog/stale/ailed tasks cannot jump directly to done without Start-SenTask) and blocked trivial/echo/fake-pass EvidenceCommand strings.
-- **F-04 (hooks.json & Install-SenHarnessHookFile):** Unified workspace-relative hook paths (.agents/plugins/sen-method/scripts/guard.ps1 and office-post.ps1) and ensured Install-SenHarness updates ntigravity hook definitions.
-- **F-05 & F-06 (guard.ps1 & guard.sh):** Expanded .agents/office/ write protection to all *.json and *.jsonl files, blocked .NET/Python/Node file-write primitives targeting .agents/office/, and added incremental multi-file backup into active < 10 min restore points.
-- **F-07 (Sync-SenPlanToTasks):** Fixed Windows drive-letter regex ([A-Za-z]:\...) so absolute paths in implementation plans are preserved intact in llowedPaths.
-- **F-08 & F-09 (Test-SenSingleStepEvidence & office-post.ps1):** Removed self-fulfilling Write-SenOfficeShowcase generation from Test-SenSingleStepEvidence, wired Phase 1/2 showcase updates and Test-SenMidTaskEscalation into office-post.ps1 and Invoke-SenPostCodePipeline, and tightened test-runner detection in office-post.ps1.
-- **F-10 (Test-SenCapabilityParity):** Added graceful application-project parity mode when scripts/process-manifest.json is absent.
-- **Anti-Amnesia Physical Locks (Sen.Governance.psm1):** Added and exported Initialize-SenIntake and Test-SenIntakeCompleteness (117 exported cmdlets total).
+### Fixed & Hardened (Operational Assurance Audit `F-01..F-10`, External Reviews `FIX-01..10`, `OA-01..04` & `CL-02..11`)
+- **F-01 & F-02 (`Test-SenDeliveryGate`):** Enabled default SHA-256 physical diff verification (`Test-SenEvidenceValidity`), closed the Tier 3 missing-governance loophole (`process-audit.json` / `requirements.json` / `claims.json`), and enforced active adversarial `claims.json` status verification (`REJECTED`, `INCONCLUSIVE`, `PROPOSED` block delivery).
+- **F-03 & CL-03 (`Complete-SenTaskReview` & `Invoke-SenExecutableEvidence`):** Enforced strict state-machine transition (`ready`/`pending`/`backlog`/`stale`/`failed` tasks cannot jump directly to `done` without `Start-SenTask`), blocked trivial/echo/fake-pass `EvidenceCommand` strings, added `-ExecuteCommand` / `SEN_ENFORCE_LIVE_EVIDENCE=1` child-process evidence verification, and blocked internal state-mutating cmdlets inside `Invoke-SenExecutableEvidence`.
+- **F-04 & OA-01 (`hooks.json` & `Install-SenHarnessHookFile`):** Unified workspace-relative hook paths (`.agents/plugins/sen-method/scripts/guard.ps1` and `office-post.ps1`) and ensured `Install-SenHarness` updates `antigravity` hook definitions.
+- **F-05, F-06, FIX-02 & FIX-04 (`guard.ps1` & `guard.sh`):** Expanded `.agents/office/` write protection to all `*.json(l)`, `.agents/sen.lock.json`, `.agents/plugins/sen-method/`, `.claude/settings.json`, `.cursor/hooks.json`, and `guard.(ps1|sh)`; added POSIX pre-edit auto-restore point creation and fail-closed pure-bash fallback in `guard.sh`; and added shell escape/quote de-obfuscation + `base64` pipe blocking.
+- **F-07 (`Sync-SenPlanToTasks`):** Fixed Windows drive-letter regex (`[A-Za-z]:\...`) so absolute paths in implementation plans are preserved intact in `allowedPaths`.
+- **F-08, F-09, FIX-01, OA-02, OA-03 & OA-04 (`office-post.ps1`/`.sh`, `start-office.ps1`/`.sh`, `Sen.Governance.psm1`):** Removed self-fulfilling `Write-SenOfficeShowcase` generation from `Test-SenSingleStepEvidence`; wired physical auto-triggering of `Start-SenOfficeIfIdle` (`POST /api/switch-workspace`), `Initialize-SenIntake`, `Write-SenOfficeShowcase` (Phase 1/2), and Stage 1..4 latching into `office-post.ps1`/`.sh`; tightened test-runner regex; and added the 6-item `ObligationMatrix` (`OBL-01..OBL-06`) + `BaselineMetrics` to `Test-SenIntakeCompleteness` (`260/260` tests passing).
+- **F-10, FIX-03, FIX-05..10 & CL-02..11 (`Sen.Runtime.psm1`, `Sen.Harness.psm1`, `Sen.Packages.psm1`, `Sen.BoundedLoop.psm1`):** Added cross-process SHA-256 Named Mutexes (`Invoke-SenWithFileMutex`, `Invoke-SenGovMutex`), strict DNS-rebinding regex in `start-office.sh`, path-based & compound-prompt risk scoring in `Get-SenTaskRiskScore`, sensitive-file staging guard in `Invoke-SenCiPushLoop`, anti-poisoning filters in `New-SenCapturedSkill` and `Add-SenExecutionLesson`, `.sen-tree-hash` verification in `Install-SenPackage`, and pinned `v0.5.1` tag instructions in `INSTALL.md`.
+
+---
+
 ## [0.5.0] - 2026-11-08
 
 ### Added & Upgraded / Bổ sung & Nâng cấp — 7-Link RTM Engine (`Sen.Governance.psm1`), Evidence Stale Detection, DAG Change Impact, Symlink/Host Guard & Bilingual Release Notes Gate

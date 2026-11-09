@@ -1,6 +1,6 @@
 # Danh Sách Việc Cần Làm (Backlog & Lộ Trình Nâng Cấp) — Sen (`sen-method`)
 
-- **Cập nhật lần cuối:** 2026-11-08 (`v0.5.1` — Hoàn tất toàn bộ 25/25 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
+- **Cập nhật lần cuối:** 2026-11-09 (`v0.5.1` — Hoàn tất toàn bộ 26/26 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
 - **Mục đích:** Lưu trữ có cấu trúc mọi công việc, ý tưởng và hạng mục cải tiến được Boss chỉ đạo `"lưu vào task cần làm"` trong quá trình trao đổi, đảm bảo không thất thoát giữa các phiên làm việc.
 - **Trạng thái ký hiệu:** `[ ]` Chờ triển khai · `[~]` Đang thực hiện · `[x]` Đã hoàn thành
 

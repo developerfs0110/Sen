@@ -34,8 +34,8 @@ Toàn bộ 5 giai đoạn lớn (**`v0.1.x` Sen Core & Safety Shield**, **`v0.2.
 
 ## 3. Các cổng chất lượng đã kiểm chứng
 - `scripts/Validate-Repo.ps1` & `Test-SenCapabilityParity`: **ĐẠT (0 lỗi, 6/6 tầng đẳng cấu + Logic-Doc Sync `L6-DocsParity` + `Test-SenReleaseNoteGate` + Zero-Trust State Seal `Sync-SenOfficeState` & `Install-SenGitHooks` + Cross-Session Skill Capture `Register-SenActionPattern` & `New-SenCapturedSkill, Invoke-SenPostCodePipeline`)** (`rules/AGENTS.md` <= 5.750 bytes & <= 95 dòng; toàn bộ `.ps1`/`.psm1` chuẩn ASCII; `README.md` đồng bộ 100% với `README.vi.md`; `TODO.md` đồng bộ với `CONTEXT.md` & `CHANGELOG.md`; `docs/huong-dan.md` và `docs/guide.md` đồng bộ luồng 2-Turn & 117 cmdlets; `docs/releases/` có đủ ghi chú phát hành song ngữ Việt–Anh).
-- `Measure-SenCodeHealth`: **ĐẠT (`Healthy = True`, `Score = 100/100` trên 36 tệp mã nguồn)**.
-- `tests/run.ps1`: **ĐẠT (258+ bài kiểm thử trên 14 bộ test, 117/117 hàm phủ Unit Test 100%)**.
+- `Measure-SenCodeHealth`: **ĐẠT (`Healthy = True`, `Score = 100/100` trên 38 tệp mã nguồn)**.
+- `tests/run.ps1`: **ĐẠT (260+ bài kiểm thử trên 14 bộ test, 117/117 hàm phủ Unit Test 100%)**.
 
 ## 4. Bước tiếp theo & Danh sách Việc cần làm (`docs/TODO.md`)
 - Toàn bộ 26 hạng mục chính (`TASK-01` → `TASK-26`) trong [docs/TODO.md](./TODO.md) đã đạt trạng thái `[x] Đã hoàn thành`, cùng các hạng mục bảo lưu (`W-09`, `W-26`, `IMP-13`, `IMP-19` và `REPO-01` → `REPO-05` từ 6 kho GitHub) được lưu trữ minh bạch tại `.agents/office/deferred-items.json` và trong [docs/releases/RELEASE-NOTES.vi.md](./releases/RELEASE-NOTES.vi.md) / [docs/releases/RELEASE-NOTES.en.md](./releases/RELEASE-NOTES.en.md).

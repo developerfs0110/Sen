@@ -10,6 +10,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($Workspace -match '["''`$;|&<>\r\n]') {
+    throw "Invalid Workspace path: shell metacharacters are prohibited in scheduled task registration."
+}
 $Workspace = [System.IO.Path]::GetFullPath($Workspace)
 $leaf = Split-Path -Path $Workspace -Leaf
 if ([string]::IsNullOrEmpty($leaf)) {
@@ -23,6 +26,9 @@ $scriptToRun = if (Test-Path -LiteralPath $installedScript) {
 }
 else {
     Join-Path -Path $PSScriptRoot -ChildPath "check-updates.ps1"
+}
+if ($scriptToRun -match '["''`$;|&<>\r\n]') {
+    throw "Invalid check-updates script path: shell metacharacters are prohibited."
 }
 
 $argumentString = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptToRun`" -Workspace `"$Workspace`""

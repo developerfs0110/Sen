@@ -2,416 +2,418 @@
 $ErrorActionPreference = "Stop"
 $senAdversarialPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Adversarial.psm1"
 if (Test-Path -LiteralPath $senAdversarialPath) {
-Import-Module -Name $senAdversarialPath -Global -Force
+  Import-Module -Name $senAdversarialPath -Global -Force
 }
 function Get-SenSupportedHarnesses {
-[CmdletBinding()] param()
-return @(
-@{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("antigravity") },
-@{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("claude") },
-@{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("cursor") },
-@{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true; CapabilityLevel = "rules-only"; CapabilityAlias = "rules-only"; ToolsCovered = @("copilot") },
-@{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial"; CapabilityAlias = "rules-and-skills"; ToolsCovered = @("windsurf") },
-@{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial"; CapabilityAlias = "rules-and-skills"; ToolsCovered = @("codex", "opencode") }
-) | ForEach-Object { [pscustomobject]$_ }
+  [CmdletBinding()] param()
+  return @(
+    @{ Id = "antigravity"; DisplayName = "Google Antigravity IDE"; RuleTarget = ".agents/rules/AGENTS.md"; HookTarget = ".agents/plugins/sen-method/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("antigravity") },
+    @{ Id = "claude"; DisplayName = "Claude Code CLI / IDE"; RuleTarget = "CLAUDE.md"; HookTarget = ".claude/settings.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("claude") },
+    @{ Id = "cursor"; DisplayName = "Cursor AI IDE"; RuleTarget = ".cursor/rules/sen-method.mdc"; HookTarget = ".cursor/hooks.json"; SupportsHooks = $true; CapabilityLevel = "full"; CapabilityAlias = "full"; ToolsCovered = @("cursor") },
+    @{ Id = "copilot"; DisplayName = "GitHub Copilot"; RuleTarget = ".github/copilot-instructions.md"; HookTarget = ".github/hooks/sen-hooks.json"; SupportsHooks = $true; CapabilityLevel = "rules-only"; CapabilityAlias = "rules-only"; ToolsCovered = @("copilot") },
+    @{ Id = "windsurf"; DisplayName = "Windsurf AI IDE"; RuleTarget = ".windsurfrules"; HookTarget = ".windsurf/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial"; CapabilityAlias = "rules-and-skills"; ToolsCovered = @("windsurf") },
+    @{ Id = "codex"; DisplayName = "Codex CLI / OpenCode"; RuleTarget = "AGENTS.md"; HookTarget = ".codex/hooks.json"; SupportsHooks = $true; CapabilityLevel = "partial"; CapabilityAlias = "rules-and-skills"; ToolsCovered = @("codex", "opencode") }
+  ) | ForEach-Object { [pscustomobject]$_ }
 }
 function Get-SenPropValue {
-param($Obj, [string[]]$Names)
-if ($null -eq $Obj) { return "" }
-foreach ($n in $Names) { if ($Obj.PSObject.Properties.Name -contains $n -and $null -ne $Obj.$n -and -not [string]::IsNullOrWhiteSpace([string]$Obj.$n)) { return [string]$Obj.$n } }
-return ""
+  param($Obj, [string[]]$Names)
+  if ($null -eq $Obj) { return "" }
+  foreach ($n in $Names) { if ($Obj.PSObject.Properties.Name -contains $n -and $null -ne $Obj.$n -and -not [string]::IsNullOrWhiteSpace([string]$Obj.$n)) { return [string]$Obj.$n } }
+  return ""
 }
 function ConvertFrom-SenHookPayload {
-[CmdletBinding()] param([Parameter(Mandatory)]$InputObject)
-$rawTool = ""; $a = $null
-if ($InputObject.PSObject.Properties.Name -contains "toolCall" -and $null -ne $InputObject.toolCall) {
-$rawTool = Get-SenPropValue $InputObject.toolCall @("name", "toolName")
-if ($InputObject.toolCall.PSObject.Properties.Name -contains "args") { $a = $InputObject.toolCall.args }
-}
-if (-not $rawTool) { $rawTool = Get-SenPropValue $InputObject @("tool_name", "toolName", "name", "hook_event_name") }
-if ($null -eq $a) {
-$a = if ($InputObject.PSObject.Properties.Name -contains "tool_input" -and $null -ne $InputObject.tool_input) { $InputObject.tool_input }
-elseif ($InputObject.PSObject.Properties.Name -contains "toolArgs" -and $null -ne $InputObject.toolArgs) { $InputObject.toolArgs } else { $InputObject }
-}
-$can = switch -Regex ($rawTool) {
-'^(?i)(run_command|bash|run_terminal_cmd|shell|exec|execute_command)$' { "run_command"; break }
-'^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { "write_file"; break }
-'^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { "edit_file"; break }
-'^(?i)(read_file|read|view_file)$' { "read_file"; break }
-'^(?i)(grep_search|find_by_name|grep|glob|codebase_search|file_search)$' { "grep_search"; break }
-'^(?i)(invoke_subagent|task|dispatch_agent|spawn_agent)$' { "invoke_subagent"; break }
-'^(?i)(send_message|message_agent)$' { "send_message"; break }
-'^(?i)(manage_subagents|manage_task)$' { "manage_subagents"; break }
-default { $rawTool }
-}
-$wsList = [Collections.Generic.List[string]]::new()
-foreach ($p in @("workspacePaths", "workspace_roots")) {
-if ($InputObject.PSObject.Properties.Name -contains $p -and $null -ne $InputObject.$p) { foreach ($w in @($InputObject.$p)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsList.Add([string]$w) } } }
-}
-$cwd = Get-SenPropValue $InputObject @("cwd", "workspacePath", "workspace"); if ($cwd -and -not $wsList.Contains($cwd)) { $wsList.Add($cwd) }
-$ep = ($InputObject.PSObject.Properties.Name -contains "enforceTaskPaths" -and [bool]$InputObject.enforceTaskPaths) -or ($env:SEN_ENFORCE_ALLOWED_PATHS -eq "1")
-$hn = if ($InputObject.PSObject.Properties.Name -contains "toolCall") { "antigravity" } elseif ($InputObject.PSObject.Properties.Name -contains "workspace_roots") { "cursor" } elseif ($InputObject.PSObject.Properties.Name -contains "tool_name") { "claude" } else { "generic" }
-$resp = if ($InputObject.PSObject.Properties.Name -contains "tool_response") { $InputObject.tool_response } elseif ($InputObject.PSObject.Properties.Name -contains "toolResult") { $InputObject.toolResult } else { $InputObject }
-$ecRaw = Get-SenPropValue $resp @("exitCode", "exit_code", "returnCode"); if (-not $ecRaw) { $ecRaw = Get-SenPropValue $InputObject @("exitCode", "exit_code", "returnCode") }
-$hasEc = ($ecRaw -match '^-?\d+$'); $ecVal = if ($hasEc) { [int]$ecRaw } else { -1 }
-$isErr = ((Get-SenPropValue $resp @("is_error", "isError", "status")) -match '^(?i)(true|1|error|failed)$') -or ($hasEc -and $ecVal -ne 0)
-return [pscustomobject][ordered]@{
-RawToolName = $rawTool; CanonicalTool = $can; CommandLine = (Get-SenPropValue $a @("CommandLine", "command", "cmd"))
-TargetPath = (Get-SenPropValue $a @("Path", "file_path", "target_file", "path", "SearchPath", "notebook_path"))
-Query = (Get-SenPropValue $a @("Query", "Pattern", "pattern", "query")); WorkspacePath = $(if ($wsList.Count -gt 0) { $wsList[0] } else { "" })
-WorkspaceList = @($wsList.ToArray()); EnforceTaskPaths = [bool]$ep; Harness = $hn; HasExplicitExitCode = [bool]$hasEc; ExitCode = $ecVal; IsError = [bool]$isErr
-}
+  [CmdletBinding()] param([Parameter(Mandatory)]$InputObject)
+  $rawTool = ""; $a = $null
+  if ($InputObject.PSObject.Properties.Name -contains "toolCall" -and $null -ne $InputObject.toolCall) {
+    $rawTool = Get-SenPropValue $InputObject.toolCall @("name", "toolName")
+    if ($InputObject.toolCall.PSObject.Properties.Name -contains "args") { $a = $InputObject.toolCall.args }
+  }
+  if (-not $rawTool) { $rawTool = Get-SenPropValue $InputObject @("tool_name", "toolName", "name", "hook_event_name") }
+  if ($null -eq $a) {
+    $a = if ($InputObject.PSObject.Properties.Name -contains "tool_input" -and $null -ne $InputObject.tool_input) { $InputObject.tool_input }
+    elseif ($InputObject.PSObject.Properties.Name -contains "toolArgs" -and $null -ne $InputObject.toolArgs) { $InputObject.toolArgs } else { $InputObject }
+  }
+  $can = switch -Regex ($rawTool) {
+    '^(?i)(run_command|bash|run_terminal_cmd|shell|exec|execute_command)$' { "run_command"; break }
+    '^(?i)(write_file|write|create_file|write_to_file|notebookedit)$' { "write_file"; break }
+    '^(?i)(edit_file|edit|multiedit|replace_in_file|patch)$' { "edit_file"; break }
+    '^(?i)(read_file|read|view_file)$' { "read_file"; break }
+    '^(?i)(grep_search|find_by_name|grep|glob|codebase_search|file_search)$' { "grep_search"; break }
+    '^(?i)(invoke_subagent|task|dispatch_agent|spawn_agent)$' { "invoke_subagent"; break }
+    '^(?i)(send_message|message_agent)$' { "send_message"; break }
+    '^(?i)(manage_subagents|manage_task)$' { "manage_subagents"; break }
+    default { $rawTool }
+  }
+  $wsList = [Collections.Generic.List[string]]::new()
+  foreach ($p in @("workspacePaths", "workspace_roots")) {
+    if ($InputObject.PSObject.Properties.Name -contains $p -and $null -ne $InputObject.$p) { foreach ($w in @($InputObject.$p)) { if (-not [string]::IsNullOrWhiteSpace([string]$w)) { $wsList.Add([string]$w) } } }
+  }
+  $cwd = Get-SenPropValue $InputObject @("cwd", "workspacePath", "workspace"); if ($cwd -and -not $wsList.Contains($cwd)) { $wsList.Add($cwd) }
+  $ep = ($InputObject.PSObject.Properties.Name -contains "enforceTaskPaths" -and [bool]$InputObject.enforceTaskPaths) -or ($env:SEN_ENFORCE_ALLOWED_PATHS -eq "1")
+  $hn = if ($InputObject.PSObject.Properties.Name -contains "toolCall") { "antigravity" } elseif ($InputObject.PSObject.Properties.Name -contains "workspace_roots") { "cursor" } elseif ($InputObject.PSObject.Properties.Name -contains "tool_name") { "claude" } else { "generic" }
+  $resp = if ($InputObject.PSObject.Properties.Name -contains "tool_response") { $InputObject.tool_response } elseif ($InputObject.PSObject.Properties.Name -contains "toolResult") { $InputObject.toolResult } else { $InputObject }
+  $ecRaw = Get-SenPropValue $resp @("exitCode", "exit_code", "returnCode"); if (-not $ecRaw) { $ecRaw = Get-SenPropValue $InputObject @("exitCode", "exit_code", "returnCode") }
+  $hasEc = ($ecRaw -match '^-?\d+$'); $ecVal = if ($hasEc) { [int]$ecRaw } else { -1 }
+  $isErr = ((Get-SenPropValue $resp @("is_error", "isError", "status")) -match '^(?i)(true|1|error|failed)$') -or ($hasEc -and $ecVal -ne 0)
+  return [pscustomobject][ordered]@{
+    RawToolName = $rawTool; CanonicalTool = $can; CommandLine = (Get-SenPropValue $a @("CommandLine", "command", "cmd"))
+    TargetPath = (Get-SenPropValue $a @("Path", "file_path", "target_file", "path", "SearchPath", "notebook_path"))
+    Query = (Get-SenPropValue $a @("Query", "Pattern", "pattern", "query")); WorkspacePath = $(if ($wsList.Count -gt 0) { $wsList[0] } else { "" })
+    WorkspaceList = @($wsList.ToArray()); EnforceTaskPaths = [bool]$ep; Harness = $hn; HasExplicitExitCode = [bool]$hasEc; ExitCode = $ecVal; IsError = [bool]$isErr
+  }
 }
 function Update-SenManagedBlock {
-[CmdletBinding()]
-param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Content, [string]$FrontMatter = "")
-$managedBlock = "<!-- SEN-METHOD:START -->`n$($Content.Trim())`n<!-- SEN-METHOD:END -->"
-$dir = [IO.Path]::GetDirectoryName($Path)
-if ($dir -and -not (Test-Path -LiteralPath $dir)) { [IO.Directory]::CreateDirectory($dir) | Out-Null }
-$existing = if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) } else { "" }
-$pattern = '(?s)<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->'
-if ([string]::IsNullOrWhiteSpace($existing)) { $finalText = if (-not [string]::IsNullOrWhiteSpace($FrontMatter)) { "$($FrontMatter.Trim())`n`n$managedBlock`n" } else { "$managedBlock`n" } }
-elseif ($existing -match $pattern) { $finalText = [regex]::Replace($existing, $pattern, $managedBlock) }
-else {
-$prefix = $existing.TrimEnd()
-if (-not [string]::IsNullOrWhiteSpace($FrontMatter) -and -not $prefix.StartsWith("---")) { $prefix = "$($FrontMatter.Trim())`n`n$prefix" }
-$finalText = "$prefix`n`n$managedBlock`n"
-}
-[IO.File]::WriteAllText($Path, $finalText, [Text.UTF8Encoding]::new($false)); return $true
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Content, [string]$FrontMatter = "")
+  $managedBlock = "<!-- SEN-METHOD:START -->`n$($Content.Trim())`n<!-- SEN-METHOD:END -->"
+  $dir = [IO.Path]::GetDirectoryName($Path)
+  if ($dir -and -not (Test-Path -LiteralPath $dir)) { [IO.Directory]::CreateDirectory($dir) | Out-Null }
+  $existing = if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) } else { "" }
+  $pattern = '(?s)<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->'
+  if ([string]::IsNullOrWhiteSpace($existing)) { $finalText = if (-not [string]::IsNullOrWhiteSpace($FrontMatter)) { "$($FrontMatter.Trim())`n`n$managedBlock`n" } else { "$managedBlock`n" } }
+  elseif ($existing -match $pattern) { $finalText = [regex]::Replace($existing, $pattern, $managedBlock) }
+  else {
+    $prefix = $existing.TrimEnd()
+    if (-not [string]::IsNullOrWhiteSpace($FrontMatter) -and -not $prefix.StartsWith("---")) { $prefix = "$($FrontMatter.Trim())`n`n$prefix" }
+    $finalText = "$prefix`n`n$managedBlock`n"
+  }
+  [IO.File]::WriteAllText($Path, $finalText, [Text.UTF8Encoding]::new($false)); return $true
 }
 function Remove-SenManagedBlock {
-[CmdletBinding()]
-param([Parameter(Mandatory)][string]$Path)
-if (-not (Test-Path -LiteralPath $Path)) { return $false }
-$existing = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
-$pattern = '(?s)\r?\n?<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->\r?\n?'
-if ($existing -notmatch $pattern) { return $false }
-$cleaned = ([regex]::Replace($existing, $pattern, "`n")).Trim()
-if ([string]::IsNullOrWhiteSpace($cleaned) -or $cleaned -match '^---\s*[\s\S]*?---$') { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
-else { [IO.File]::WriteAllText($Path, ($cleaned + "`n"), [Text.UTF8Encoding]::new($false)) }
-return $true
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+  if (-not (Test-Path -LiteralPath $Path)) { return $false }
+  $existing = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
+  $pattern = '(?s)\r?\n?<!-- SEN-METHOD:START -->.*?<!-- SEN-METHOD:END -->\r?\n?'
+  if ($existing -notmatch $pattern) { return $false }
+  $cleaned = ([regex]::Replace($existing, $pattern, "`n")).Trim()
+  if ([string]::IsNullOrWhiteSpace($cleaned) -or $cleaned -match '^---\s*[\s\S]*?---$') { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
+  else { [IO.File]::WriteAllText($Path, ($cleaned + "`n"), [Text.UTF8Encoding]::new($false)) }
+  return $true
 }
 function Build-SenHarnessBridgeText {
-param([string]$Workspace, [string]$HarnessId)
-$pRules = Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"
-$rPath = Join-Path $Workspace ".agents/rules/AGENTS.md"
-if (Test-Path -LiteralPath $pRules) {
-$pDir = [IO.Path]::GetDirectoryName($rPath)
-if ($pDir -and -not (Test-Path -LiteralPath $pDir)) { [IO.Directory]::CreateDirectory($pDir) | Out-Null }
-Copy-Item -LiteralPath $pRules -Destination $rPath -Force
-}
-elseif (-not (Test-Path -LiteralPath $rPath)) { $rPath = Join-Path $Workspace "rules/AGENTS.md" }
-$core = if (Test-Path -LiteralPath $rPath) { [IO.File]::ReadAllText($rPath, [Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
-$profP = Join-Path $Workspace ".agents/rules/profile.md"
-$prof = if (Test-Path -LiteralPath $profP) { "`n`n" + [IO.File]::ReadAllText($profP, [Text.Encoding]::UTF8).Trim() } else { "" }
-$info = "## Multi-Harness Bridge ($HarnessId)`n- **Single Source of Truth:** `.agents/` holds rules, skills (`.agents/plugins/sen-method/skills/` and `.agents/skills/`), state (`.agents/office/tasks.json`), and 3D AI Office.`n- **Two-Way Sync:** Saving `docs/superpowers/plans/*.md` or `docs/TODO.md` auto-syncs tasks into `.agents/office/tasks.json`; completing tasks via `Complete-SenTaskReview` auto-ticks `[x]` in Markdown."
-return ($core + $prof + "`n`n" + $info)
+  param([string]$Workspace, [string]$HarnessId)
+  $pRules = Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"
+  $rPath = Join-Path $Workspace ".agents/rules/AGENTS.md"
+  if (Test-Path -LiteralPath $pRules) {
+    $pDir = [IO.Path]::GetDirectoryName($rPath)
+    if ($pDir -and -not (Test-Path -LiteralPath $pDir)) { [IO.Directory]::CreateDirectory($pDir) | Out-Null }
+    Copy-Item -LiteralPath $pRules -Destination $rPath -Force
+  }
+  elseif (-not (Test-Path -LiteralPath $rPath)) { $rPath = Join-Path $Workspace "rules/AGENTS.md" }
+  $core = if (Test-Path -LiteralPath $rPath) { [IO.File]::ReadAllText($rPath, [Text.Encoding]::UTF8).Trim() } else { "# Sen Core Rule" }
+  $profP = Join-Path $Workspace ".agents/rules/profile.md"
+  $prof = if (Test-Path -LiteralPath $profP) { "`n`n" + [IO.File]::ReadAllText($profP, [Text.Encoding]::UTF8).Trim() } else { "" }
+  $info = "## Multi-Harness Bridge ($HarnessId)`n- **Single Source of Truth:** `.agents/` holds rules, skills (`.agents/plugins/sen-method/skills/` and `.agents/skills/`), state (`.agents/office/tasks.json`), and 3D AI Office.`n- **Two-Way Sync:** Saving `docs/superpowers/plans/*.md` or `docs/TODO.md` auto-syncs tasks into `.agents/office/tasks.json`; completing tasks via `Complete-SenTaskReview` auto-ticks `[x]` in Markdown."
+  return ($core + $prof + "`n`n" + $info)
 }
 function Install-SenHarnessHookFile {
-param([string]$Workspace, [string]$HarnessId, [string]$HookRelPath)
-if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
-$fullP = Join-Path $Workspace $HookRelPath; $isWin = ($env:OS -eq "Windows_NT"); $ext = if ($isWin) { "ps1" } else { "sh" }
-$pBase = if ($HarnessId -eq "antigravity") { "scripts" } elseif (Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) { ".agents/plugins/sen-method/scripts" } else { "scripts" }
-$gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/guard.$ext" } else { "sh $pBase/guard.$ext" }
-$pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/office-post.$ext" } else { "sh $pBase/office-post.$ext" }
-if ($HarnessId -eq "antigravity") {
-$agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
-Write-SenAtomicJson -Path $fullP -InputObject $agObj -Depth 8
-return $fullP
-}
-$exObj = Read-SenSafeJson -Path $fullP
-$rHash = if ($null -ne $exObj) { ConvertTo-SenHashtable -InputObject $exObj } else { @{} }
-if ($rHash -isnot [hashtable]) { $rHash = @{} }
-if (-not $rHash.ContainsKey("hooks") -or $rHash["hooks"] -isnot [hashtable]) { $rHash["hooks"] = @{} }
-$rHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|run_command|write_file|edit_file|read_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) })
-$rHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) })
-Write-SenAtomicJson -Path $fullP -InputObject $rHash -Depth 10; return $fullP
+  param([string]$Workspace, [string]$HarnessId, [string]$HookRelPath)
+  if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
+  $fullP = Join-Path $Workspace $HookRelPath; $isWin = ($env:OS -eq "Windows_NT"); $ext = if ($isWin) { "ps1" } else { "sh" }
+  $pBase = if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) -or ($HookRelPath -match '\.agents[/\\]plugins[/\\]sen-method')) { ".agents/plugins/sen-method/scripts" } else { "scripts" }
+  $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/guard.$ext" } else { "sh $pBase/guard.$ext" }
+  $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/office-post.$ext" } else { "sh $pBase/office-post.$ext" }
+  if ($HarnessId -eq "antigravity") {
+    $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
+    Write-SenAtomicJson -Path $fullP -InputObject $agObj -Depth 8
+    return $fullP
+  }
+  $exObj = Read-SenSafeJson -Path $fullP
+  $rHash = if ($null -ne $exObj) { ConvertTo-SenHashtable -InputObject $exObj } else { @{} }
+  if ($rHash -isnot [hashtable]) { $rHash = @{} }
+  if (-not $rHash.ContainsKey("hooks") -or $rHash["hooks"] -isnot [hashtable]) { $rHash["hooks"] = @{} }
+  $rHash["hooks"]["PreToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|run_command|write_file|edit_file|read_file|run_terminal_cmd"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) })
+  $rHash["hooks"]["PostToolUse"] = @([ordered]@{ matcher = "Bash|Write|Edit|MultiEdit|Read|Grep|Glob|run_command|write_file|edit_file|read_file|grep_search|find_by_name|run_terminal_cmd|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) })
+  Write-SenAtomicJson -Path $fullP -InputObject $rHash -Depth 10; return $fullP
 }
 function Resolve-SenRequestedHarnesses {
-param([string[]]$Harness)
-$cat = @(Get-SenSupportedHarnesses)
-if ($null -eq $Harness -or $Harness.Count -eq 0 -or ($Harness -contains "all")) { return $cat }
-$low = @($Harness | ForEach-Object { ([string]$_).ToLowerInvariant().Trim() })
-return @($cat | Where-Object { $low -contains $_.Id })
+  param([string[]]$Harness)
+  $cat = @(Get-SenSupportedHarnesses)
+  if ($null -eq $Harness -or $Harness.Count -eq 0 -or ($Harness -contains "all")) { return $cat }
+  $low = @($Harness | ForEach-Object { ([string]$_).ToLowerInvariant().Trim() })
+  return @($cat | Where-Object { $low -contains $_.Id })
 }
 function Install-SenHarness {
-[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @("all"))
-$sel = @(Resolve-SenRequestedHarnesses -Harness $Harness)
-$inst = [Collections.Generic.List[string]]::new(); $created = [Collections.Generic.List[string]]::new()
-foreach ($h in $sel) {
-$bTxt = Build-SenHarnessBridgeText -Workspace $Workspace -HarnessId $h.Id
-$rFull = Join-Path $Workspace $h.RuleTarget
-if ($h.Id -eq "antigravity") {
-$rDir = [IO.Path]::GetDirectoryName($rFull)
-if ($rDir -and -not (Test-Path -LiteralPath $rDir)) { [IO.Directory]::CreateDirectory($rDir) | Out-Null }
-if (-not (Test-Path -LiteralPath $rFull)) { [IO.File]::WriteAllText($rFull, $bTxt, [Text.UTF8Encoding]::new($false)) }
-}
-else {
-$fm = if ($h.Id -eq "cursor") { "---`ndescription: Sen Methodology Core Rule & Multi-Harness Bridge`nalwaysApply: true`n---" } else { "" }
-[void](Update-SenManagedBlock -Path $rFull -Content $bTxt -FrontMatter $fm)
-}
-$created.Add($h.RuleTarget)
-if ($h.SupportsHooks -and $h.HookTarget) { [void](Install-SenHarnessHookFile -Workspace $Workspace -HarnessId $h.Id -HookRelPath $h.HookTarget); $created.Add($h.HookTarget) }
-$inst.Add($h.Id)
-}
-$lock = Read-SenLock -Workspace $Workspace; $mH = [Collections.Generic.List[string]]::new()
-if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { foreach ($eh in @($lock["harnesses"])) { if ($eh -and -not $mH.Contains([string]$eh)) { $mH.Add([string]$eh) } } }
-foreach ($ih in $inst) { if (-not $mH.Contains($ih)) { $mH.Add($ih) } }
-$lock["harnesses"] = @($mH.ToArray()); Write-SenLock -Workspace $Workspace -Lock $lock
-return [pscustomobject][ordered]@{ Workspace = $Workspace; Installed = @($inst.ToArray()); FilesCreated = @($created.ToArray()); UpdatedLock = $true }
+  [CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @("all"))
+  $sel = @(Resolve-SenRequestedHarnesses -Harness $Harness)
+  $inst = [Collections.Generic.List[string]]::new(); $created = [Collections.Generic.List[string]]::new()
+  foreach ($h in $sel) {
+    $bTxt = Build-SenHarnessBridgeText -Workspace $Workspace -HarnessId $h.Id
+    $rFull = Join-Path $Workspace $h.RuleTarget
+    if ($h.Id -eq "antigravity") {
+      $rDir = [IO.Path]::GetDirectoryName($rFull)
+      if ($rDir -and -not (Test-Path -LiteralPath $rDir)) { [IO.Directory]::CreateDirectory($rDir) | Out-Null }
+      if (-not (Test-Path -LiteralPath $rFull)) { [IO.File]::WriteAllText($rFull, $bTxt, [Text.UTF8Encoding]::new($false)) }
+    }
+    else {
+      $fm = if ($h.Id -eq "cursor") { "---`ndescription: Sen Methodology Core Rule & Multi-Harness Bridge`nalwaysApply: true`n---" } else { "" }
+      [void](Update-SenManagedBlock -Path $rFull -Content $bTxt -FrontMatter $fm)
+    }
+    $created.Add($h.RuleTarget)
+    if ($h.SupportsHooks -and $h.HookTarget) { [void](Install-SenHarnessHookFile -Workspace $Workspace -HarnessId $h.Id -HookRelPath $h.HookTarget); $created.Add($h.HookTarget) }
+    $inst.Add($h.Id)
+  }
+  $lock = Read-SenLock -Workspace $Workspace; $mH = [Collections.Generic.List[string]]::new()
+  if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { foreach ($eh in @($lock["harnesses"])) { if ($eh -and -not $mH.Contains([string]$eh)) { $mH.Add([string]$eh) } } }
+  foreach ($ih in $inst) { if (-not $mH.Contains($ih)) { $mH.Add($ih) } }
+  $lock["harnesses"] = @($mH.ToArray()); Write-SenLock -Workspace $Workspace -Lock $lock
+  return [pscustomobject][ordered]@{ Workspace = $Workspace; Installed = @($inst.ToArray()); FilesCreated = @($created.ToArray()); UpdatedLock = $true }
 }
 function Uninstall-SenHarness {
-[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @())
-$rem = [Collections.Generic.List[string]]::new(); $upd = [Collections.Generic.List[string]]::new()
-foreach ($h in @(Resolve-SenRequestedHarnesses -Harness $Harness)) {
-if ($h.Id -eq "antigravity") { continue }
-if (Remove-SenManagedBlock -Path (Join-Path $Workspace $h.RuleTarget)) { $upd.Add($h.RuleTarget) }
-if ($h.SupportsHooks -and $h.HookTarget) {
-$hFull = Join-Path $Workspace $h.HookTarget; $exObj = Read-SenSafeJson -Path $hFull
-if ($null -ne $exObj) {
-$rHash = ConvertTo-SenHashtable -InputObject $exObj
-if ($rHash -is [hashtable] -and $rHash.ContainsKey("hooks")) { $rHash.Remove("hooks"); Write-SenAtomicJson -Path $hFull -InputObject $rHash -Depth 8; $upd.Add($h.HookTarget) }
-}
-}
-$rem.Add($h.Id)
-}
-$lock = Read-SenLock -Workspace $Workspace
-if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { $lock["harnesses"] = @($lock["harnesses"] | Where-Object { $rem -notcontains [string]$_ }); Write-SenLock -Workspace $Workspace -Lock $lock }
-return [pscustomobject][ordered]@{ Workspace = $Workspace; Uninstalled = @($rem.ToArray()); FilesUpdated = @($upd.ToArray()) }
+  [CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Harness = @())
+  $rem = [Collections.Generic.List[string]]::new(); $upd = [Collections.Generic.List[string]]::new()
+  foreach ($h in @(Resolve-SenRequestedHarnesses -Harness $Harness)) {
+    if ($h.Id -eq "antigravity") { continue }
+    if (Remove-SenManagedBlock -Path (Join-Path $Workspace $h.RuleTarget)) { $upd.Add($h.RuleTarget) }
+    if ($h.SupportsHooks -and $h.HookTarget) {
+      $hFull = Join-Path $Workspace $h.HookTarget; $exObj = Read-SenSafeJson -Path $hFull
+      if ($null -ne $exObj) {
+        $rHash = ConvertTo-SenHashtable -InputObject $exObj
+        if ($rHash -is [hashtable] -and $rHash.ContainsKey("hooks")) { $rHash.Remove("hooks"); Write-SenAtomicJson -Path $hFull -InputObject $rHash -Depth 8; $upd.Add($h.HookTarget) }
+      }
+    }
+    $rem.Add($h.Id)
+  }
+  $lock = Read-SenLock -Workspace $Workspace
+  if ($lock.ContainsKey("harnesses") -and $null -ne $lock["harnesses"]) { $lock["harnesses"] = @($lock["harnesses"] | Where-Object { $rem -notcontains [string]$_ }); Write-SenLock -Workspace $Workspace -Lock $lock }
+  return [pscustomobject][ordered]@{ Workspace = $Workspace; Uninstalled = @($rem.ToArray()); FilesUpdated = @($upd.ToArray()) }
 }
 function Test-SenHarnessStatus {
-[CmdletBinding()] param([Parameter(Mandatory)][string]$Workspace)
-$res = [Collections.Generic.List[object]]::new()
-foreach ($h in @(Get-SenSupportedHarnesses)) {
-$rOk = Test-Path -LiteralPath (Join-Path $Workspace $h.RuleTarget); $hOk = if ($h.SupportsHooks -and $h.HookTarget) { Test-Path -LiteralPath (Join-Path $Workspace $h.HookTarget) } else { $true }
-$res.Add([pscustomobject][ordered]@{ Id = $h.Id; DisplayName = $h.DisplayName; CapabilityLevel = $h.CapabilityLevel; Installed = [bool]($rOk -and $hOk); RuleExists = [bool]$rOk; HookConfigured = [bool]$hOk; RulePath = $h.RuleTarget; HookPath = $h.HookTarget })
-}
-return @($res.ToArray())
+  [CmdletBinding()] param([Parameter(Mandatory)][string]$Workspace)
+  $res = [Collections.Generic.List[object]]::new()
+  foreach ($h in @(Get-SenSupportedHarnesses)) {
+    $rOk = Test-Path -LiteralPath (Join-Path $Workspace $h.RuleTarget); $hOk = if ($h.SupportsHooks -and $h.HookTarget) { Test-Path -LiteralPath (Join-Path $Workspace $h.HookTarget) } else { $true }
+    $res.Add([pscustomobject][ordered]@{ Id = $h.Id; DisplayName = $h.DisplayName; CapabilityLevel = $h.CapabilityLevel; Installed = [bool]($rOk -and $hOk); RuleExists = [bool]$rOk; HookConfigured = [bool]$hOk; RulePath = $h.RuleTarget; HookPath = $h.HookTarget })
+  }
+  return @($res.ToArray())
 }
 function Install-SenGitHooks {
-[CmdletBinding()]
-param([Parameter(Mandatory)][Alias("WorkspacePath", "Path")][string]$Workspace, [switch]$Force)
-$hooksDir = Join-Path (Join-Path $Workspace ".git") "hooks"
-if (-not (Test-Path -LiteralPath $hooksDir)) { [IO.Directory]::CreateDirectory($hooksDir) | Out-Null }
-$wsNorm = $Workspace.Replace('\', '/')
-$cmdBody = "\`$m = if (Test-Path '$wsNorm/scripts/Sen.psm1') { '$wsNorm/scripts/Sen.psm1' } else { '$wsNorm/.agents/plugins/sen-method/scripts/Sen.psm1' }; Import-Module \`$m -ErrorAction SilentlyContinue; \`$gate = Test-SenDeliveryGate -Workspace '$wsNorm'; if (-not \`$gate.Passed) { Write-Error (\`$gate.Issues -join '; '); exit 1 }"
-$scriptTxt = "#!/usr/bin/env sh`n# Sen Zero-Trust Physical Git Gate`nif command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$cmdBody`"; else powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$cmdBody`"; fi`n"
-$utf8 = [Text.UTF8Encoding]::new($false)
-foreach ($hn in @("pre-commit", "pre-push")) {
-$hp = Join-Path $hooksDir $hn
-if ($Force.IsPresent -or (-not (Test-Path -LiteralPath $hp)) -or ([IO.File]::ReadAllText($hp) -match 'Test-SenDeliveryGate')) {
-[IO.File]::WriteAllText($hp, $scriptTxt, $utf8)
-}
-}
-return [pscustomobject][ordered]@{ Installed = $true; Hooks = @("pre-commit", "pre-push"); HooksDir = $hooksDir }
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][Alias("WorkspacePath", "Path")][string]$Workspace, [switch]$Force)
+  $hooksDir = Join-Path (Join-Path $Workspace ".git") "hooks"
+  if (-not (Test-Path -LiteralPath $hooksDir)) { [IO.Directory]::CreateDirectory($hooksDir) | Out-Null }
+  $wsNorm = $Workspace.Replace('\', '/')
+  $cmdBody = "\`$m = if (Test-Path '$wsNorm/scripts/Sen.psm1') { '$wsNorm/scripts/Sen.psm1' } else { '$wsNorm/.agents/plugins/sen-method/scripts/Sen.psm1' }; Import-Module \`$m -ErrorAction SilentlyContinue; \`$gate = Test-SenDeliveryGate -Workspace '$wsNorm'; if (-not \`$gate.Passed) { Write-Error (\`$gate.Issues -join '; '); exit 1 }"
+  $scriptTxt = "#!/usr/bin/env sh`n# Sen Zero-Trust Physical Git Gate`nif command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$cmdBody`"; else powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$cmdBody`"; fi`n"
+  $utf8 = [Text.UTF8Encoding]::new($false)
+  foreach ($hn in @("pre-commit", "pre-push")) {
+    $hp = Join-Path $hooksDir $hn
+    if ($Force.IsPresent -or (-not (Test-Path -LiteralPath $hp)) -or ([IO.File]::ReadAllText($hp) -match 'Test-SenDeliveryGate')) {
+      [IO.File]::WriteAllText($hp, $scriptTxt, $utf8)
+    }
+  }
+  return [pscustomobject][ordered]@{ Installed = $true; Hooks = @("pre-commit", "pre-push"); HooksDir = $hooksDir }
 }
 function Sync-SenPlanToTasks {
-[CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$PlanPath = "")
-$synced = 0; $existingIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($t in @(Get-SenTasks -Workspace $Workspace)) { if ($t -and $t.id) { [void]$existingIds.Add([string]$t.id) } }
-$todoPath = Join-Path -Path $Workspace -ChildPath "docs/TODO.md"
-if (Test-Path -LiteralPath $todoPath) {
-$todoText = [IO.File]::ReadAllText($todoPath, [Text.Encoding]::UTF8)
-foreach ($m in [regex]::Matches($todoText, '(?m)^-\s*\[([ xX~])\]\s*\*\*([A-Za-z0-9_-]+)(?:\s*\(([^)]+)\))?:\s*(.+?)\*\*\s*$')) {
-$tid = $m.Groups[2].Value.Trim(); $ttitle = $m.Groups[4].Value.Trim()
-if (-not $existingIds.Contains($tid)) {
-$st = if ($m.Groups[1].Value -match '[xX]') { "done" } else { "backlog" }
-[void](New-SenTask -Workspace $Workspace -Id $tid -Title $ttitle -Tier 2 -Module "Backlog" -Assignee "pm" -Status $st)
-if ($st -eq "done") { [void](Complete-SenTaskReview -Workspace $Workspace -Id $tid -Passed $true -Reviewer "pm" -EvidenceCommand "todo-verified" -ExitCode 0 -Notes "Synced [x] from TODO.md" -FromTodoSync) }
-[void]$existingIds.Add($tid); $synced++
-}
-}
-}
-$planFiles = [Collections.Generic.List[string]]::new()
-if (-not [string]::IsNullOrWhiteSpace($PlanPath) -and (Test-Path -LiteralPath $PlanPath)) { $planFiles.Add((Resolve-Path -LiteralPath $PlanPath).Path) }
-elseif (Test-Path -LiteralPath (Join-Path $Workspace "docs/superpowers/plans")) {
-foreach ($pfItem in @(Get-ChildItem -LiteralPath (Join-Path $Workspace "docs/superpowers/plans") -Filter "*.md" -File | Sort-Object Name)) { $planFiles.Add($pfItem.FullName) }
-}
-foreach ($pf in $planFiles) {
-$rawPlan = [IO.File]::ReadAllText($pf, [Text.Encoding]::UTF8)
-$basePrefix = ([IO.Path]::GetFileNameWithoutExtension($pf) -replace '[^A-Za-z0-9_-]', '-').ToUpperInvariant(); $prevTaskId = $null
-foreach ($sec in [regex]::Matches($rawPlan, '(?ms)^###\s+Task\s+(\d+)(?:\s*\(`?([A-Za-z0-9_-]+)`?(?:[^)]*)\))?\s*:\s*([^\r\n]+)(.*?)(?=^###\s+Task\s+\d+|\z)')) {
-$num = $sec.Groups[1].Value.Trim(); $explicitId = $sec.Groups[2].Value.Trim()
-$tid = if (-not [string]::IsNullOrWhiteSpace($explicitId)) { $explicitId } elseif (-not $existingIds.Contains("PLAN-T$num")) { "PLAN-T$num" } else { "$basePrefix-T$num" }
-if ($existingIds.Contains($tid)) { $prevTaskId = $tid; continue }
-$title = $sec.Groups[3].Value.Trim(); $body = $sec.Groups[4].Value
-$paths = @([regex]::Matches($body, '(?m)^-\s*(?:Create|Modify|Test):\s*`((?:[A-Za-z]:[\\/])?[^`:\r\n]+)') | ForEach-Object { $_.Groups[1].Value.Trim() } | Where-Object { $_ })
-$isParallel = ($title -match '(?i)\b(independent|parallel|song\s+song)\b') -or ($body -match '(?i)\b(DependsOn:\s*none|independent\s+task|parallel\s+execution)\b')
-$deps = if ($prevTaskId -and (-not $isParallel)) { @($prevTaskId) } else { @() }
-[void](New-SenTask -Workspace $Workspace -Id $tid -Title $title -Tier 3 -RiskLevel "high" -Module "Plan" -Assignee "dev_be" -DependsOn $deps -AllowedPaths $paths)
-[void]$existingIds.Add($tid); $synced++; $prevTaskId = $tid
-}
-}
-return [pscustomobject][ordered]@{ Workspace = $Workspace; SyncedCount = $synced }
+  [CmdletBinding()]
+  param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$PlanPath = "")
+  $synced = 0; $existingIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($t in @(Get-SenTasks -Workspace $Workspace)) { if ($t -and $t.id) { [void]$existingIds.Add([string]$t.id) } }
+  $todoPath = Join-Path -Path $Workspace -ChildPath "docs/TODO.md"
+  if (Test-Path -LiteralPath $todoPath) {
+    $todoText = [IO.File]::ReadAllText($todoPath, [Text.Encoding]::UTF8)
+    foreach ($m in [regex]::Matches($todoText, '(?m)^-\s*\[([ xX~])\]\s*\*\*([A-Za-z0-9_-]+)(?:\s*\(([^)]+)\))?:\s*(.+?)\*\*\s*$')) {
+      $tid = $m.Groups[2].Value.Trim(); $ttitle = $m.Groups[4].Value.Trim()
+      if (-not $existingIds.Contains($tid)) {
+        $st = if ($m.Groups[1].Value -match '[xX]') { "done" } else { "backlog" }
+        [void](New-SenTask -Workspace $Workspace -Id $tid -Title $ttitle -Tier 2 -Module "Backlog" -Assignee "pm" -Status $st)
+        if ($st -eq "done") { [void](Complete-SenTaskReview -Workspace $Workspace -Id $tid -Passed $true -Reviewer "pm" -EvidenceCommand "todo-verified" -ExitCode 0 -Notes "Synced [x] from TODO.md" -FromTodoSync) }
+        [void]$existingIds.Add($tid); $synced++
+      }
+    }
+  }
+  $planFiles = [Collections.Generic.List[string]]::new()
+  if (-not [string]::IsNullOrWhiteSpace($PlanPath) -and (Test-Path -LiteralPath $PlanPath)) { $planFiles.Add((Resolve-Path -LiteralPath $PlanPath).Path) }
+  elseif (Test-Path -LiteralPath (Join-Path $Workspace "docs/superpowers/plans")) {
+    foreach ($pfItem in @(Get-ChildItem -LiteralPath (Join-Path $Workspace "docs/superpowers/plans") -Filter "*.md" -File | Sort-Object Name)) { $planFiles.Add($pfItem.FullName) }
+  }
+  foreach ($pf in $planFiles) {
+    $rawPlan = [IO.File]::ReadAllText($pf, [Text.Encoding]::UTF8)
+    $basePrefix = ([IO.Path]::GetFileNameWithoutExtension($pf) -replace '[^A-Za-z0-9_-]', '-').ToUpperInvariant(); $prevTaskId = $null
+    foreach ($sec in [regex]::Matches($rawPlan, '(?ms)^###\s+Task\s+(\d+)(?:\s*\(`?([A-Za-z0-9_-]+)`?(?:[^)]*)\))?\s*:\s*([^\r\n]+)(.*?)(?=^###\s+Task\s+\d+|\z)')) {
+      $num = $sec.Groups[1].Value.Trim(); $explicitId = $sec.Groups[2].Value.Trim()
+      $tid = if (-not [string]::IsNullOrWhiteSpace($explicitId)) { $explicitId } elseif (-not $existingIds.Contains("PLAN-T$num")) { "PLAN-T$num" } else { "$basePrefix-T$num" }
+      if ($existingIds.Contains($tid)) { $prevTaskId = $tid; continue }
+      $title = $sec.Groups[3].Value.Trim(); $body = $sec.Groups[4].Value
+      $paths = @([regex]::Matches($body, '(?m)^-\s*(?:Create|Modify|Test):\s*`((?:[A-Za-z]:[\\/])?[^`:\r\n]+)') | ForEach-Object { $_.Groups[1].Value.Trim() } | Where-Object { $_ })
+      $isParallel = ($title -match '(?i)\b(independent|parallel|song\s+song)\b') -or ($body -match '(?i)\b(DependsOn:\s*none|independent\s+task|parallel\s+execution)\b')
+      $deps = if ($prevTaskId -and (-not $isParallel)) { @($prevTaskId) } else { @() }
+      [void](New-SenTask -Workspace $Workspace -Id $tid -Title $title -Tier 3 -RiskLevel "high" -Module "Plan" -Assignee "dev_be" -DependsOn $deps -AllowedPaths $paths)
+      [void]$existingIds.Add($tid); $synced++; $prevTaskId = $tid
+    }
+  }
+  return [pscustomobject][ordered]@{ Workspace = $Workspace; SyncedCount = $synced }
 }
 function Sync-SenTasksToMarkdown {
-[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
-$doneIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($t in @(Get-SenTasks -Workspace $Workspace)) { if ($t -and [string]$t.status -eq "done") { [void]$doneIds.Add([string]$t.id) } }
-if ($doneIds.Count -eq 0) { return [pscustomobject]@{ UpdatedFiles = 0 } }
-$upd = 0; $utf8 = [Text.UTF8Encoding]::new($false)
-foreach ($tp in @((Join-Path $Workspace "docs/TODO.md"), (Join-Path $Workspace "Code/sen-method/docs/TODO.md"))) {
-if (-not (Test-Path -LiteralPath $tp)) { continue }
-$txt = [IO.File]::ReadAllText($tp, $utf8); $orig = $txt
-foreach ($did in $doneIds) { $txt = [regex]::Replace($txt, "(?m)^(-\s*)\[[ ~]\](\s*\*\*$([regex]::Escape($did))\b)", '$1[x]$2') }
-if ($txt -ne $orig) { [IO.File]::WriteAllText($tp, $txt, $utf8); $upd++ }
-}
-$plDir = Join-Path $Workspace "docs/superpowers/plans"
-if (Test-Path -LiteralPath $plDir) {
-foreach ($pf in @(Get-ChildItem -LiteralPath $plDir -Filter "*.md" -File)) {
-$pTxt = [IO.File]::ReadAllText($pf.FullName, $utf8); $pOrig = $pTxt
-foreach ($did in $doneIds) {
-$secPat = "(?ms)(^###\s+Task\s+\d+[^\r\n]*\b$([regex]::Escape($did))\b[^\r\n]*\r?\n)(.*?)(?=^###\s+Task\s+\d+|\z)"
-if ($pTxt -match $secPat) { $pTxt = [regex]::Replace($pTxt, $secPat, { param($m) $m.Groups[1].Value + [regex]::Replace($m.Groups[2].Value, '(?m)^(-\s*)\[ \]', '$1[x]') }) }
-}
-if ($pTxt -ne $pOrig) { [IO.File]::WriteAllText($pf.FullName, $pTxt, $utf8); $upd++ }
-}
-}
-return [pscustomobject]@{ UpdatedFiles = $upd }
+  [CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
+  $doneIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($t in @(Get-SenTasks -Workspace $Workspace)) { if ($t -and [string]$t.status -eq "done") { [void]$doneIds.Add([string]$t.id) } }
+  if ($doneIds.Count -eq 0) { return [pscustomobject]@{ UpdatedFiles = 0 } }
+  $upd = 0; $utf8 = [Text.UTF8Encoding]::new($false)
+  foreach ($tp in @((Join-Path $Workspace "docs/TODO.md"), (Join-Path $Workspace "Code/sen-method/docs/TODO.md"))) {
+    if (-not (Test-Path -LiteralPath $tp)) { continue }
+    $txt = [IO.File]::ReadAllText($tp, $utf8); $orig = $txt
+    foreach ($did in $doneIds) { $txt = [regex]::Replace($txt, "(?m)^(-\s*)\[[ ~]\](\s*\*\*$([regex]::Escape($did))\b)", '$1[x]$2') }
+    if ($txt -ne $orig) { [IO.File]::WriteAllText($tp, $txt, $utf8); $upd++ }
+  }
+  $plDir = Join-Path $Workspace "docs/superpowers/plans"
+  if (Test-Path -LiteralPath $plDir) {
+    foreach ($pf in @(Get-ChildItem -LiteralPath $plDir -Filter "*.md" -File)) {
+      $pTxt = [IO.File]::ReadAllText($pf.FullName, $utf8); $pOrig = $pTxt
+      foreach ($did in $doneIds) {
+        $secPat = "(?ms)(^###\s+Task\s+\d+[^\r\n]*\b$([regex]::Escape($did))\b[^\r\n]*\r?\n)(.*?)(?=^###\s+Task\s+\d+|\z)"
+        if ($pTxt -match $secPat) { $pTxt = [regex]::Replace($pTxt, $secPat, { param($m) $m.Groups[1].Value + [regex]::Replace($m.Groups[2].Value, '(?m)^(-\s*)\[ \]', '$1[x]') }) }
+      }
+      if ($pTxt -ne $pOrig) { [IO.File]::WriteAllText($pf.FullName, $pTxt, $utf8); $upd++ }
+    }
+  }
+  return [pscustomobject]@{ UpdatedFiles = $upd }
 }
 function Get-SenProcessCatalog {
-[CmdletBinding()] param([string]$ManifestPath = "")
-$p = if ($ManifestPath) { $ManifestPath } else { Join-Path $PSScriptRoot "process-manifest.json" }
-$o = Read-SenSafeJson -Path $p; if ($null -eq $o) { throw "Manifest not found: $p" }; return $o
+  [CmdletBinding()] param([string]$ManifestPath = "")
+  $p = if ($ManifestPath) { $ManifestPath } else { Join-Path $PSScriptRoot "process-manifest.json" }
+  $o = Read-SenSafeJson -Path $p; if ($null -eq $o) { throw "Manifest not found: $p" }; return $o
 }
 function Initialize-SenProcessAudit {
-[CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectName = "Project", [ValidateRange(1, 3)][int]$Tier = 3, [ValidateSet("core", "web_mobile", "all")][string]$ProjectScope = "core", [switch]$PreserveLatched)
-$cat = Get-SenProcessCatalog; $aPath = Join-Path $Workspace ".agents/office/process-audit.json"
-$ex = Read-SenSafeJson -Path $aPath; $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-$same = ($null -ne $ex) -and ([string]$ex.projectName -eq $ProjectName)
-$start = if ($PreserveLatched -and $same -and $ex.PSObject.Properties['startedAt'] -and $ex.startedAt) { [string]$ex.startedAt } else { $now }
-$lMap = @{}
-if ($PreserveLatched -and $same -and $ex.PSObject.Properties.Name -contains "selectedSteps") {
-foreach ($os in @($ex.selectedSteps)) { if ($os -and [bool]$os.latched -and [string]$os.verifiedAt -ge $start) { $lMap[[string]$os.id] = $os } }
-}
-$sel = [Collections.Generic.List[object]]::new()
-foreach ($s in @($cat.steps)) {
-if ([int]$s.minTier -gt $Tier -or ([string]$s.scope -eq "web_mobile" -and $ProjectScope -eq "core")) { continue }
-$sid = [string]$s.id; $lat = $lMap.ContainsKey($sid) -or ($sid -in @("S1-RISK", "S1-AUDIT-INIT"))
-$vAt = if ($lMap.ContainsKey($sid)) { [string]$lMap[$sid].verifiedAt } elseif ($lat) { $now } else { $null }
-$sel.Add([pscustomobject][ordered]@{ id = $sid; stage = [int]$s.stage; title = [string]$s.title; passed = [bool]$lat; latched = [bool]$lat; verifiedAt = $vAt })
-}
-$cfg = Get-SenOfficeConfig -Workspace $Workspace; $m = if ($cfg -and $cfg.mode) { [string]$cfg.mode } else { "eco" }; $pt = if ($cfg -and $cfg.port) { [int]$cfg.port } else { 47890 }
-$act = if ($Tier -lt 2) { "none" } elseif ($m -eq "off") { "offer_enable" } else { "auto_start" }
-$obj = [pscustomobject][ordered]@{ manifestVersion = [string]$cat.manifestVersion; projectName = $ProjectName; tier = $Tier; projectScope = $ProjectScope; officeMode = $m; officeUrl = "http://127.0.0.1:$pt/"; officeAction = $act; startedAt = $start; updatedAt = $now; selectedSteps = @($sel.ToArray()) }
-Write-SenAtomicJson -Path $aPath -InputObject $obj -Depth 8; return $obj
+  [CmdletBinding()]
+  param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectName = "Project", [ValidateRange(1, 3)][int]$Tier = 3, [ValidateSet("core", "web_mobile", "all")][string]$ProjectScope = "core", [switch]$PreserveLatched)
+  $cat = Get-SenProcessCatalog; $aPath = Join-Path $Workspace ".agents/office/process-audit.json"
+  $ex = Read-SenSafeJson -Path $aPath; $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $same = ($null -ne $ex) -and ([string]$ex.projectName -eq $ProjectName)
+  $start = if ($PreserveLatched -and $same -and $ex.PSObject.Properties['startedAt'] -and $ex.startedAt) { [string]$ex.startedAt } else { $now }
+  $lMap = @{}
+  if ($PreserveLatched -and $same -and $ex.PSObject.Properties.Name -contains "selectedSteps") {
+    foreach ($os in @($ex.selectedSteps)) { if ($os -and [bool]$os.latched -and [string]$os.verifiedAt -ge $start) { $lMap[[string]$os.id] = $os } }
+  }
+  $sel = [Collections.Generic.List[object]]::new()
+  foreach ($s in @($cat.steps)) {
+    if ([int]$s.minTier -gt $Tier -or ([string]$s.scope -eq "web_mobile" -and $ProjectScope -eq "core")) { continue }
+    $sid = [string]$s.id; $lat = $lMap.ContainsKey($sid) -or ($sid -in @("S1-RISK", "S1-AUDIT-INIT"))
+    $vAt = if ($lMap.ContainsKey($sid)) { [string]$lMap[$sid].verifiedAt } elseif ($lat) { $now } else { $null }
+    $sel.Add([pscustomobject][ordered]@{ id = $sid; stage = [int]$s.stage; title = [string]$s.title; passed = [bool]$lat; latched = [bool]$lat; verifiedAt = $vAt })
+  }
+  $cfg = Get-SenOfficeConfig -Workspace $Workspace; $m = if ($cfg -and $cfg.mode) { [string]$cfg.mode } else { "eco" }; $pt = if ($cfg -and $cfg.port) { [int]$cfg.port } else { 47890 }
+  $act = if ($Tier -lt 2) { "none" } elseif ($m -eq "off") { "offer_enable" } else { "auto_start" }
+  $obj = [pscustomobject][ordered]@{ manifestVersion = [string]$cat.manifestVersion; projectName = $ProjectName; tier = $Tier; projectScope = $ProjectScope; officeMode = $m; officeUrl = "http://127.0.0.1:$pt/"; officeAction = $act; startedAt = $start; updatedAt = $now; selectedSteps = @($sel.ToArray()) }
+  Write-SenAtomicJson -Path $aPath -InputObject $obj -Depth 8; return $obj
 }
 function Test-SenSingleStepEvidence {
-param([string]$Workspace, [string]$StepId, [string]$SessionStartedAt = "", [string]$ProjectPath = "")
-$targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
-$minUtc = if ([string]::IsNullOrWhiteSpace($SessionStartedAt)) { [DateTime]::MinValue } else { [DateTime]::Parse($SessionStartedAt, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal) }
-switch ($StepId) {
-"S1-RISK" { return $true }
-"S1-AUDIT-INIT" { return (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/process-audit.json")) }
-"S2-EXPERT-COST" {
-$daFile = Join-Path $Workspace ".agents/office/dialectical-audit.json"
-if ((Test-Path -LiteralPath $daFile) -and (Get-Item -LiteralPath $daFile).LastWriteTimeUtc -ge $minUtc -and [bool](Read-SenSafeJson -Path $daFile).Passed) { return $true }
-$sDir = Join-Path $Workspace "docs/superpowers/specs"
-if (-not (Test-Path -LiteralPath $sDir)) { return $false }
-foreach ($f in @(Get-ChildItem -LiteralPath $sDir -Filter "*.md" -File | Where-Object { $_.LastWriteTimeUtc -ge $minUtc })) {
-if ([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8) -match '(?i)(Resource Cost|T.i nguy.n ti.u t.n|Best-of-the-Best)') { return $true }
-}
-return $false
-}
-"S2-DESIGN-SPEC" {
-$sDir = Join-Path $Workspace "docs/superpowers/specs"
-$specs = if (Test-Path -LiteralPath $sDir) { @(Get-ChildItem -LiteralPath $sDir -Filter "*.md" -File | Where-Object { $_.Length -gt 0 -and $_.LastWriteTimeUtc -ge $minUtc }) } else { @() }
-if ($specs.Count -eq 0) { return $false }
-$sc = Read-SenOfficeShowcase -Workspace $Workspace
-return ($null -ne $sc -and $null -ne $sc.phase1)
-}
-"S2-IMPL-PLAN" {
-$pDir = Join-Path $Workspace "docs/superpowers/plans"
-return ((Test-Path -LiteralPath $pDir) -and @(Get-ChildItem -LiteralPath $pDir -Filter "*.md" -File | Where-Object { $_.Length -gt 0 -and $_.LastWriteTimeUtc -ge $minUtc }).Count -gt 0)
-}
-"S2-TASK-DAG" {
-[void](Sync-SenPlanToTasks -Workspace $Workspace)
-return (@(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and (-not $SessionStartedAt -or [string]$_.updatedAt -ge $SessionStartedAt -or [string]$_.createdAt -ge $SessionStartedAt) }).Count -gt 0)
-}
-"S3-RESTORE-POINT" {
-$rpDir = Join-Path $Workspace ".agents/.sen-restore"
-if (-not (Test-Path -LiteralPath $rpDir)) { return $false }
-return (@(Get-ChildItem -LiteralPath $rpDir -Directory | Where-Object { $mf = Join-Path $_.FullName "manifest.json"; (Test-Path -LiteralPath $mf) -and (Get-Item -LiteralPath $mf).LastWriteTimeUtc -ge $minUtc }).Count -gt 0)
-}
-"S3-TDD-VERIFY" {
-[void](Sync-SenPlanToTasks -Workspace $Workspace)
-if ((Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) -and (-not (Test-SenHungTasks -Workspace $Workspace).Healthy)) { return $false }
-$active = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
-if ($active.Count -eq 0) { return $false }
-$sessDone = @($active | Where-Object { -not $SessionStartedAt -or [string]$_.updatedAt -ge $SessionStartedAt -or ($_.evidence -and [string]$_.evidence.verifiedAt -ge $SessionStartedAt) })
-if ($sessDone.Count -eq 0) { return $false }
-return (@($active | Where-Object { [string]$_.status -ne "done" -or $null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 }).Count -eq 0)
-}
-"S3-TWOWAY-SYNC" {
-[void](Sync-SenPlanToTasks -Workspace $Workspace); [void](Sync-SenTasksToMarkdown -Workspace $Workspace)
-return (@(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and [string]$_.status -ne "done" }).Count -eq 0)
-}
-"S4-CLEAN-CODE" { return [bool](Measure-SenCodeHealth -Path $targetDir).Healthy }
-"S4-VN-LAW" { $vl = Invoke-SenVnLawScan -Path $targetDir; return ([bool]$vl.CompliantCodeLevel -and ($vl.Verdict -in @("PASS", "NOT_APPLICABLE"))) }
-"S4-CONTEXT-REPORT" {
-$ctxFile = Join-Path $Workspace "docs/CONTEXT.md"
-if (-not ((Test-Path -LiteralPath $ctxFile) -and (Get-Item -LiteralPath $ctxFile).Length -gt 0 -and (Get-Item -LiteralPath $ctxFile).LastWriteTimeUtc -ge $minUtc)) { return $false }
-$sc = Read-SenOfficeShowcase -Workspace $Workspace
-return ($null -ne $sc -and $null -ne $sc.phase2)
-}
-}
-return $true
+  param([string]$Workspace, [string]$StepId, [string]$SessionStartedAt = "", [string]$ProjectPath = "")
+  $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
+  $minUtc = if ([string]::IsNullOrWhiteSpace($SessionStartedAt)) { [DateTime]::MinValue } else { [DateTime]::Parse($SessionStartedAt, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal) }
+  switch ($StepId) {
+    "S1-RISK" { return ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/process-audit.json")) -or (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/current-intake.json"))) }
+    "S1-AUDIT-INIT" { return (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/process-audit.json")) }
+    "S2-EXPERT-COST" {
+      $daFile = Join-Path $Workspace ".agents/office/dialectical-audit.json"
+      if ((Test-Path -LiteralPath $daFile) -and (Get-Item -LiteralPath $daFile).LastWriteTimeUtc -ge $minUtc -and [bool](Read-SenSafeJson -Path $daFile).Passed) { return $true }
+      $sDir = Join-Path $Workspace "docs/superpowers/specs"
+      if (-not (Test-Path -LiteralPath $sDir)) { return $false }
+      foreach ($f in @(Get-ChildItem -LiteralPath $sDir -Filter "*.md" -File | Where-Object { $_.LastWriteTimeUtc -ge $minUtc })) {
+        $sTxt = [IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8)
+        if (($sTxt -match '(?i)(Resource Cost|T.i nguy.n ti.u t.n|Best-of-the-Best)') -and ($sTxt -match '(?m)^\s*\|.+\|.+\|')) { return $true }
+      }
+      return $false
+    }
+    "S2-DESIGN-SPEC" {
+      $sDir = Join-Path $Workspace "docs/superpowers/specs"
+      $specs = if (Test-Path -LiteralPath $sDir) { @(Get-ChildItem -LiteralPath $sDir -Filter "*.md" -File | Where-Object { $_.Length -gt 0 -and $_.LastWriteTimeUtc -ge $minUtc }) } else { @() }
+      if ($specs.Count -eq 0) { return $false }
+      $sc = Read-SenOfficeShowcase -Workspace $Workspace
+      return ($null -ne $sc -and $null -ne $sc.phase1)
+    }
+    "S2-IMPL-PLAN" {
+      $pDir = Join-Path $Workspace "docs/superpowers/plans"
+      return ((Test-Path -LiteralPath $pDir) -and @(Get-ChildItem -LiteralPath $pDir -Filter "*.md" -File | Where-Object { $_.Length -gt 0 -and $_.LastWriteTimeUtc -ge $minUtc }).Count -gt 0)
+    }
+    "S2-TASK-DAG" {
+      [void](Sync-SenPlanToTasks -Workspace $Workspace)
+      return (@(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and (-not $SessionStartedAt -or [string]$_.updatedAt -ge $SessionStartedAt -or [string]$_.createdAt -ge $SessionStartedAt) }).Count -gt 0)
+    }
+    "S3-RESTORE-POINT" {
+      $rpDir = Join-Path $Workspace ".agents/.sen-restore"
+      if (-not (Test-Path -LiteralPath $rpDir)) { return $false }
+      return (@(Get-ChildItem -LiteralPath $rpDir -Directory | Where-Object { $mf = Join-Path $_.FullName "manifest.json"; (Test-Path -LiteralPath $mf) -and (Get-Item -LiteralPath $mf).LastWriteTimeUtc -ge $minUtc }).Count -gt 0)
+    }
+    "S3-TDD-VERIFY" {
+      [void](Sync-SenPlanToTasks -Workspace $Workspace)
+      if ((Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) -and (-not (Test-SenHungTasks -Workspace $Workspace).Healthy)) { return $false }
+      $active = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
+      if ($active.Count -eq 0) { return $false }
+      $sessDone = @($active | Where-Object { -not $SessionStartedAt -or [string]$_.updatedAt -ge $SessionStartedAt -or ($_.evidence -and [string]$_.evidence.verifiedAt -ge $SessionStartedAt) })
+      if ($sessDone.Count -eq 0) { return $false }
+      return (@($active | Where-Object { [string]$_.status -ne "done" -or $null -eq $_.evidence -or [int]$_.evidence.exitCode -ne 0 }).Count -eq 0)
+    }
+    "S3-TWOWAY-SYNC" {
+      [void](Sync-SenPlanToTasks -Workspace $Workspace); [void](Sync-SenTasksToMarkdown -Workspace $Workspace)
+      return (@(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and [string]$_.status -ne "done" }).Count -eq 0)
+    }
+    "S4-CLEAN-CODE" { return [bool](Measure-SenCodeHealth -Path $targetDir).Healthy }
+    "S4-VN-LAW" { $vl = Invoke-SenVnLawScan -Path $targetDir; return ([bool]$vl.CompliantCodeLevel -and ($vl.Verdict -in @("PASS", "NOT_APPLICABLE"))) }
+    "S4-CONTEXT-REPORT" {
+      $ctxFile = Join-Path $Workspace "docs/CONTEXT.md"
+      if (-not ((Test-Path -LiteralPath $ctxFile) -and (Get-Item -LiteralPath $ctxFile).Length -gt 0 -and (Get-Item -LiteralPath $ctxFile).LastWriteTimeUtc -ge $minUtc)) { return $false }
+      $sc = Read-SenOfficeShowcase -Workspace $Workspace
+      return ($null -ne $sc -and $null -ne $sc.phase2)
+    }
+  }
+  return $true
 }
 function Test-SenStageGate {
-[CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [ValidateRange(1, 4)][int]$Stage, [switch]$IgnoreLatched, [string]$ProjectPath = "")
-$aPath = Join-Path $Workspace ".agents/office/process-audit.json"; $audit = Read-SenSafeJson -Path $aPath
-if ($null -eq $audit) { $audit = Initialize-SenProcessAudit -Workspace $Workspace -Tier 3 -ProjectScope "core" }
-elseif ([string]$audit.manifestVersion -ne [string](Get-SenProcessCatalog).manifestVersion) {
-$audit = Initialize-SenProcessAudit -Workspace $Workspace -ProjectName ([string]$audit.projectName) -Tier ([int]$audit.tier) -ProjectScope ([string]$audit.projectScope) -PreserveLatched
-}
-$ss = if ($audit.PSObject.Properties['startedAt'] -and $audit.startedAt) { [string]$audit.startedAt } else { "" }
-$miss = [Collections.Generic.List[string]]::new(); $chg = $false
-foreach ($st in @($audit.selectedSteps)) {
-if ([int]$st.stage -gt $Stage) { continue }
-$fresh = [bool]$st.latched -and (-not $IgnoreLatched.IsPresent) -and (-not $ss -or [string]$st.verifiedAt -ge $ss) -and ([string]$st.id -in @("S1-RISK", "S1-AUDIT-INIT") -or [string]$st.verifiedAt -gt $ss -or (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $ss -ProjectPath $ProjectPath))
-if ($fresh) { continue }
-if (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $ss -ProjectPath $ProjectPath) {
-$st.passed = $true; $st.latched = $true; $st.verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $chg = $true
-}
-else {
-if ([bool]$st.passed -or [bool]$st.latched) { $st.passed = $false; $st.latched = $false; $st.verifiedAt = $null; $chg = $true }
-$miss.Add([string]$st.id)
-}
-}
-if ($chg) { $audit.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); Write-SenAtomicJson -Path $aPath -InputObject $audit -Depth 8 }
-return [pscustomobject][ordered]@{ Stage = $Stage; Passed = ($miss.Count -eq 0); MissingSteps = @($miss.ToArray()); Audit = $audit }
+  [CmdletBinding()]
+  param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [ValidateRange(1, 4)][int]$Stage, [switch]$IgnoreLatched, [string]$ProjectPath = "")
+  $aPath = Join-Path $Workspace ".agents/office/process-audit.json"; $audit = Read-SenSafeJson -Path $aPath
+  if ($null -eq $audit) { $audit = Initialize-SenProcessAudit -Workspace $Workspace -Tier 3 -ProjectScope "core" }
+  elseif ([string]$audit.manifestVersion -ne [string](Get-SenProcessCatalog).manifestVersion) {
+    $audit = Initialize-SenProcessAudit -Workspace $Workspace -ProjectName ([string]$audit.projectName) -Tier ([int]$audit.tier) -ProjectScope ([string]$audit.projectScope) -PreserveLatched
+  }
+  $ss = if ($audit.PSObject.Properties['startedAt'] -and $audit.startedAt) { [string]$audit.startedAt } else { "" }
+  $miss = [Collections.Generic.List[string]]::new(); $chg = $false
+  foreach ($st in @($audit.selectedSteps)) {
+    if ([int]$st.stage -gt $Stage) { continue }
+    $fresh = [bool]$st.latched -and (-not $IgnoreLatched.IsPresent) -and (-not $ss -or [string]$st.verifiedAt -ge $ss) -and ([string]$st.id -in @("S1-RISK", "S1-AUDIT-INIT") -or [string]$st.verifiedAt -gt $ss -or (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $ss -ProjectPath $ProjectPath))
+    if ($fresh) { continue }
+    if (Test-SenSingleStepEvidence -Workspace $Workspace -StepId ([string]$st.id) -SessionStartedAt $ss -ProjectPath $ProjectPath) {
+      $st.passed = $true; $st.latched = $true; $st.verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $chg = $true
+    }
+    else {
+      if ([bool]$st.passed -or [bool]$st.latched) { $st.passed = $false; $st.latched = $false; $st.verifiedAt = $null; $chg = $true }
+      $miss.Add([string]$st.id)
+    }
+  }
+  if ($chg) { $audit.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); Write-SenAtomicJson -Path $aPath -InputObject $audit -Depth 8 }
+  return [pscustomobject][ordered]@{ Stage = $Stage; Passed = ($miss.Count -eq 0); MissingSteps = @($miss.ToArray()); Audit = $audit }
 }
 function Test-SenProjectCompliance {
-[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectPath = "")
-$fin = Test-SenStageGate -Workspace $Workspace -Stage 4 -ProjectPath $ProjectPath
-$all = @($fin.Audit.selectedSteps); $done = @($all | Where-Object { [bool]$_.passed })
-return [pscustomobject][ordered]@{
-Compliant = $fin.Passed; TotalSelected = $all.Count; CompletedCount = $done.Count; MissingSteps = $fin.MissingSteps
-StagesSummary = @(1..4 | ForEach-Object { $n = $_; $si = @($all | Where-Object { [int]$_.stage -eq $n }); $sd = @($si | Where-Object { [bool]$_.passed }); [pscustomobject][ordered]@{ Stage = $n; Total = $si.Count; Done = $sd.Count; Passed = ($sd.Count -eq $si.Count) } })
-}
+  [CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$ProjectPath = "")
+  $fin = Test-SenStageGate -Workspace $Workspace -Stage 4 -ProjectPath $ProjectPath
+  $all = @($fin.Audit.selectedSteps); $done = @($all | Where-Object { [bool]$_.passed })
+  return [pscustomobject][ordered]@{
+    Compliant = $fin.Passed; TotalSelected = $all.Count; CompletedCount = $done.Count; MissingSteps = $fin.MissingSteps
+    StagesSummary = @(1..4 | ForEach-Object { $n = $_; $si = @($all | Where-Object { [int]$_.stage -eq $n }); $sd = @($si | Where-Object { [bool]$_.passed }); [pscustomobject][ordered]@{ Stage = $n; Total = $si.Count; Done = $sd.Count; Passed = ($sd.Count -eq $si.Count) } })
+  }
 }
 function Get-SenRemoteCiStatus {
-[CmdletBinding()]
-param([string]$RepoSlug = "developerfs0110/Sen", [string]$HeadSha = "", [Alias("WorkspacePath", "RepositoryPath", "RepoPath", "Path")][string]$Workspace = "", [scriptblock]$RestInvoker = $null)
-$inv = if ($RestInvoker) { $RestInvoker } else { { param([string]$Uri) Invoke-RestMethod -Uri $Uri -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 15 } }
-try { $resp = & $inv "https://api.github.com/repos/$RepoSlug/actions/runs?per_page=5" }
-catch { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "error"; Conclusion = "error"; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @("API error: $($_.Exception.Message)") } }
-$runs = if ($resp -and $resp.workflow_runs) { @($resp.workflow_runs) } else { @() }
-$run = if ($HeadSha) { $runs | Where-Object { [string]$_.head_sha -like "$HeadSha*" } | Select-Object -First 1 } else { $runs | Select-Object -First 1 }
-if ($null -eq $run) { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "not_found"; Conclusion = ""; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @() } }
-$failed = [Collections.Generic.List[string]]::new()
-if ([string]$run.conclusion -eq "failure" -and $run.jobs_url) {
-try { foreach ($j in @((& $inv ([string]$run.jobs_url)).jobs)) { foreach ($bs in @($j.steps | Where-Object { [string]$_.conclusion -eq "failure" } | ForEach-Object { "$($j.name) > $($_.name)" })) { $failed.Add($bs) } } } catch { <# Ignore jobs fetch error #> }
-}
-return [pscustomobject][ordered]@{ Found = $true; RunId = [long]$run.id; Status = [string]$run.status; Conclusion = [string]$run.conclusion; HtmlUrl = [string]$run.html_url; HeadSha = [string]$run.head_sha; FailedSteps = @($failed.ToArray()) }
+  [CmdletBinding()]
+  param([string]$RepoSlug = "developerfs0110/Sen", [string]$HeadSha = "", [Alias("WorkspacePath", "RepositoryPath", "RepoPath", "Path")][string]$Workspace = "", [scriptblock]$RestInvoker = $null)
+  $inv = if ($RestInvoker) { $RestInvoker } else { { param([string]$Uri) Invoke-RestMethod -Uri $Uri -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 15 } }
+  try { $resp = & $inv "https://api.github.com/repos/$RepoSlug/actions/runs?per_page=5" }
+  catch { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "error"; Conclusion = "error"; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @("API error: $($_.Exception.Message)") } }
+  $runs = if ($resp -and $resp.workflow_runs) { @($resp.workflow_runs) } else { @() }
+  $run = if ($HeadSha) { $runs | Where-Object { [string]$_.head_sha -like "$HeadSha*" } | Select-Object -First 1 } else { $runs | Select-Object -First 1 }
+  if ($null -eq $run) { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "not_found"; Conclusion = ""; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @() } }
+  $failed = [Collections.Generic.List[string]]::new()
+  if ([string]$run.conclusion -eq "failure" -and $run.jobs_url) {
+    try { foreach ($j in @((& $inv ([string]$run.jobs_url)).jobs)) { foreach ($bs in @($j.steps | Where-Object { [string]$_.conclusion -eq "failure" } | ForEach-Object { "$($j.name) > $($_.name)" })) { $failed.Add($bs) } } } catch { <# Ignore jobs fetch error #> }
+  }
+  return [pscustomobject][ordered]@{ Found = $true; RunId = [long]$run.id; Status = [string]$run.status; Conclusion = [string]$run.conclusion; HtmlUrl = [string]$run.html_url; HeadSha = [string]$run.head_sha; FailedSteps = @($failed.ToArray()) }
 }
 function Invoke-SenCiPushLoop {
 [CmdletBinding()]
 param([string]$RepoPath = $PWD.Path, [string]$CommitMessage = "cap nhat", [string]$RepoSlug = "developerfs0110/Sen", [int]$PollSeconds = 5, [int]$TimeoutSeconds = 90, [int]$MaxAttempts = 3, [scriptblock]$RestInvoker = $null, [scriptblock]$HealAction = $null, [switch]$SkipPush)
 $pushed = $false; $sha = ""; $ci = $null; $ciOk = $false
+$effHeal = if ($HealAction) { $HealAction } elseif (Get-Command Invoke-SenPostCodePipeline -ErrorAction SilentlyContinue) { { param($s) [void](Invoke-SenPostCodePipeline -Workspace $RepoPath -SkipHealth) } } else { $null }
 for ($att = 1; $att -le [Math]::Max(1, $MaxAttempts); $att++) {
 $vScr = Join-Path $RepoPath "scripts/Validate-Repo.ps1"
 if (Test-Path -LiteralPath $vScr) {
@@ -426,7 +428,11 @@ if ($escIds.Count -gt 0) { return [pscustomobject][ordered]@{ LocalPassed = $fal
 if (-not $SkipPush) {
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"; Push-Location -LiteralPath $RepoPath
 try {
-if (@(git status --porcelain 2>&1).Count -gt 0) { [void](git add -A 2>&1); [void](git commit -m $CommitMessage 2>&1) }
+$stLines = @(git status --porcelain 2>&1)
+if (($stLines -join "`n") -match '(?im)^.. (?:"?([^\r\n"]*?(?:^|[/\\])(?:\.env(?:\.(?!example|sample|template)\S+)?|id_rsa|id_ed25519|\S+\.(?:pem|pfx|p12)))"?)\s*$') {
+return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $false; CiPassed = $false; Attempts = $att; HeadSha = ""; Errors = @("SensitiveFileBlocked:$($matches[1])"); CiStatus = $null }
+}
+if ($stLines.Count -gt 0) { [void](git add -A 2>&1); [void](git commit -m $CommitMessage 2>&1) }
 if ($att -eq 1) { [void](git push 2>&1) } else { [void](git push origin HEAD 2>&1) }
 $pushed = ($LASTEXITCODE -eq 0); $sha = ([string](git rev-parse HEAD 2>&1)).Trim()
 }
@@ -439,9 +445,9 @@ if ($ci.Found -and $ci.Status -eq "completed") { break }
 if ($PollSeconds -gt 0) { Start-Sleep -Seconds $PollSeconds } else { break }
 }
 $ciOk = ($null -ne $ci -and $ci.Found -and $ci.Status -eq "completed" -and $ci.Conclusion -eq "success")
-if ($ciOk -or $null -eq $HealAction -or $att -ge $MaxAttempts) { break }
+if ($ciOk -or $null -eq $effHeal -or $att -ge $MaxAttempts) { break }
 $preS = if (Get-Command Test-SenSuiteIntegrity -ErrorAction SilentlyContinue) { Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") } else { $null }
-& $HealAction $ci.FailedSteps
+& $effHeal $ci.FailedSteps
 if ($null -ne $preS -and $preS.AssertionCount -gt 0) {
 $postS = Test-SenSuiteIntegrity -TestsPath (Join-Path $RepoPath "tests") -MinFiles $preS.FileCount -MinAssertions $preS.AssertionCount
 if (-not $postS.Passed) { return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $pushed; CiPassed = $false; Attempts = $att; HeadSha = $sha; Errors = @("TestTamperBlocked: $($postS.Reason)"); CiStatus = $ci } }
@@ -520,6 +526,8 @@ $tdTxt = [IO.File]::ReadAllText($todoF, $utf8); $cxTxt = [IO.File]::ReadAllText(
 $allIds = @([regex]::Matches($tdTxt, '\bTASK-\d+\b') | ForEach-Object { $_.Value })
 $lastId = if ($allIds.Count -gt 0) { $allIds[$allIds.Count - 1] } else { "" }
 if (@([regex]::Matches($tdTxt, '(?m)^-\s*\[ \]\s*\*\*TASK-\d+')).Count -eq 0 -and $lastId -and ($cxTxt -notmatch "\b$([regex]::Escape($lastId))\b")) { $miss.Add("L5-DocSync:TODO_CONTEXT_SYNC:$lastId") }
+$instF = Join-Path $root "INSTALL.md"
+if ($lastId -and (Test-Path -LiteralPath $instF) -and ([IO.File]::ReadAllText($instF, $utf8) -notmatch "\b$([regex]::Escape($lastId))\b")) { $miss.Add("L6-DocsParity:StaleInstallTaskCount:$lastId") }
 }
 foreach ($rf in @("README.md", "README.vi.md", "README.en.md", "INSTALL.md")) {
 $rp = Join-Path $root $rf

@@ -42,6 +42,6 @@ if ($global:TotalTests -le 0) {
 }
 
 if ($global:FailedTests -gt 0) {
-    exit $global:FailedTests
+    exit 1
 }
 exit 0

@@ -131,8 +131,8 @@ if ($toolName -in @("write_file", "edit_file", "read_file")) {
             if ($normCheck -match '(?i)/\.git/(config|hooks(/|$))') {
                 Out-Decision "deny" "[SEN GUARD] Blocked: direct modification of protected Git metadata ($fullTarget)." $primaryWs $toolName $fullTarget $fullTarget
             }
-            if ($normCheck -match '(?i)/\.agents/(office/[^/]+\.(json|jsonl)$|plugins/sen-method/scripts/guard\.(ps1|sh)$)') {
-                Out-Decision "deny" "[SEN GUARD] Blocked: direct tampering with Sen protected state or guard ($fullTarget). Use Sen cmdlets instead." $primaryWs $toolName $fullTarget $fullTarget
+            if (($env:SEN_TRUSTED_INSTALLER -ne "1") -and ($normCheck -match '(?i)(/\.agents/(office/[^/]+\.(json|jsonl)$|sen\.lock\.json$|plugins/sen-method/(scripts/|hooks\.json$|plugin\.json$))|/(\.claude/settings\.json|\.cursor/hooks\.json|guard\.(ps1|sh))$)' )) {
+                Out-Decision "deny" "[SEN GUARD] Blocked: direct tampering with Sen protected state, runtime scripts, lockfile, or hook config ($fullTarget). Use Sen cmdlets instead." $primaryWs $toolName $fullTarget $fullTarget
             }
             # Auto-Create or Append Restore Point before modifying any project source file (Zero-Amnesia Pre-Edit Backup)
             if ($primaryWs -and ($normCheck -notmatch '(?i)/(\.agents|docs)/') -and ($primaryWs -notmatch '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test)|TestDrive)')) {
@@ -236,6 +236,12 @@ $cmdScan = [regex]::Replace($cmd, '(?i)(\bgit\b[^|;&]*\bcommit\b[^|;&]*\s(?:-m|-
 if ($cmdScan -match '(?i)^\s*(echo|write-host|write-output|grep|rg|select-string)\b' -and $cmdScan -notmatch '[|;&`$><]') {
     $cmdScan = ""
 }
+if (-not [string]::IsNullOrWhiteSpace($cmdScan)) {
+    $cmdDeobf = [regex]::Replace($cmdScan, '([a-zA-Z])\\([a-zA-Z])', '$1$2')
+    $cmdDeobf = [regex]::Replace($cmdDeobf, '([a-zA-Z])"([a-zA-Z]*)"([a-zA-Z]*)', '$1$2$3')
+    $cmdDeobf = [regex]::Replace($cmdDeobf, "([a-zA-Z])'([a-zA-Z]*)'([a-zA-Z]*)", '$1$2$3')
+    if ($cmdDeobf -ne $cmdScan) { $cmdScan = "$cmdScan ; $cmdDeobf" }
+}
 
 $rules = @(
     @{ re = '\brm\b[^|;&]*(\s-[a-z]*r|\s--recursive\b)'; why = 'Recursive delete (rm -r / rm -rf / rm --recursive)' },
@@ -266,10 +272,13 @@ $rules = @(
     @{ re = '(\biex\b|\binvoke-expression\b)\s*\(?\s*(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b|new-object\s+net\.webclient)'; why = 'Remote script download and execution (IEX / IRM)' },
     @{ re = '(\birm\b|\binvoke-restmethod\b|\biwr\b|\binvoke-webrequest\b|\bcurl\b|\bwget\b)[^|;\r\n]*\|\s*(\biex\b|\binvoke-expression\b)'; why = 'Piped remote script execution (IRM/IWR/curl | IEX)' },
     @{ re = '(\bcurl\b|\bwget\b)[^;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; why = 'Piped remote script execution (curl/wget | sh/bash/pwsh)' },
+    @{ re = '\bbase64\s+(-d|--decode)[^|;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell|python|python3)\b'; why = 'Piped base64 decode to shell execution' },
     @{ re = '\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}'; why = 'Encoded PowerShell command execution' },
-    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|cp|mv|copy-item|move-item|remove-item|del|rm)\b|writeall(text|lines|bytes)|appendall(text|lines)|streamwriter|filestream|open\s*\(|fs\.(write|append|unlink|rm))[^|;&]*(^|[\s"''/\\])\.agents[/\\]office([/\\]|$)|(^|[\s"''/\\])\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b|\.write\s*\()'; why = 'Direct shell/script tampering with protected .agents/office state JSON' },
-    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|remove-item|del|rm)\b|writeall(text|lines|bytes))[^|;&]*(^|[\s"''/\\])guard\.(ps1|sh)\b|(^|[\s"''/\\])guard\.(ps1|sh)\b[^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b)'; why = 'Direct shell tampering with guard.ps1/guard.sh' }
+    @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|cp|mv|copy-item|move-item|remove-item|del|rm)\b|writeall(text|lines|bytes)|appendall(text|lines)|streamwriter|filestream|open\s*\(|fs\.(write|append|unlink|rm))[^|;&]*(^|[\s"''/\\])\.agents[/\\]office([/\\]|$)|(^|[\s"''/\\])\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b|\.write\s*\()'; why = 'Direct shell/script tampering with protected .agents/office state JSON' }
 )
+if ($env:SEN_TRUSTED_INSTALLER -ne "1") {
+    $rules += @{ re = '(>|>>|\b(set-content|out-file|add-content|tee-object|tee|cp|mv|copy-item|move-item|remove-item|del|rm)\b|writeall(text|lines|bytes))[^|;&]*((^|[\s"''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))|((^|[\s"''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))[^|;&]*(>|>>|\b(set-content|out-file|add-content|tee-object|tee)\b)'; why = 'Direct shell tampering with Sen runtime scripts, lockfile, or hook configuration' }
+}
 
 if (-not [string]::IsNullOrWhiteSpace($cmdScan)) {
     foreach ($r in $rules) {

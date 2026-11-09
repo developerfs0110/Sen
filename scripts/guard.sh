@@ -63,10 +63,24 @@ try:
             if "/.git/config" in norm_rp or "/.git/hooks" in norm_rp:
                 print("DENY_GIT:" + rp)
                 sys.exit(0)
-            if ("/.agents/office/" in norm_rp and (norm_rp.endswith(".json") or norm_rp.endswith(".jsonl"))) or "/.agents/plugins/sen-method/scripts/guard." in norm_rp:
+            if os.environ.get("SEN_TRUSTED_INSTALLER") != "1" and re.search(r"(?i)(/\.agents/(office/[^/]+\.(json|jsonl)$|sen\.lock\.json$|plugins/sen-method/(scripts/|hooks\.json$|plugin\.json$))|/(\.claude/settings\.json|\.cursor/hooks\.json|guard\.(ps1|sh))$)", norm_rp):
                 print("DENY_STATE:" + rp)
                 sys.exit(0)
             rw0 = os.path.realpath(ws_list[0])
+            if rw0 and "/.agents/" not in norm_rp and "/docs/" not in norm_rp and not re.search(r"(?i)(/(temp|tmp|T)/|sen-(harness|gov|adv|.*-test)|TestDrive)", rw0.replace("\\", "/")):
+                try:
+                    import shutil
+                    from datetime import datetime, timezone
+                    ts_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                    snap_d = os.path.join(rw0, ".agents", ".sen-restore", f"auto-pre-edit-{ts_id}")
+                    files_d = os.path.join(snap_d, "files")
+                    os.makedirs(files_d, exist_ok=True)
+                    existed = os.path.isfile(rp)
+                    if existed: shutil.copy2(rp, os.path.join(files_d, "f_0.bak"))
+                    rel_p = os.path.relpath(rp, rw0).replace("\\", "/") if rp.startswith(rw0) else os.path.basename(rp)
+                    mf = {"id": f"auto-pre-edit-{ts_id}", "label": "auto-pre-edit", "createdAt": ts_id, "entries": [{"relPath": rel_p, "fullPath": rp, "existed": existed, "storedName": "f_0.bak"}]}
+                    with open(os.path.join(snap_d, "manifest.json"), "w", encoding="utf-8") as f: json.dump(mf, f)
+                except Exception: pass
             audit_p = os.path.join(rw0, ".agents", "office", "process-audit.json")
             if os.path.isfile(audit_p) and "/.agents/" not in norm_rp and "/docs/" not in norm_rp:
                 aud = json.load(open(audit_p, "r", encoding="utf-8"))
@@ -131,11 +145,20 @@ else
   if printf '%s' "$FLAT_RAW" | grep -Eiq '(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519|\.npmrc|\.pypirc|\.netrc)'; then
     out_decision "deny" "[SEN GUARD] Blocked: access to sensitive host credential path."
   fi
-  if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|Write|Edit|MultiEdit)"'; then
-    if printf '%s' "$FLAT_RAW" | grep -Eiq '(/\.git/(config|hooks)|/\.agents/office/[^"/]+\.(json|jsonl)|/\.agents/plugins/sen-method/scripts/guard\.|\.\./)'; then
+  if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|read_file|Write|Edit|MultiEdit|Read)"'; then
+    TARGET_P="$(printf '%s' "$FLAT_RAW" | sed -n 's/.*"\(Path\|file_path\|target_file\|path\)"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\2/p')"
+    if printf '%s' "$FLAT_RAW $TARGET_P" | grep -Eiq '(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519|\.npmrc|\.pypirc|\.netrc|\.\./|/\.git/(config|hooks)|/\.agents/(office|sen\.lock\.json|plugins/sen-method)|/(\.claude/settings\.json|\.cursor/hooks\.json))'; then
       out_decision "deny" "[SEN GUARD] Blocked: protected state, git metadata, or path traversal detected in POSIX fallback."
     fi
-    out_decision "deny" "[SEN GUARD] Blocked (fail-closed): python3 is required on POSIX to verify canonical symlink/workspace boundaries for file writes."
+    if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|Write|Edit|MultiEdit)"'; then
+      WS_P="$(printf '%s' "$FLAT_RAW" | sed -n 's/.*"\(workspacePaths\|workspace_roots\)"[[:space:]]*:[[:space:]]*\[[[:space:]]*"\([^"]*\)".*/\2/p')"
+      [ -z "$WS_P" ] && WS_P="$(printf '%s' "$FLAT_RAW" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+      if [ -z "$WS_P" ] || [ -z "$TARGET_P" ] || { [ "${TARGET_P#/}" != "$TARGET_P" ] && [ "${TARGET_P#"$WS_P"/}" = "$TARGET_P" ] && [ "$TARGET_P" != "$WS_P" ]; }; then
+        out_decision "deny" "[SEN GUARD] Blocked (fail-closed): file write outside verified workspace boundary in POSIX fallback."
+      fi
+      out_decision "deny" "[SEN GUARD] Blocked (fail-closed): python3 is required on POSIX to verify canonical symlink/workspace boundaries for file writes."
+    fi
+    out_decision "ask" ""
   fi
   if command -v jq >/dev/null 2>&1; then
     CMD="$(printf '%s' "$RAW" | jq -r '.toolCall.args.CommandLine // .tool_input.CommandLine // .tool_input.command // empty' 2>/dev/null || true)"
@@ -155,6 +178,12 @@ fi
 CMD_SCAN="$(printf '%s' "$CMD" | sed -E 's/(\bgit\b[^|;&]*\bcommit\b[^|;&]*[[:space:]](-m|--message)[[:space:]]+)("[^"`$]+"|'\''[^'\'']+'\'')/\1""/Ig' 2>/dev/null || printf '%s' "$CMD")"
 if printf '%s' "$CMD_SCAN" | grep -Eiq '^[[:space:]]*(echo|write-host|write-output|grep|rg|select-string)\b' && ! printf '%s' "$CMD_SCAN" | grep -Eq '[|;&`$><]'; then
   CMD_SCAN=""
+fi
+if [ -n "$CMD_SCAN" ]; then
+  CMD_DEOBF="$(printf '%s' "$CMD_SCAN" | sed -E 's/([a-zA-Z])\\([a-zA-Z])/\1\2/g; s/([a-zA-Z])"([a-zA-Z]*)"([a-zA-Z]*)/\1\2\3/g; s/([a-zA-Z])'\''([a-zA-Z]*)'\''([a-zA-Z]*)/\1\2\3/g' 2>/dev/null || printf '%s' "$CMD_SCAN")"
+  if [ "$CMD_DEOBF" != "$CMD_SCAN" ]; then
+    CMD_SCAN="$CMD_SCAN ; $CMD_DEOBF"
+  fi
 fi
 
 if [ -n "$CMD_SCAN" ]; then
@@ -235,6 +264,9 @@ if [ -n "$CMD_SCAN" ]; then
   if printf '%s' "$CMD_SCAN" | grep -Eiq '(\bcurl\b|\bwget\b)[^;]*\|[[:space:]]*(sh|bash|zsh|pwsh|powershell|python|python3|node)\b'; then
     deny "Piped remote script execution (curl/wget | sh/bash/pwsh)"
   fi
+  if printf '%s' "$CMD_SCAN" | grep -Eiq '\bbase64[[:space:]]+(-d|--decode)[^|;]*\|[[:space:]]*(sh|bash|zsh|pwsh|powershell|python|python3)\b'; then
+    deny "Piped base64 decode to shell execution"
+  fi
   if printf '%s' "$CMD_SCAN" | grep -Eiq '\b(powershell|pwsh)(\.exe)?\b[^|;&]*[[:space:]]-(e|ec|enc|encodedcommand)[[:space:]]+[A-Za-z0-9+/=]{8,}'; then
     deny "Encoded PowerShell command execution"
   fi
@@ -247,8 +279,8 @@ if [ -n "$CMD_SCAN" ]; then
   if printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes)|streamwriter|open\(|fs\.write)[^|;&]*(^|[[:space:]"'\''/\\])\.agents[/\\]office([/\\]|$)|(^|[[:space:]"'\''/\\])\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b|\.write\()'; then
     deny "Direct shell tampering with protected .agents/office state JSON"
   fi
-  if printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes))[^|;&]*(^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|(^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b[^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b)'; then
-    deny "Direct shell tampering with guard.ps1/guard.sh"
+  if [ "${SEN_TRUSTED_INSTALLER:-0}" != "1" ] && printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes))[^|;&]*((^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))|((^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))[^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b)'; then
+    deny "Direct shell tampering with Sen runtime scripts, lockfile, or hook configuration"
   fi
 fi
 if [ "${SEN_TRUSTED_HOOK:-0}" != "1" ] && printf '%s' "$CMD" | grep -Eiq '\bSync-SenOfficeState\b[^|;&]*[[:space:]]-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*[[:space:]]-Force\b'; then

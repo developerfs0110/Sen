@@ -226,7 +226,7 @@ function Invoke-SenExecutableEvidence {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
         [Parameter(Mandatory = $true)][string]$ClaimId,
-        [Parameter(Mandatory = $true)][string]$Verifier,
+        [string]$Verifier = "verifier",
         [Parameter(Mandatory = $true)][string]$Command,
         [string]$EvidenceType = "executable_test",
         [string]$ArtifactPath = "",
@@ -236,7 +236,13 @@ function Invoke-SenExecutableEvidence {
     if ([string]::IsNullOrWhiteSpace($Command) -or $Command -match $trivialCmd) {
         throw "AV-06 Violation: Evidence command must be a real executable verification command, not '$Command'."
     }
+    if ($null -eq $CommandRunner -and $Command -match '(?i)\b(Save-SenTasks|Write-SenAtomicJson|Sync-SenOfficeState\b[^|;&]*-UpdateSeal|Lock-SenQualityBaseline\b[^|;&]*-Force|Remove-Item\b[^|;&]*\.agents|\.agents[/\\]office)') {
+        throw "AV-06 Violation: Evidence command cannot mutate Sen governance state: '$Command'."
+    }
     $claimsFile = Join-Path -Path $Workspace -ChildPath ".agents/office/claims.json"
+    $tasksFile = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
+    $preClaimsRaw = if (Test-Path -LiteralPath $claimsFile) { [System.IO.File]::ReadAllText($claimsFile) } else { "" }
+    $preTasksRaw = if (Test-Path -LiteralPath $tasksFile) { [System.IO.File]::ReadAllText($tasksFile) } else { "" }
     $allClaims = [System.Collections.Generic.List[object]]::new()
     foreach ($c in (Read-SenJsonArray -Path $claimsFile)) { $allClaims.Add($c) }
     $target = $allClaims | Where-Object { [string]$_.claim_id -eq $ClaimId } | Select-Object -First 1
@@ -253,13 +259,20 @@ function Invoke-SenExecutableEvidence {
             $outputText = if ($null -ne $runRes -and $runRes.PSObject.Properties['Output']) { [string]$runRes.Output } else { [string]$runRes }
         }
         else {
+            $global:LASTEXITCODE = 0
             $sb = [scriptblock]::Create($Command)
             $rawOut = & $sb 2>&1
             $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
             $outputText = ($rawOut | ForEach-Object { [string]$_ }) -join "`n"
+            $postClaimsRaw = if (Test-Path -LiteralPath $claimsFile) { [System.IO.File]::ReadAllText($claimsFile) } else { "" }
+            $postTasksRaw = if (Test-Path -LiteralPath $tasksFile) { [System.IO.File]::ReadAllText($tasksFile) } else { "" }
+            if ($postClaimsRaw -ne $preClaimsRaw -or $postTasksRaw -ne $preTasksRaw) {
+                throw "AV-06 Violation: Evidence command covertly modified Sen governance state."
+            }
         }
     }
     catch {
+        if ($_.Exception.Message -match "AV-06 Violation") { throw }
         $exitCode = 1
         $outputText = $_.Exception.Message
     }
@@ -709,12 +722,12 @@ function Invoke-SenDialecticalAudit {
     $evidenceValidity = if (Get-Command Test-SenEvidenceValidity -ErrorAction SilentlyContinue) {
         Test-SenEvidenceValidity -Workspace $Workspace
     } else {
-        [pscustomobject]@{ AllValid = $true; StaleCount = 0 }
+        [pscustomobject]@{ AllValid = $false; StaleCount = 1 }
     }
     $hungCheck = if (Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) {
         Test-SenHungTasks -Workspace $Workspace
     } else {
-        [pscustomobject]@{ Healthy = $true; StaleTaskIds = @(); HungProcessIds = @() }
+        [pscustomobject]@{ Healthy = $false; StaleTaskIds = @("MISSING_HUNG_CHECK"); HungProcessIds = @() }
     }
     $antiGaming = Test-SenAntiMetricGaming -Workspace $Workspace
 

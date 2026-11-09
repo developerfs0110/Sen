@@ -67,6 +67,10 @@ try {
 
     $cfg = Get-SenOfficeConfig -Workspace $ws
     if ($cfg.mode -eq "off") { exit 0 }
+    if ($toolName -in @("invoke_subagent", "write_file", "edit_file", "run_command") -and (Get-Command Start-SenOfficeIfIdle -ErrorAction SilentlyContinue)) {
+        [void](Start-SenOfficeIfIdle -Workspace $ws)
+    }
+    $latchStage = 0
 
     $from = "be"
     $to = "sys"
@@ -78,6 +82,7 @@ try {
     $argsObj = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } elseif ($payload.toolArgs) { $payload.toolArgs } else { $payload }
 
     if ($toolName -eq "invoke_subagent") {
+        $latchStage = 2
         $roleArg = if ($argsObj.Role) { [string]$argsObj.Role } elseif ($argsObj.TypeName) { [string]$argsObj.TypeName } else { "Subagent" }
         $promptArg = if ($argsObj.Prompt) { [string]$argsObj.Prompt } else { $roleArg }
         $cleanPrompt = ($promptArg -replace '[\r\n\t]+', ' ').Trim()
@@ -89,6 +94,11 @@ try {
         $ecoText = "Subagent [$roleArg]: $shortPrompt"
         $fullText = "Subagent [$roleArg]: " + $(if ($cleanPrompt.Length -gt 180) { $cleanPrompt.Substring(0, 177) + "..." } else { $cleanPrompt })
         $pathArg = $roleArg
+        $inFile = Join-Path $ws ".agents/office/current-intake.json"
+        if (((-not (Test-Path -LiteralPath $inFile)) -or ((([DateTime]::UtcNow - (Get-Item -LiteralPath $inFile).LastWriteTimeUtc).TotalHours) -ge 2)) -and (Get-Command Initialize-SenIntake -ErrorAction SilentlyContinue)) {
+            [void](Initialize-SenIntake -Workspace $ws -TaskId "SUBAGENT-LIVE" -Request $ecoText -FileCount 3 -Tier 2 -SkipOfficeLaunch)
+            $hookMutatedOfficeJson = $true
+        }
         if (Get-Command New-SenTask -ErrorAction SilentlyContinue) {
             $st = New-SenTask -Workspace $ws -Id "SUBAGENT-LIVE" -Title $ecoText -Tier 2 -RiskLevel "medium" -Module "Subagent" -Assignee $to -Status "in_progress"
             $allT = @(Get-SenTasks -Workspace $ws); foreach ($item in $allT) { if ($item -and [string]$item.id -eq "SUBAGENT-LIVE") { $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force } }
@@ -131,6 +141,7 @@ try {
         }
     }
     elseif ($toolName -eq "grep_search" -or $toolName -eq "find_by_name") {
+        $latchStage = 1
         $from = "r1"
         $lane = "Scout"
         $model = "flash_lite"
@@ -139,6 +150,7 @@ try {
         $fullText = if ($pathArg) { "Search '$q' in $pathArg" } else { "Search: $q" }
     }
     elseif ($toolName -eq "read_file") {
+        $latchStage = 1
         if ($pathArg -match '(?i)(specs|templates|README|docs)') {
             $from = "ba"
             $lane = "Design"
@@ -153,8 +165,14 @@ try {
         $fullText = if ($pathArg) { "$ecoText ($pathArg)" } else { $ecoText }
     }
     elseif ($toolName -eq "write_file" -or $toolName -eq "edit_file") {
+        $latchStage = 3
         Test-SenStuckLoop -Workspace $ws -ToolName $toolName -Target $pathArg -Reset | Out-Null
         if ($pathArg -and ($pathArg.Replace('\', '/') -notmatch '(?i)/(\.agents|docs)/')) {
+            $inFile = Join-Path $ws ".agents/office/current-intake.json"
+            if (((-not (Test-Path -LiteralPath $inFile)) -or ((([DateTime]::UtcNow - (Get-Item -LiteralPath $inFile).LastWriteTimeUtc).TotalHours) -ge 2)) -and (Get-Command Initialize-SenIntake -ErrorAction SilentlyContinue)) {
+                [void](Initialize-SenIntake -Workspace $ws -TaskId "AUTO-WORK" -Request "Edit $shortFile" -FileCount 1 -Files @($pathArg) -SkipOfficeLaunch)
+                $hookMutatedOfficeJson = $true
+            }
             if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
                 $curTasks = @(Get-SenTasks -Workspace $ws | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
                 if ($curTasks.Count -eq 0 -and (Get-Command New-SenTask -ErrorAction SilentlyContinue)) {
@@ -178,6 +196,7 @@ try {
             $ecoText = "Edit UI: $shortFile"
         }
         elseif ($pathArg -match '(?i)(specs|plan|design)\.md$') {
+            $latchStage = 2
             $from = "ba"
             $lane = "Design"
             $ecoText = "Write spec: $shortFile"
@@ -199,11 +218,12 @@ try {
             $model = "pro"
             $ecoText = "Security/Repo check"
         }
-        elseif (($cmdArg -match '(?i)\b(npm\s+test|pnpm\s+test|yarn\s+test|npx\s+(jest|vitest|playwright)|pytest|cargo\s+test|go\s+test|dotnet\s+test|Invoke-Pester|tests[/\\]run\.ps1|run\.ps1)\b') -and ($cmdArg -notmatch '^(?i)\s*(echo|write-host|write-output|true|rem|::)\b')) {
+        elseif (($cmdArg -notmatch '(?i)^\s*(git\s+(commit|log|grep|diff|status|add|push)|grep|rg|select-string|cat|type|get-content|echo|write-host|write-output|true|rem|::)\b') -and ($cmdArg -match '(?i)(^|[;&|]\s*)(&\s*)?((pwsh|powershell|bash|sh)(\.exe)?(\s+-[A-Za-z]+(\s+[^\s;|"&]+)?)*\s+|python3?(\.exe)?\s+-m\s+)?["'']?([^"''|;&]*[\\/])?(npm\s+test|pnpm\s+test|yarn\s+test|npx\s+(jest|vitest|playwright)|pytest|cargo\s+test|go\s+test|dotnet\s+test|Invoke-Pester|tests[/\\]run\.ps1|run\.ps1)\b')) {
             $from = "qa"
             $lane = "QA Gate"
             $ecoText = "Run test suite"
             if ($hasEc -and ($ecVal -eq 0) -and (-not $isErr)) {
+                $latchStage = 4
                 if (Get-Command Register-SenEvidence -ErrorAction SilentlyContinue) {
                     $evPaths = @()
                     if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
@@ -231,6 +251,10 @@ try {
             $ecoText = "Run: $shortCmd"
         }
         $fullText = "Cmd: " + $(if ($cleanCmd.Length -gt 160) { $cleanCmd.Substring(0, 157) + "..." } else { $cleanCmd })
+    }
+
+    if ($latchStage -gt 0 -and (Test-Path -LiteralPath (Join-Path $ws ".agents/office/process-audit.json")) -and (Get-Command Test-SenStageGate -ErrorAction SilentlyContinue)) {
+        try { [void](Test-SenStageGate -Workspace $ws -Stage $latchStage); $hookMutatedOfficeJson = $true } catch { <# Non-fatal #> }
     }
 
     if ([string]::IsNullOrWhiteSpace($fullText)) { $fullText = $ecoText }
