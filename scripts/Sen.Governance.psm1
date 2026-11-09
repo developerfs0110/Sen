@@ -4,27 +4,32 @@ function Resolve-SenWorkspaceRoot {
 [CmdletBinding()] param([string]$StartPath = $PWD.Path)
 if ([string]::IsNullOrWhiteSpace($StartPath)) { return $PWD.Path }
 $cur = try { [IO.Path]::GetFullPath($StartPath).TrimEnd('\', '/') } catch { <# Fallback #> $StartPath.TrimEnd('\', '/') }
-if (Test-Path -LiteralPath $cur -PathType Leaf) { $cur = Split-Path -Parent $cur }
+if ([string]::IsNullOrWhiteSpace($cur)) { return "/" }
+if ((Test-Path -LiteralPath $cur -PathType Leaf) -and ($cur -ne "/")) { $cur = Split-Path -Parent $cur }
 for ($d = 0; $d -lt 12; $d++) {
-if (-not $cur) { break }
+if ([string]::IsNullOrWhiteSpace($cur) -or $cur -eq "/") { break }
 if ((Test-Path -LiteralPath (Join-Path $cur ".agents")) -or (Test-Path -LiteralPath (Join-Path $cur "plugin.json")) -or (Test-Path -LiteralPath (Join-Path $cur ".agents-plugin/plugin.json"))) { return $cur }
-$p = Split-Path -Parent $cur; if (-not $p -or $p -eq $cur) { break }; $cur = $p
+$p = Split-Path -Parent $cur; if ([string]::IsNullOrWhiteSpace($p) -or $p -eq $cur -or $p -eq "/") { break }; $cur = $p
 }
-return (try { [IO.Path]::GetFullPath($StartPath).TrimEnd('\', '/') } catch { <# Fallback #> $StartPath })
+return $cur
 }
 function Test-SenSymlinkEscape {
 param([string]$FullTarget, [string[]]$ResolvedWorkspaces)
-$probe = $FullTarget
+$probe = $FullTarget; $cmp = [StringComparison]::OrdinalIgnoreCase; $sep = [IO.Path]::DirectorySeparatorChar
 for ($i = 0; $i -lt 10; $i++) {
-if (-not $probe) { break }
+if ([string]::IsNullOrWhiteSpace($probe) -or $probe -eq "/") { break }
+$inWs = $false
+foreach ($rw in $ResolvedWorkspaces) { if ($rw -and ($probe.StartsWith($rw + $sep, $cmp) -or $probe.StartsWith($rw + '/', $cmp))) { $inWs = $true; break } }
+if (-not $inWs) { break }
 $it = if (Test-Path -LiteralPath $probe) { Get-Item -LiteralPath $probe -Force -EA SilentlyContinue } else { $null }
 if (($null -ne $it) -and ([int]($it.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
 $lt = if ($it.PSObject.Properties['Target'] -and $it.Target) { [string](@($it.Target)[0]) } else { "" }
 if (-not $lt) { return $true }
-$abs = if ([IO.Path]::IsPathRooted($lt)) { [IO.Path]::GetFullPath($lt) } else { [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $probe) $lt)) }
-if (@($ResolvedWorkspaces | Where-Object { $abs.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) { return $true }
+$par = Split-Path -Parent $probe
+$abs = if ([IO.Path]::IsPathRooted($lt)) { [IO.Path]::GetFullPath($lt) } elseif ($par) { [IO.Path]::GetFullPath((Join-Path $par $lt)) } else { $lt }
+if (@($ResolvedWorkspaces | Where-Object { $abs.StartsWith($_, $cmp) }).Count -eq 0) { return $true }
 }
-$p = Split-Path -Parent $probe; if (-not $p -or $p -eq $probe) { break }; $probe = $p
+$p = Split-Path -Parent $probe; if ([string]::IsNullOrWhiteSpace($p) -or $p -eq $probe -or $p -eq "/") { break }; $probe = $p
 }
 return $false
 }
@@ -368,83 +373,60 @@ function Test-SenMidTaskEscalation {
 param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$ModifiedFiles = @())
 $auditPath = Join-Path $Workspace ".agents/office/process-audit.json"; $audit = Read-SenSafeJson -Path $auditPath
 $curTier = if ($null -ne $audit -and $audit.PSObject.Properties['tier']) { [int]$audit.tier } else { 1 }
-$targetTier = $curTier; $reason = $null
-$critRe = '(?i)(auth|login|oauth|jwt|payment|billing|stripe|vnpay|momo|schema|migration|database|secret|guard\.ps1)'
-foreach ($mf in $ModifiedFiles) {
-if ($mf -match $critRe) { $targetTier = 3; $reason = "Modified critical security/data/auth path: $mf"; break }
-}
-if ($targetTier -lt 2 -and $ModifiedFiles.Count -ge 3) { $targetTier = 2; $reason = "Modified file count ($($ModifiedFiles.Count)) reached Tier 2 threshold (>= 3 files)" }
-$escalated = ($targetTier -gt $curTier)
-if ($escalated -and $null -ne $audit) {
+$tTier = $curTier; $rsn = $null; $critRe = '(?i)(auth|login|oauth|jwt|payment|billing|stripe|vnpay|momo|schema|migration|database|secret|guard\.ps1)'
+foreach ($mf in $ModifiedFiles) { if ($mf -match $critRe) { $tTier = 3; $rsn = "Critical path: $mf"; break } }
+if ($tTier -lt 2 -and $ModifiedFiles.Count -ge 3) { $tTier = 2; $rsn = "File count ($($ModifiedFiles.Count)) >= 3" }
+$esc = ($tTier -gt $curTier)
+if ($esc -and $null -ne $audit) {
 $audit | Add-Member -NotePropertyName "escalatedFrom" -NotePropertyValue $curTier -Force
-$audit.tier = $targetTier; $audit.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-Write-SenAtomicJson -Path $auditPath -InputObject $audit -Depth 8
+$audit.tier = $tTier; $audit.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); Write-SenAtomicJson -Path $auditPath -InputObject $audit -Depth 8
 }
-return [pscustomobject]@{ Escalated = $escalated; PreviousTier = $curTier; NewTier = $targetTier; Reason = $reason }
+return [pscustomobject]@{ Escalated = $esc; PreviousTier = $curTier; NewTier = $tTier; Reason = $rsn }
 }
 function Test-SenSuiteIntegrity {
-[CmdletBinding()]
-param([string]$TestsPath = "", [int]$MinFiles = 1, [int]$MinAssertions = 1)
-$tDir = if (-not [string]::IsNullOrWhiteSpace($TestsPath)) { $TestsPath } else { Join-Path $PSScriptRoot "../tests" }
-if (-not (Test-Path -LiteralPath $tDir)) {
-return [pscustomobject]@{ Passed = $false; FileCount = 0; AssertionCount = 0; MinAssertions = $MinAssertions; Reason = "Tests directory not found: $tDir" }
-}
-$files = @(Get-ChildItem -LiteralPath $tDir -Filter "*.Tests.ps1" -File -EA SilentlyContinue)
-$assertCount = 0; $emptyFiles = [Collections.Generic.List[string]]::new()
-foreach ($f in $files) {
-$txt = [IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8)
-$cnt = [regex]::Matches($txt, '\bAssert-[A-Za-z]+\b').Count
-if ($cnt -eq 0) { $emptyFiles.Add($f.Name) }
-$assertCount += $cnt
-}
-$passed = ($files.Count -ge $MinFiles) -and ($assertCount -ge $MinAssertions) -and ($emptyFiles.Count -eq 0)
-$reason = if ($passed) { "Suite integrity verified ($($files.Count) files, $assertCount assertions)." } else { "Suite integrity failed: files=$($files.Count)/$MinFiles, assertions=$assertCount/$MinAssertions, empty=$($emptyFiles -join ',')" }
-return [pscustomobject]@{ Passed = $passed; FileCount = $files.Count; AssertionCount = $assertCount; MinAssertions = $MinAssertions; Reason = $reason }
+[CmdletBinding()] param([string]$TestsPath = "", [int]$MinFiles = 1, [int]$MinAssertions = 1)
+$tDir = if ($TestsPath) { $TestsPath } else { Join-Path $PSScriptRoot "../tests" }
+if (-not (Test-Path -LiteralPath $tDir)) { return [pscustomobject]@{ Passed = $false; FileCount = 0; AssertionCount = 0; MinAssertions = $MinAssertions; Reason = "Missing: $tDir" } }
+$files = @(Get-ChildItem -LiteralPath $tDir -Filter "*.Tests.ps1" -File -EA SilentlyContinue); $aCnt = 0; $emp = [Collections.Generic.List[string]]::new()
+foreach ($f in $files) { $c = [regex]::Matches([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8), '\bAssert-[A-Za-z]+\b').Count; if ($c -eq 0) { $emp.Add($f.Name) }; $aCnt += $c }
+$ok = ($files.Count -ge $MinFiles) -and ($aCnt -ge $MinAssertions) -and ($emp.Count -eq 0)
+return [pscustomobject]@{ Passed = $ok; FileCount = $files.Count; AssertionCount = $aCnt; MinAssertions = $MinAssertions; Reason = $(if ($ok) { "OK" } else { "Suite integrity failed" }) }
 }
 function Measure-SenTokenEstimate {
-[CmdletBinding()]
-param([AllowEmptyString()][string]$Text = "", [string]$Path = "", [int]$TokenBudget = 1500)
-$content = if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-Path -LiteralPath $Path)) { [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) } else { $Text }
-if ([string]::IsNullOrEmpty($content)) { return [pscustomobject]@{ EstimatedTokens = 0; ByteCount = 0; CharCount = 0; NonAsciiCount = 0; TokenBudget = $TokenBudget; WithinBudget = $true } }
-$bytes = [Text.Encoding]::UTF8.GetByteCount($content); $chars = $content.Length
-$nonAscii = [regex]::Matches($content, '[^\x00-\x7F]').Count; $punct = [regex]::Matches($content, '[\{\}\[\]\(\);:,<>=\+\-\*/\|\\]').Count
-$est = [int][Math]::Ceiling(($chars / 3.8) + ($nonAscii * 0.45) + ($punct * 0.15))
-return [pscustomobject]@{ EstimatedTokens = $est; ByteCount = $bytes; CharCount = $chars; NonAsciiCount = $nonAscii; TokenBudget = $TokenBudget; WithinBudget = ($est -le $TokenBudget) }
+[CmdletBinding()] param([AllowEmptyString()][string]$Text = "", [string]$Path = "", [int]$TokenBudget = 1500)
+$c = if ($Path -and (Test-Path -LiteralPath $Path)) { [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) } else { $Text }
+if ([string]::IsNullOrEmpty($c)) { return [pscustomobject]@{ EstimatedTokens = 0; ByteCount = 0; CharCount = 0; NonAsciiCount = 0; TokenBudget = $TokenBudget; WithinBudget = $true } }
+$b = [Text.Encoding]::UTF8.GetByteCount($c); $na = [regex]::Matches($c, '[^\x00-\x7F]').Count; $p = [regex]::Matches($c, '[\{\}\[\]\(\);:,<>=\+\-\*/\|\\]').Count
+$est = [int][Math]::Ceiling(($c.Length / 3.8) + ($na * 0.45) + ($p * 0.15))
+return [pscustomobject]@{ EstimatedTokens = $est; ByteCount = $b; CharCount = $c.Length; NonAsciiCount = $na; TokenBudget = $TokenBudget; WithinBudget = ($est -le $TokenBudget) }
 }
 function Set-SenEdition {
-[CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Parameter(Mandatory)][ValidateSet("core", "full")][string]$Edition)
-$mode = if ($Edition -eq "core") { "off" } else { "eco" }
-$cfg = Set-SenOfficeConfig -Workspace $Workspace -Mode $mode
+[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Parameter(Mandatory)][ValidateSet("core", "full")][string]$Edition)
+$cfg = Set-SenOfficeConfig -Workspace $Workspace -Mode $(if ($Edition -eq "core") { "off" } else { "eco" })
 $cfg["edition"] = $Edition; $cfg["telemetryEnabled"] = ($Edition -eq "full"); $cfg["creativePacksEnabled"] = ($Edition -eq "full")
-Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/config.json") -InputObject $cfg -Depth 5
-return [pscustomobject]$cfg
+Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/config.json") -InputObject $cfg -Depth 5; return [pscustomobject]$cfg
 }
 function Get-SenDeferredItems {
-[CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
+[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
 $defPath = Join-Path $Workspace ".agents/office/deferred-items.json"; $loaded = Read-SenSafeJson -Path $defPath
 if ($null -ne $loaded -and $loaded.PSObject.Properties['items']) { return @($loaded.items) }
-$defaultItems = @(
-[ordered]@{ id = "W-09"; source = "Grok"; title = "Tone down marketing/pitch style in README.md"; status = "pending_user_confirmation"; mitigation = "Kept accessible prose style pending user confirmation" },
-[ordered]@{ id = "W-26 / IMP-19"; source = "Claude"; title = "Hide or replace public contact & bank donate info in README.md"; status = "pending_user_confirmation"; mitigation = "Never delete author contact/donation info without owner confirmation" },
-[ordered]@{ id = "IMP-13 / IMP-05"; source = "Grok"; title = "Rewrite core PowerShell runtime into Node.js/TypeScript or Python"; status = "disagreed_rejected"; mitigation = "Rejected to preserve zero-dependency core; solved via POSIX .sh scripts" },
-[ordered]@{ id = "IMP-10 / IMP-29"; source = "Grok/Claude"; title = "Split Sen.Legal.psm1 and sen-office into separate Git repos"; status = "disagreed_rejected"; mitigation = "Rejected repo fragmentation; solved via Set-SenEdition -Edition core|full" }
+$items = @(
+[ordered]@{ id = "W-09"; source = "Grok"; title = "Tone down marketing style in README.md"; status = "pending_user_confirmation"; mitigation = "Pending user confirmation" },
+[ordered]@{ id = "W-26 / IMP-19"; source = "Claude"; title = "Hide public contact/donate info in README.md"; status = "pending_user_confirmation"; mitigation = "Pending owner confirmation" },
+[ordered]@{ id = "IMP-13 / IMP-05"; source = "Grok"; title = "Rewrite PowerShell runtime into Node/Python"; status = "disagreed_rejected"; mitigation = "Solved via POSIX .sh scripts" },
+[ordered]@{ id = "IMP-10 / IMP-29"; source = "Grok/Claude"; title = "Split Sen.Legal and sen-office into separate repos"; status = "disagreed_rejected"; mitigation = "Solved via Set-SenEdition" }
 )
-Write-SenAtomicJson -Path $defPath -InputObject ([ordered]@{ version = "0.5.0"; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); items = $defaultItems }) -Depth 6
-return @($defaultItems | ForEach-Object { [pscustomobject]$_ })
+Write-SenAtomicJson -Path $defPath -InputObject ([ordered]@{ version = "0.5.0"; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); items = $items }) -Depth 6
+return @($items | ForEach-Object { [pscustomobject]$_ })
 }
 function Uninstall-SenSelf {
-[CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [switch]$RemovePluginDir, [switch]$DryRun)
-$leaf = Split-Path -Path $Workspace -Leaf; $taskName = "Sen update check ($leaf)"; $schedRemoved = $false
-if (-not $DryRun.IsPresent) {
-try { if (Get-Command Unregister-ScheduledTask -EA SilentlyContinue) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -EA SilentlyContinue; $schedRemoved = $true } } catch { <# Ignore #> }
-}
-$hRemoved = if (-not $DryRun.IsPresent -and (Get-Command Uninstall-SenHarness -EA SilentlyContinue)) { @((Uninstall-SenHarness -Workspace $Workspace -Harness @("all")).Uninstalled) } else { @() }
-$pluginDir = Join-Path $Workspace ".agents/plugins/sen-method"
-if ($RemovePluginDir.IsPresent -and (-not $DryRun.IsPresent) -and (Test-Path -LiteralPath $pluginDir)) { Remove-Item -LiteralPath $pluginDir -Recurse -Force -EA SilentlyContinue }
-return [pscustomobject]@{ Uninstalled = $true; Workspace = $Workspace; ScheduledTaskName = $taskName; ScheduledTaskRemoved = $schedRemoved; HarnessesRemoved = $hRemoved; DryRun = [bool]$DryRun.IsPresent }
+[CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [switch]$RemovePluginDir, [switch]$DryRun)
+$tName = "Sen update check ($(Split-Path -Path $Workspace -Leaf))"; $sRem = $false
+if (-not $DryRun.IsPresent) { try { if (Get-Command Unregister-ScheduledTask -EA SilentlyContinue) { Unregister-ScheduledTask -TaskName $tName -Confirm:$false -EA SilentlyContinue; $sRem = $true } } catch { <# Ignore #> } }
+$hRem = if (-not $DryRun.IsPresent -and (Get-Command Uninstall-SenHarness -EA SilentlyContinue)) { @((Uninstall-SenHarness -Workspace $Workspace -Harness @("all")).Uninstalled) } else { @() }
+$pDir = Join-Path $Workspace ".agents/plugins/sen-method"
+if ($RemovePluginDir.IsPresent -and (-not $DryRun.IsPresent) -and (Test-Path -LiteralPath $pDir)) { Remove-Item -LiteralPath $pDir -Recurse -Force -EA SilentlyContinue }
+return [pscustomobject]@{ Uninstalled = $true; Workspace = $Workspace; ScheduledTaskName = $tName; ScheduledTaskRemoved = $sRem; HarnessesRemoved = $hRem; DryRun = [bool]$DryRun.IsPresent }
 }
 function Add-SenExecutionLesson {
 [CmdletBinding()]

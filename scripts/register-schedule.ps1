@@ -33,8 +33,11 @@ $userId = if ($env:USERDOMAIN -and $env:USERNAME) {
 elseif ($env:USERNAME) {
     $env:USERNAME
 }
+elseif ($env:USER) {
+    $env:USER
+}
 else {
-    [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    try { [System.Security.Principal.WindowsIdentity]::GetCurrent().Name } catch { [Environment]::UserName }
 }
 
 if ($DryRun) {

@@ -2,6 +2,9 @@
 # ASCII-only test runner for PowerShell 5.1+
 
 $ErrorActionPreference = "Continue"
+if (-not (Get-Command powershell -ErrorAction SilentlyContinue) -and (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+    Set-Alias -Name powershell -Value (Get-Command pwsh).Source -Scope Global
+}
 
 $global:TotalTests = 0
 $global:PassedTests = 0
