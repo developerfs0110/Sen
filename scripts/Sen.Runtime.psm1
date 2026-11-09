@@ -6,54 +6,31 @@ $ErrorActionPreference = "Stop"
 
 function Write-SenAtomicJson {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path,
-        [Parameter(Mandatory = $true)]
-        $InputObject,
-        [int]$Depth = 8,
-        [switch]$Compress
-    )
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)]$InputObject, [int]$Depth = 8, [switch]$Compress)
     $parent = Split-Path -Parent $Path
-    if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-        [System.IO.Directory]::CreateDirectory($parent) | Out-Null
-    }
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) { [System.IO.Directory]::CreateDirectory($parent) | Out-Null }
     $tmpPath = "$Path.$PID.$([Guid]::NewGuid().ToString('N').Substring(0, 8)).tmp"
-    $json = if ($Compress) {
-        ConvertTo-Json -InputObject $InputObject -Depth $Depth -Compress
-    }
-    else {
-        ConvertTo-Json -InputObject $InputObject -Depth $Depth
-    }
+    $json = if ($Compress) { ConvertTo-Json -InputObject $InputObject -Depth $Depth -Compress } else { ConvertTo-Json -InputObject $InputObject -Depth $Depth }
     [System.IO.File]::WriteAllText($tmpPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
     Move-Item -LiteralPath $tmpPath -Destination $Path -Force
 }
 
 function Read-SenSafeJson {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
+    param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     try {
         $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path, [System.Text.Encoding]::UTF8)
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) {
-            return ConvertFrom-Json -InputObject $raw -DateKind String
-        }
+        if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { return ConvertFrom-Json -InputObject $raw -DateKind String }
         return ConvertFrom-Json -InputObject $raw
     }
-    catch {
-        return $null
-    }
+    catch { return $null }
 }
 
 function Test-SenPathOverlap {
     param([string[]]$PathsA = @(), [string[]]$PathsB = @())
-    if ($null -eq $PathsA -or $null -eq $PathsB -or $PathsA.Count -eq 0 -or $PathsB.Count -eq 0) {
-        return $false
-    }
+    if ($null -eq $PathsA -or $null -eq $PathsB -or $PathsA.Count -eq 0 -or $PathsB.Count -eq 0) { return $false }
     foreach ($a in $PathsA) {
         if ([string]::IsNullOrWhiteSpace($a)) { continue }
         $na = $a.Replace('\', '/').Trim().Trim('/').ToLowerInvariant()
@@ -61,10 +38,7 @@ function Test-SenPathOverlap {
         foreach ($b in $PathsB) {
             if ([string]::IsNullOrWhiteSpace($b)) { continue }
             $nb = $b.Replace('\', '/').Trim().Trim('/').ToLowerInvariant()
-            if ([string]::IsNullOrEmpty($nb)) { continue }
-            if ($na -eq $nb -or $na.StartsWith($nb + "/") -or $nb.StartsWith($na + "/")) {
-                return $true
-            }
+            if ($nb -and ($na -eq $nb -or $na.StartsWith($nb + "/") -or $nb.StartsWith($na + "/"))) { return $true }
         }
     }
     return $false
@@ -72,10 +46,7 @@ function Test-SenPathOverlap {
 
 function Protect-SenRedactedText {
     [CmdletBinding()]
-    param(
-        [AllowEmptyString()]
-        [string]$Text = ""
-    )
+    param([AllowEmptyString()][string]$Text = "")
     if ([string]::IsNullOrEmpty($Text)) { return "" }
     $s = $Text
     $s = [regex]::Replace($s, '(?i)(\bbearer\s+)[^\s"''&]+', '$1[REDACTED]')
@@ -93,49 +64,23 @@ function Protect-SenRedactedText {
 
 function Get-SenOfficeConfig {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
-    $default = [ordered]@{
-        mode      = "eco"
-        port      = 47890
-        scale     = "standard"
-        updatedAt = $null
-    }
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $default = [ordered]@{ mode = "eco"; port = 47890; scale = "standard"; updatedAt = $null }
     $obj = Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/config.json")
     if ($null -eq $obj) { return $default }
     $mode = if ($obj.mode -in @("off", "eco", "full")) { [string]$obj.mode } else { "eco" }
     $port = if ($obj.port -and [int]$obj.port -gt 1024) { [int]$obj.port } else { 47890 }
     $scale = if ($obj.PSObject.Properties.Name -contains "scale" -and $obj.scale -in @("mini", "standard", "enterprise")) { [string]$obj.scale } else { "standard" }
-    return [ordered]@{
-        mode      = $mode
-        port      = $port
-        scale     = $scale
-        updatedAt = $obj.updatedAt
-    }
+    return [ordered]@{ mode = $mode; port = $port; scale = $scale; updatedAt = $obj.updatedAt }
 }
 
 function Set-SenOfficeConfig {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [ValidateSet("off", "eco", "full")]
-        [string]$Mode = "eco",
-        [int]$Port = 0,
-        [ValidateSet("mini", "standard", "enterprise", "")]
-        [string]$Scale = ""
-    )
+    param([Parameter(Mandatory = $true)][string]$Workspace, [ValidateSet("off", "eco", "full")][string]$Mode = "eco", [int]$Port = 0, [ValidateSet("mini", "standard", "enterprise", "")][string]$Scale = "")
     $cur = Get-SenOfficeConfig -Workspace $Workspace
     $usePort = if ($Port -gt 1024) { $Port } else { [int]$cur.port }
     $useScale = if ($Scale -in @("mini", "standard", "enterprise")) { $Scale } elseif ($cur.scale -in @("mini", "standard", "enterprise")) { [string]$cur.scale } else { "standard" }
-    $next = [ordered]@{
-        mode      = $Mode
-        port      = $usePort
-        scale     = $useScale
-        updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-    }
+    $next = [ordered]@{ mode = $Mode; port = $usePort; scale = $useScale; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
     Write-SenAtomicJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/config.json") -InputObject $next -Depth 5
     return $next
 }
@@ -695,18 +640,17 @@ function Measure-SenNonPsFunctionSpans {
 
 function Measure-SenCodeHealth {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [int]$MaxLogicLines = 800, [int]$MaxLogicBytes = 46080,
-        [int]$MaxUiLines = 1500,   [int]$MaxUiBytes = 81920,
-        [int]$MaxTestLines = 1000, [int]$MaxTestBytes = 61440,
-        [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4,
-        [switch]$UseNativeLinters
-    )
+    param([Parameter(Mandatory = $true)][string]$Path, [int]$MaxLogicLines = 800, [int]$MaxLogicBytes = 46080, [int]$MaxUiLines = 1500, [int]$MaxUiBytes = 81920, [int]$MaxTestLines = 1000, [int]$MaxTestBytes = 61440, [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4, [switch]$UseNativeLinters)
     $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
     $exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
-    $skipRe = '(?i)[\\/](node_modules|dist|build|coverage|vendor|\.git|\.next|\.venv|venv|clone|\.superpowers|\.gemini|\.claude|\.cursor|\.agents\.backup[^\\/]*|\.sen-backup|\.sen-restore|snapshots|Antigravity IDE)[\\/]'
-    $files = @(Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object { ($exts -contains $_.Extension.ToLowerInvariant()) -and ($_.FullName -notmatch $skipRe) })
+    $skipDirRe = '^(?i)(\.git|node_modules|dist|build|out|target|coverage|vendor|\.next|\.nuxt|\.svelte-kit|\.venv|venv|clone|\.superpowers|\.gemini|\.claude|\.cursor|\.codex|\.windsurf|\.agents.*|\.sen-backup|\.sen-restore|snapshots|Pods|\.gradle|\.dart_tool|Antigravity IDE|VSCode.*|Code|Templates|Sen-Review)$'
+    $files = [System.Collections.Generic.List[System.IO.FileInfo]]::new(); $q = [System.Collections.Generic.Queue[string]]::new()
+    if (Test-Path -LiteralPath $root -PathType Leaf) { $files.Add((Get-Item -LiteralPath $root)); $root = Split-Path -Parent $root } else { $q.Enqueue($root) }
+    while ($q.Count -gt 0) {
+        $cur = $q.Dequeue()
+        foreach ($d in @(Get-ChildItem -LiteralPath $cur -Directory -EA SilentlyContinue)) { if ($d.Name -notmatch $skipDirRe) { $q.Enqueue($d.FullName) } }
+        foreach ($f in @(Get-ChildItem -LiteralPath $cur -File -EA SilentlyContinue)) { if ($exts -contains $f.Extension.ToLowerInvariant()) { $files.Add($f) } }
+    }
 
     $oversized = [System.Collections.Generic.List[object]]::new(); $longFuncs = [System.Collections.Generic.List[object]]::new()
     $deepNest  = [System.Collections.Generic.List[object]]::new(); $emptyCat  = [System.Collections.Generic.List[object]]::new()

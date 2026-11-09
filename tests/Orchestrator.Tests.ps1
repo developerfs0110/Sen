@@ -505,6 +505,21 @@ Test "TASK-22 3-Signal Liveness Probe protects active long-running tasks and cat
         $fileTask = $postTasks | Where-Object { $_.id -eq "LONG-FILE" } | Select-Object -First 1
         Assert-Equal "in_progress" $hbTask.status "LONG-HB must remain in_progress untouched"
         Assert-Equal "in_progress" $fileTask.status "LONG-FILE must remain in_progress untouched"
+        Assert-True ($null -ne $mixedCheck.HungProcessIds) "Test-SenHungTasks must expose HungProcessIds array"
+        Assert-True ($null -ne $selectiveClear.KilledProcessIds) "Clear-SenHungTasks must expose KilledProcessIds array"
+
+        $pwshExe = if (Get-Command powershell -ErrorAction SilentlyContinue) { "powershell" } else { "pwsh" }
+        $dummy = Start-Process -FilePath $pwshExe -ArgumentList @("-NoProfile", "-WindowStyle", "Hidden", "-Command", "Start-Sleep -Seconds 30 # Test-SenDeliveryGate '$ws'") -PassThru
+        try {
+            Start-Sleep -Seconds 6
+            $osHung = Test-SenHungTasks -Workspace $ws -StaleMinutes 15 -MaxProcessSeconds 5
+            Assert-True ($osHung.HungProcessIds -contains $dummy.Id) "Test-SenHungTasks must detect stuck OS PowerShell gate process"
+            $osReap = Clear-SenHungTasks -Workspace $ws -StaleMinutes 15 -MaxProcessSeconds 5
+            Assert-True ($osReap.KilledProcessIds -contains $dummy.Id) "Clear-SenHungTasks must kill stuck OS PowerShell gate process"
+        }
+        finally {
+            if ($dummy -and (-not $dummy.HasExited)) { Stop-Process -Id $dummy.Id -Force -ErrorAction SilentlyContinue }
+        }
     }
     finally {
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue

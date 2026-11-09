@@ -12,7 +12,7 @@ function Get-SenVnLawCandidateFiles {
         '.yml', '.yaml', '.dart', '.kt', '.kts', '.java', '.swift', '.m', '.mm',
         '.gradle', '.xml', '.plist', '.md'
     )
-    $skipDirRe = '^(?i)(\.git|node_modules|dist|build|out|\.next|\.nuxt|\.svelte-kit|vendor|coverage|\.vn-law-check|Pods|\.dart_tool|\.gradle|DerivedData|\.expo|\.agents.*|\.sen-backup|\.sen-restore|\.superpowers|\.gemini|\.claude|\.cursor|Antigravity IDE|tests|test|__tests__|docs|skills|rules)$'
+    $skipDirRe = '^(?i)(\.git|node_modules|dist|build|out|target|\.next|\.nuxt|\.svelte-kit|vendor|coverage|\.venv|venv|clone|snapshots|\.vn-law-check|Pods|\.dart_tool|\.gradle|DerivedData|\.expo|\.agents.*|\.sen-backup|\.sen-restore|\.superpowers|\.gemini|\.claude|\.cursor|\.codex|\.windsurf|Antigravity IDE|VSCode.*|Code|Templates|Sen-Review|tests|test|__tests__|docs|skills|rules)$'
     $filtered = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
     $queue = [System.Collections.Generic.Queue[string]]::new()
     $queue.Enqueue($RootPath)

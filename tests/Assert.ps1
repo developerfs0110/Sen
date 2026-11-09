@@ -98,6 +98,9 @@ function Test {
         $global:FailedTests++
         Write-Host "  FAIL: $Name" -ForegroundColor Red
         Write-Host "        $($_.Exception.Message)" -ForegroundColor Red
+        if ($env:GITHUB_ACTIONS -eq "true") {
+            Write-Host "::error title=FAIL: $Name::$($_.Exception.Message)"
+        }
     }
 }
 

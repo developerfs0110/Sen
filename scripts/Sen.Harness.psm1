@@ -339,7 +339,7 @@ function Test-SenSingleStepEvidence {
     "S3-TDD-VERIFY" {
       [void](Sync-SenPlanToTasks -Workspace $Workspace)
       if ((Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) -and (-not (Test-SenHungTasks -Workspace $Workspace).Healthy)) { return $false }
-      $active = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
+      $active = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and (-not ($_.PSObject.Properties['isTelemetryOnly'] -and [bool]$_.isTelemetryOnly)) })
       if ($active.Count -eq 0) { return $false }
       $sessDone = @($active | Where-Object { -not $SessionStartedAt -or [string]$_.updatedAt -ge $SessionStartedAt -or ($_.evidence -and [string]$_.evidence.verifiedAt -ge $SessionStartedAt) })
       if ($sessDone.Count -eq 0) { return $false }
@@ -347,7 +347,7 @@ function Test-SenSingleStepEvidence {
     }
     "S3-TWOWAY-SYNC" {
       [void](Sync-SenPlanToTasks -Workspace $Workspace); [void](Sync-SenTasksToMarkdown -Workspace $Workspace)
-      return (@(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and [string]$_.status -ne "done" }).Count -eq 0)
+      return (@(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" -and (-not ($_.PSObject.Properties['isTelemetryOnly'] -and [bool]$_.isTelemetryOnly)) -and [string]$_.status -ne "done" }).Count -eq 0)
     }
     "S4-CLEAN-CODE" { return [bool](Measure-SenCodeHealth -Path $targetDir).Healthy }
     "S4-VN-LAW" { $vl = Invoke-SenVnLawScan -Path $targetDir; return ([bool]$vl.CompliantCodeLevel -and ($vl.Verdict -in @("PASS", "NOT_APPLICABLE"))) }

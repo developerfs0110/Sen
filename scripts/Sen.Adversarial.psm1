@@ -770,31 +770,16 @@ function Invoke-SenDialecticalAudit {
     $verdict4State = if ($allPassed) { "VERIFIED" } elseif (-not $v6Passed -or -not $v3Passed -or -not $antiGaming.Passed) { "REJECTED" } else { "INCONCLUSIVE" }
 
     $independentReview = [pscustomobject][ordered]@{
-        AgentA_Proposer     = [bool]$v1Passed
-        AgentB_FaultFinder  = [bool]($v5Passed -and $v3Passed)
-        AgentC_Quantitative = [bool]($v2Passed -and $v4Passed)
-        AgentD_Decision     = $(if ($allPassed) { "APPROVED" } else { "REJECTED" })
-        Verdict             = $verdict4State
+        AgentA_Proposer = [bool]$v1Passed; AgentB_FaultFinder = [bool]($v5Passed -and $v3Passed)
+        AgentC_Quantitative = [bool]($v2Passed -and $v4Passed); AgentD_Decision = $(if ($allPassed) { "APPROVED" } else { "REJECTED" }); Verdict = $verdict4State
     }
     $result = [pscustomobject][ordered]@{
-        Workspace         = $Workspace
-        Passed            = $allPassed
-        Verdict           = $verdict4State
-        Score             = [int][Math]::Round(($passedCount * 100.0) / $vectors.Count)
-        Vectors           = $vectors
-        IndependentReview = $independentReview
-        AntiMetricGaming  = $antiGaming
-        verifiedAt        = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        Workspace = $Workspace; Passed = $allPassed; Verdict = $verdict4State; Score = [int][Math]::Round(($passedCount * 100.0) / $vectors.Count)
+        Vectors = $vectors; IndependentReview = $independentReview; AntiMetricGaming = $antiGaming; verifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
-    if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) {
-        Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/dialectical-audit.json") -InputObject $result -Depth 8
-    }
+    if (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) { Write-SenAtomicJson -Path (Join-Path $Workspace ".agents/office/dialectical-audit.json") -InputObject $result -Depth 8 }
     return $result
 }
-
 $senBoundedLoopPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.BoundedLoop.psm1"
-if (Test-Path -LiteralPath $senBoundedLoopPath) {
-    Import-Module -Name $senBoundedLoopPath -Global -Force
-}
-
+if (Test-Path -LiteralPath $senBoundedLoopPath) { Import-Module -Name $senBoundedLoopPath -Global -Force }
 Export-ModuleMember -Function Get-SenFileSha256, Get-SenTextSha256, Get-SenCodeRevisionSnapshot, New-SenFalsificationPlan, Test-SenFalsificationPlan, Register-SenClaim, Invoke-SenExecutableEvidence, Register-SenCounterexample, Get-SenBlindReviewPackage, Invoke-SenIndependentVerdict, Lock-SenQualityBaseline, Test-SenAntiMetricGaming, Invoke-SenGovernanceNegativeTest, Invoke-SenDialecticalAudit

@@ -676,7 +676,7 @@ function Invoke-SenPostCodePipeline {
     $health = if ($SkipHealth.IsPresent) { [pscustomobject]@{ Healthy = $true; Score = 100 } } else { Measure-SenCodeHealth -Path $effCodePath }
 
     $parityPassed = $true
-    if (Get-Command Test-SenCapabilityParity -ErrorAction SilentlyContinue) {
+    if ((Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath "plugin.json")) -and (Get-Command Test-SenCapabilityParity -ErrorAction SilentlyContinue)) {
         $par = Test-SenCapabilityParity -SenRoot $Workspace
         $parityPassed = [bool]$par.Passed
     }
@@ -702,7 +702,7 @@ function Invoke-SenPostCodePipeline {
         [void](Install-SenGitHooks -Workspace $Workspace -Force)
     }
 
-    $gate = Test-SenDeliveryGate -Workspace $Workspace
+    $gate = if ([bool]$health.Healthy) { Test-SenDeliveryGate -Workspace $Workspace -SkipCodeHealth } else { Test-SenDeliveryGate -Workspace $Workspace }
     $allPassed = ([bool]$health.Healthy -and $evValid -and $parityPassed -and [bool]$gate.Passed)
 
     return [pscustomobject][ordered]@{

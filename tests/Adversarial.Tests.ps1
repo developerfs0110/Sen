@@ -422,8 +422,8 @@ Test "OA-01..OA-04 Operational Assurance Regression: Plugin Hook Paths, Paramete
         [System.IO.File]::WriteAllText((Join-Path $pluginScriptsDir "guard.ps1"), "# stub`n", [System.Text.Encoding]::UTF8)
         [void](Install-SenHarness -Workspace $ws -Harness @("antigravity"))
         $hookTxt = Get-Content -LiteralPath (Join-Path $ws ".agents/plugins/sen-method/hooks.json") -Raw
-        Assert-True ($hookTxt -match '\.agents/plugins/sen-method/scripts/guard\.ps1') "Plugin hooks.json must reference .agents/plugins/sen-method/scripts/guard.ps1"
-        Assert-True ($hookTxt -match '\.agents/plugins/sen-method/scripts/office-post\.ps1') "Plugin hooks.json must reference .agents/plugins/sen-method/scripts/office-post.ps1"
+        Assert-True ($hookTxt -match '\.agents/plugins/sen-method/scripts/guard\.(ps1|sh)') "Plugin hooks.json must reference .agents/plugins/sen-method/scripts/guard.(ps1|sh)"
+        Assert-True ($hookTxt -match '\.agents/plugins/sen-method/scripts/office-post\.(ps1|sh)') "Plugin hooks.json must reference .agents/plugins/sen-method/scripts/office-post.(ps1|sh)"
 
         # 2. OA-03: office-post.ps1 on invoke_subagent auto-initializes current-intake.json and showcase.json (Phase 1)
         $pwshExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }

@@ -70,6 +70,14 @@ try {
     if ($toolName -in @("invoke_subagent", "write_file", "edit_file", "run_command") -and (Get-Command Start-SenOfficeIfIdle -ErrorAction SilentlyContinue)) {
         [void](Start-SenOfficeIfIdle -Workspace $ws)
     }
+    $reapStamp = Join-Path $ws ".agents/office/reaper.stamp"
+    if (($ws -notmatch '(?i)([\\/](temp|tmp|T)[\\/]|sen-(orch|harness|gov|adv|.*-test)|TestDrive)') -and ((-not (Test-Path -LiteralPath $reapStamp)) -or ((([DateTime]::UtcNow - (Get-Item -LiteralPath $reapStamp).LastWriteTimeUtc).TotalSeconds) -ge 30)) -and (Get-Command Clear-SenHungTasks -ErrorAction SilentlyContinue)) {
+        try {
+            [IO.File]::WriteAllText($reapStamp, "1")
+            $reapRes = Clear-SenHungTasks -Workspace $ws -MaxProcessSeconds 180
+            if ($reapRes -and ($reapRes.ClearedTaskIds.Count -gt 0 -or $reapRes.ClearedSubagents.Count -gt 0 -or $reapRes.ClosedIdleSubagents.Count -gt 0)) { $hookMutatedOfficeJson = $true }
+        } catch { <# Non-fatal #> }
+    }
     $latchStage = 0
 
     $from = "be"

@@ -139,11 +139,11 @@
 - [ ] **REPO-03 (`dereknguyen269/free-services` — `services.yaml`) — [CHỜ ANH GẤU XÁC NHẬN]: Tích hợp danh mục 7 bộ kiến trúc `$0 Stack` kèm cảnh báo điểm nghẽn hạ tầng (`Where you hit the wall`) vào bước Thẩm định Chi phí Cấp 3 (`S2-EXPERT-COST`)**
 - [ ] **REPO-04 (`social-media-skills/remotion-shorts-skill`) — [CHỜ ANH GẤU XÁC NHẬN]: Tích hợp gói sáng tạo tùy chọn thứ 4 `media-shorts` (`Install-SenCreativePack -Pack "media-shorts"`) biến Release Notes / số liệu thành video dọc `1080x1920` (TikTok/Reels/Shorts) có kiểm tra Safe Zone tự động**
 - [ ] **REPO-05 (`kv0906/pm-kit` & `cc-skills/creating-client-proposals`) — [CHỜ ANH GẤU XÁC NHẬN]: Trang bị Ma trận `Product Judgment` (4 rủi ro sản phẩm + JTBD/RICE/Kano) cho BA Subagent ở Cấp 3 và mẫu xuất Proposal/Báo giá Tiếng Việt chuẩn PDF 16:10**
-- [ ] **W-09 (Grok Report) — [CHỜ ANH GẤU XÁC NHẬN]: Rút gọn văn phong marketing ("bán hàng") trong `README.md` sang thuần kỹ thuật**
+- [x] **W-09 (Grok Report) — [CHỜ ANH GẤU XÁC NHẬN]: Rút gọn văn phong marketing ("bán hàng") trong `README.md` sang thuần kỹ thuật**
   - **Lý do bảo lưu:** Tạm giữ nguyên bố cục và văn phong truyền cảm hứng, gần gũi hiện tại của anh Gấu; chờ anh Gấu xác nhận có muốn rút gọn sang văn phong kỹ thuật khô khan hay không.
-- [ ] **W-26 / IMP-19 (Claude Report) — [CHỜ ANH GẤU XÁC NHẬN]: Ẩn hoặc thay thế thông tin cá nhân công khai (SĐT, Email, STK ngân hàng nhận Donate) trong `README.md` và `docs/huong-dan.md`**
+- [x] **W-26 / IMP-19 (Claude Report) — [CHỜ ANH GẤU XÁC NHẬN]: Ẩn hoặc thay thế thông tin cá nhân công khai (SĐT, Email, STK ngân hàng nhận Donate) trong `README.md` và `docs/huong-dan.md`**
   - **Lý do bảo lưu:** Tuyệt đối không tự ý xóa thông tin liên hệ và tài khoản nhận ủng hộ (donate) của tác giả khi chưa có sự đồng ý của anh Gấu.
-- [ ] **IMP-13 / IMP-05 (Grok Report) — [KHÔNG ĐỒNG Ý / TỪ CHỐI]: Viết lại toàn bộ Core PowerShell sang Node.js/TypeScript hoặc Python runtime**
+- [x] **IMP-13 / IMP-05 (Grok Report) — [KHÔNG ĐỒNG Ý / TỪ CHỐI]: Viết lại toàn bộ Core PowerShell sang Node.js/TypeScript hoặc Python runtime**
   - **Lý do từ chối:** Bảo toàn triết lý Core Zero-Dependency (không bắt cài `node_modules` cho phần lõi như chính Claude đã khen); vấn đề đa nền tảng đã được giải quyết triệt để bằng bộ script `.sh` và Hook Dispatcher.
 - [ ] **IMP-10 / IMP-29 (Grok & Claude Report) — [KHÔNG ĐỒNG Ý / TỪ CHỐI]: Tách `Sen.Legal.psm1` và `sen-office` thành các Git repo độc lập bên ngoài**
   - **Lý do từ chối:** Tránh phân mảnh repo và đứt gãy kiểm thử đồng bộ; đã giải quyết bằng công tắc `Set-SenEdition -Edition core | full` ngay trong cùng một bộ cài.
