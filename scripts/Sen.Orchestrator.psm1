@@ -256,8 +256,8 @@ $proc = if ($isTarget) { Get-Process -Id $wpId -EA SilentlyContinue } else { $nu
 if ($null -ne $proc -and $proc.StartTime.ToUniversalTime() -lt $procCutoff) { $hungPids.Add($wpId) }
 }
 foreach ($up in @(if ($env:OS -ne 'Windows_NT') { Get-Process -Name pwsh,powershell -EA SilentlyContinue } else { @() })) {
-$uCmd = if ($up.PSObject.Properties['CommandLine'] -and $up.CommandLine) { [string]$up.CommandLine } elseif (Test-Path "/proc/$($up.Id)/cmdline") { [IO.File]::ReadAllText("/proc/$($up.Id)/cmdline").Replace([char]0, ' ') } else { "" }
-if ($up.Id -ne $PID -and $up.StartTime.ToUniversalTime() -lt $procCutoff -and $uCmd -match '(?i)(Sen\.psm1|Test-SenDeliveryGate|Invoke-SenPostCodePipeline)' -and ((-not $isTempWs) -or ($uCmd.Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -ge 0))) { $hungPids.Add([int]$up.Id) }
+$uCmd = if ($up.PSObject.Properties['CommandLine'] -and $up.CommandLine) { [string]$up.CommandLine } elseif (Test-Path "/proc/$($up.Id)/cmdline") { [IO.File]::ReadAllText("/proc/$($up.Id)/cmdline").Replace([char]0, ' ') } else { (@(& ps -ww -p $up.Id -o command= 2>$null) -join ' ') }
+if ($up.Id -ne $PID -and $up.StartTime.ToUniversalTime() -le $procCutoff -and $uCmd -match '(?i)(Sen\.psm1|Test-SenDeliveryGate|Invoke-SenPostCodePipeline)' -and ((-not $isTempWs) -or ($uCmd.Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -ge 0))) { $hungPids.Add([int]$up.Id) }
 }
 }
 catch { <# Ignore #> }

@@ -130,9 +130,16 @@ function Start-SenOfficeIfIdle {
         $startScr = Join-Path -Path $PSScriptRoot -ChildPath "start-office.ps1"
         if (-not (Test-Path -LiteralPath $startScr)) { return $false }
         $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell.exe" }
-        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"")
-        if ($NoBrowser.IsPresent) { $argList += "-NoBrowser" }
-        Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null
+        if ($env:OS -eq 'Windows_NT') {
+            $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"")
+            if ($NoBrowser.IsPresent) { $argList += "-NoBrowser" }
+            Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null
+        }
+        else {
+            $argList = @("-NoProfile", "-File", $startScr, "-Workspace", $Workspace)
+            if ($NoBrowser.IsPresent) { $argList += "-NoBrowser" }
+            Start-Process -FilePath $psExe -ArgumentList $argList | Out-Null
+        }
         return $true
     }
     catch { return $false }

@@ -321,10 +321,8 @@ function Install-SenSelf {
         foreach ($item in Get-ChildItem -LiteralPath $srcRoot -Force) {
             if (($payload -contains $item.Name) -or ($item.Name -like "README*")) {
                 $targetItem = Join-Path $dest $item.Name
-                if (Test-Path -LiteralPath $targetItem) {
-                    Remove-Item -LiteralPath $targetItem -Recurse -Force -ErrorAction SilentlyContinue
-                }
-                Copy-Item -LiteralPath $item.FullName -Destination $targetItem -Recurse -Force
+                $srcPath = if ($item.PSIsContainer -and (Test-Path -LiteralPath $targetItem -PathType Container)) { Join-Path $item.FullName "*" } else { $item.FullName }
+                Copy-Item -Path $srcPath -Destination $targetItem -Recurse -Force
             }
         }
         [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", [System.Text.UTF8Encoding]::new($false))
