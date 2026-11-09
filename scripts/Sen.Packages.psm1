@@ -613,6 +613,7 @@ function Invoke-SenAtomicDestSwap {
             throw "stale .sen-old present; resolve manually"
         }
         if (Test-Path -LiteralPath $Dest) {
+            foreach ($f in (Get-ChildItem -LiteralPath $Dest -File -Recurse -Force)) { $s = [System.IO.File]::Open($f.FullName, 'Open', 'Read', 'ReadWrite'); $s.Close() }
             [System.IO.Directory]::Move($Dest, $oldDest)
             $destRenamed = $true
         }
