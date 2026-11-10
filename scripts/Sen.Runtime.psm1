@@ -3,6 +3,10 @@
 # Local Office Server (start-office.ps1), Risk Engine, and Stateful Task Manager (v0.3.0+).
 
 $ErrorActionPreference = "Stop"
+if (-not (Get-Command Get-SenStepArtifactHash -ErrorAction SilentlyContinue)) {
+    $prevBoot = $global:SenCoreBootstrapActive; $global:SenCoreBootstrapActive = $true
+    try { Import-Module (Join-Path $PSScriptRoot "Sen.Core.psm1") -Global -Force -DisableNameChecking } finally { $global:SenCoreBootstrapActive = $prevBoot }
+}
 
 function Write-SenAtomicJson {
     [CmdletBinding()]
@@ -154,6 +158,7 @@ function Invoke-SenWithFileMutex {
     $hasLock = $false
     try {
         try { $hasLock = $mtx.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
+        if (-not $hasLock) { throw "Concurrency lock timeout acquiring state mutex on '$FilePath'." }
         return (& $Action)
     }
     finally {
@@ -344,7 +349,7 @@ function Write-SenOfficeShowcase {
         [Parameter(Mandatory = $false)][hashtable]$Showcase = $null,
         [string]$TaskId = "", [string]$Title = "", [int]$Phase = 0,
         [string]$Blueprint = "", [string]$Summary = "", [string]$Domain = "",
-        [string[]]$ExpectedOutputs = @(), [string[]]$VerifiedOutputs = @(),
+        [string[]]$ExpectedOutputs = @(), [string[]]$VerifiedOutputs = @(), [Alias("Mermaid", "Diagram")][string[]]$Diagrams = @(),
         [hashtable]$Gates = $null, [hashtable]$Metrics = $null,
         [hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
         [int]$Tier = 2
@@ -353,6 +358,7 @@ function Write-SenOfficeShowcase {
     $existing = Read-SenOfficeShowcase -Workspace $Workspace
     $merged = if ($null -ne $existing) { ConvertTo-SenHashtable -InputObject $existing } else { @{ } }
     $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    if ($Diagrams.Count -gt 0) { $merged["diagrams"] = $Diagrams }
     if ($null -ne $Showcase) {
         foreach ($k in $Showcase.Keys) {
             if ($null -ne $Showcase[$k] -or (-not $merged.ContainsKey($k))) { $merged[$k] = $Showcase[$k] }

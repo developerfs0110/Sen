@@ -1,7 +1,7 @@
 # Điểm Lưu Bối Cảnh Dự Án — Sen (`sen-method` `v0.5.1`)
 
-- **Cập nhật lần cuối:** 2026-11-09
-- **Cột mốc hiện tại:** `v0.5.1` (**Operational Assurance Audit `Sen-Audit.docx`, Vá 10 lỗ hổng Red-Team `F-01..F-10` / `AT-01..AT-10`, 3 Chốt Chặn Vật Lý Chống Quên `Initialize-SenIntake` & `Test-SenIntakeCompleteness`, 7-Link RTM, Evidence Stale Engine & Mandatory Bilingual Release Notes Gate**) — **Đã hoàn tất & Kiểm chứng**
+- **Cập nhật lần cuối:** 2026-11-10
+- **Cột mốc hiện tại:** `v0.5.1` (**Operational Assurance Audit `Sen-Audit.docx`, Vá 10 lỗ hổng Red-Team `F-01..F-10` / `AT-01..AT-10`, Operational Control Plane `F01..F16` & `OA-01..OA-12`, 3 Chốt Chặn Vật Lý Chống Quên `Initialize-SenIntake` & `Test-SenIntakeCompleteness`, 7-Link RTM, Evidence Stale Engine & Mandatory Bilingual Release Notes Gate**) — **Đã hoàn tất & Kiểm chứng**
 - **Kho mã nguồn:** `https://github.com/developerfs0110/Sen.git` (nhánh `main`)
 - **Quy ước Git của dự án:** Tất cả nội dung bình luận khi commit/push Git (`git commit`) bắt buộc viết bằng **tiếng Việt** (xem [rules/AGENTS.md](../rules/AGENTS.md)).
 

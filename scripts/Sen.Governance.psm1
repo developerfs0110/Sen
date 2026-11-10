@@ -13,26 +13,6 @@ $p = Split-Path -Parent $cur; if ([string]::IsNullOrWhiteSpace($p) -or $p -eq $c
 }
 return $cur
 }
-function Test-SenSymlinkEscape {
-param([string]$FullTarget, [string[]]$ResolvedWorkspaces)
-$probe = $FullTarget; $cmp = [StringComparison]::OrdinalIgnoreCase; $sep = [IO.Path]::DirectorySeparatorChar
-for ($i = 0; $i -lt 10; $i++) {
-if ([string]::IsNullOrWhiteSpace($probe) -or $probe -eq "/") { break }
-$inWs = $false
-foreach ($rw in $ResolvedWorkspaces) { if ($rw -and ($probe.StartsWith($rw + $sep, $cmp) -or $probe.StartsWith($rw + '/', $cmp))) { $inWs = $true; break } }
-if (-not $inWs) { break }
-$it = if (Test-Path -LiteralPath $probe) { Get-Item -LiteralPath $probe -Force -EA SilentlyContinue } else { $null }
-if (($null -ne $it) -and ([int]($it.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-$lt = if ($it.PSObject.Properties['Target'] -and $it.Target) { [string](@($it.Target)[0]) } else { "" }
-if (-not $lt) { return $true }
-$par = Split-Path -Parent $probe
-$abs = if ([IO.Path]::IsPathRooted($lt)) { [IO.Path]::GetFullPath($lt) } elseif ($par) { [IO.Path]::GetFullPath((Join-Path $par $lt)) } else { $lt }
-if (@($ResolvedWorkspaces | Where-Object { $abs.StartsWith($_, $cmp) }).Count -eq 0) { return $true }
-}
-$p = Split-Path -Parent $probe; if ([string]::IsNullOrWhiteSpace($p) -or $p -eq $probe -or $p -eq "/") { break }; $probe = $p
-}
-return $false
-}
 function Test-SenSafeWorkspacePath {
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$TargetPath, [string[]]$WorkspaceList = @(), [string]$ToolName = "write_file")
@@ -58,12 +38,13 @@ if (-not $ok) { return [pscustomobject]@{ Allowed = $false; Reason = "File write
 return [pscustomobject]@{ Allowed = $true; Reason = $null; NormalizedPath = $ft; IsSymlinkEscape = $false }
 }
 function Invoke-SenGovMutex {
-param([string]$LockTarget, [scriptblock]$Callback)
+param([string]$LockTarget, [scriptblock]$Callback, [int]$TimeoutMs = 5000)
 $normTarget = try { [IO.Path]::GetFullPath($LockTarget).Replace('\', '/').ToLowerInvariant() } catch { <# Fallback #> $LockTarget.Replace('\', '/').ToLowerInvariant() }
 $keyHex = ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($normTarget)))).Replace("-", "").Substring(0, 24).ToLowerInvariant()
 $govMtx = [Threading.Mutex]::new($false, "Local\SenStateMutex_$keyHex"); $acquired = $false
 try {
-try { $acquired = $govMtx.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $acquired = $true }
+try { $acquired = $govMtx.WaitOne($TimeoutMs) } catch [Threading.AbandonedMutexException] { $acquired = $true }
+if (-not $acquired) { throw "Concurrency lock timeout acquiring governance mutex 'Local\SenStateMutex_$keyHex' on '$LockTarget'." }
 return (& $Callback)
 }
 finally { if ($acquired) { try { $govMtx.ReleaseMutex() } catch { <# Ignore #> } }; $govMtx.Dispose() }
@@ -111,7 +92,7 @@ return [pscustomobject]@{ Requirement = $reqObj; Deduplicated = $dedup; HasConfl
 }
 function Register-SenEvidence {
 [CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$EvidenceId = "", [string]$RequirementId = "", [string]$TaskId = "", [Alias("Category")][ValidateSet("unit", "integration", "e2e", "security", "performance", "build", "lint", "test")][string]$Type = "unit", [ValidateSet("PASS", "FAIL", "STALE")][string]$Status = "PASS", [string]$Source = "TestRunner", [string]$Command = "tests/run.ps1", [int]$ExitCode = 0, [string[]]$CodePaths = @(), [string]$SubjectPath = "", [int]$TTLMinutes = 1440, [string]$Output = "")
+param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Alias("Id")][string]$EvidenceId = "", [string]$RequirementId = "", [string]$TaskId = "", [Alias("Category")][ValidateSet("unit", "integration", "e2e", "security", "performance", "build", "lint", "test")][string]$Type = "unit", [ValidateSet("PASS", "FAIL", "STALE")][string]$Status = "PASS", [string]$Source = "TestRunner", [string]$Command = "tests/run.ps1", [int]$ExitCode = 0, [Alias("ArtifactPaths", "Files")][string[]]$CodePaths = @(), [string]$SubjectPath = "", [int]$TTLMinutes = 1440, [string]$Output = "", [switch]$ExecuteCommand, [string]$ExecutionId = "", [int]$ProcessId = 0, [string]$OutputHash = "", [switch]$ClaimedOnly)
 if ($Type -eq "test") { $Type = "unit" }
 if ([string]::IsNullOrWhiteSpace($EvidenceId)) { $EvidenceId = "EV-" + [DateTime]::UtcNow.ToString("HHmmss") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 4)) }
 $evPath = Join-Path $Workspace ".agents/office/evidence.json"
@@ -124,11 +105,11 @@ if (-not [string]::IsNullOrWhiteSpace($SubjectPath) -and (-not $cPaths.Contains(
 $sRel = if (-not [string]::IsNullOrWhiteSpace($SubjectPath)) { $SubjectPath } elseif ($cPaths.Count -gt 0) { $cPaths[0] } else { "" }
 $sFull = if (-not $sRel) { "" } elseif ([IO.Path]::IsPathRooted($sRel)) { $sRel } else { Join-Path $Workspace $sRel }
 $sHash = if ($sFull -and (Test-Path -LiteralPath $sFull -PathType Leaf)) { (Get-FileHash -LiteralPath $sFull -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
-$gitC = "uncommitted"
-if (Test-Path -LiteralPath (Join-Path $Workspace ".git")) { try { $gc = (& git -C $Workspace rev-parse --short=12 HEAD 2>$null); if ($LASTEXITCODE -eq 0 -and $gc) { $gitC = ([string]$gc).Trim() } } catch { <# Ignore #> } }
-$now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $expIso = (Get-Date).ToUniversalTime().AddMinutes($TTLMinutes).ToString("o")
-$ver = ($Status -eq "PASS" -and $ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($Command))
-$entry = [pscustomobject]@{ evidence_id = $EvidenceId; requirement_id = $RequirementId; task_id = $TaskId; type = $Type; status = $(if ($ver) { "PASS" } elseif ($Status -eq "STALE") { "STALE" } else { "FAIL" }); source = $Source; command = $Command; exitCode = $ExitCode; codePaths = @($cPaths.ToArray()); subjectPath = $sRel; subjectHash = $sHash; gitCommit = $gitC; ttlMinutes = $TTLMinutes; expiresAt = $expIso; timestamp = $now; verified = [bool]$ver }
+$runMeta = Invoke-SenLiveEvidenceRunner -Workspace $Workspace -Command $Command -ProvidedExitCode $ExitCode -ProvidedOutput $Output -ExecuteCommand:$ExecuteCommand.IsPresent -ClaimedOnly:$ClaimedOnly.IsPresent -ExecutionId $ExecutionId -ProcessId $ProcessId -OutputHash $OutputHash
+$ExitCode = [int]$runMeta.ExitCode; $gitC = [string]$runMeta.CodeRevision; $now = [string]$runMeta.CompletedAt
+$expIso = (Get-Date).ToUniversalTime().AddMinutes($TTLMinutes).ToString("o")
+$ver = ($Status -eq "PASS" -and $ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($Command) -and (-not $ClaimedOnly.IsPresent))
+$entry = [pscustomobject]@{ evidence_id = $EvidenceId; requirement_id = $RequirementId; task_id = $TaskId; type = $Type; evidenceType = $runMeta.EvidenceType; status = $(if ($ver) { "PASS" } elseif ($Status -eq "STALE") { "STALE" } else { "FAIL" }); source = $Source; command = $Command; exitCode = $ExitCode; executionId = $runMeta.ExecutionId; processId = $runMeta.ProcessId; startedAt = $runMeta.StartedAt; completedAt = $runMeta.CompletedAt; outputHash = $runMeta.OutputHash; codePaths = @($cPaths.ToArray()); subjectPath = $sRel; subjectHash = $sHash; gitCommit = $gitC; commitSha = $gitC; codeRevision = $gitC; ttlMinutes = $TTLMinutes; expiresAt = $expIso; timestamp = $now; verified = [bool]$ver }
 $list.Add($entry); Write-SenAtomicJson -Path $evPath -InputObject ([ordered]@{ updatedAt = $now; evidence = @($list.ToArray()) }) -Depth 8; return $entry
 })
 }
@@ -210,7 +191,7 @@ function Invoke-SenTaskTransition {
 [CmdletBinding()]
 param(
 [Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Parameter(Mandatory)][string]$Id,
-[Parameter(Mandatory)][ValidateSet("backlog", "todo", "pending", "ready", "in_progress", "reviewing", "verified", "done", "blocked", "failed", "cancelled", "retrying", "superseded", "stale")][string]$ToStatus,
+[Parameter(Mandatory)][ValidateSet("backlog", "todo", "pending", "ready", "in_progress", "reviewing", "needs_verification", "verified", "done", "blocked", "failed", "cancelled", "retrying", "superseded", "stale")][string]$ToStatus,
 [string]$Actor = "pm", [string]$Reason = "", [int]$LockMinutes = 30
 )
 $tasks = @(Get-SenTasks -Workspace $Workspace)
@@ -414,8 +395,8 @@ $blkCnt = @($evLines | Where-Object { $_ -match 'guard-denied|BLOCKED:' }).Count
 $bypCnt = @($evLines | Where-Object { $_ -match '(?i)(override|just do it|lam luon)' }).Count
 $bm = [pscustomobject][ordered]@{ TotalTasks = $tasks.Count; DoneTasks = $doneT.Count; FirstPassRatePct = $fpPct; TotalReworkCount = $rwSum; GuardBlockedCount = $blkCnt; BypassOverrideCount = $bypCnt }
 return [pscustomobject]@{
-userMemory = [ordered]@{ present = (Test-Path -LiteralPath (Join-Path $Workspace ".agents/profile.md")); path = ".agents/profile.md" }
-projectMemory = [ordered]@{ hasAgentsMd = (Test-Path -LiteralPath (Join-Path $Workspace "AGENTS.md")); hasContextMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/CONTEXT.md")); hasTodoMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/TODO.md")) }
+userMemory      = [ordered]@{ present = (Test-Path -LiteralPath (Join-Path $Workspace ".agents/profile.md")); path = ".agents/profile.md" }
+projectMemory   = [ordered]@{ hasAgentsMd = (Test-Path -LiteralPath (Join-Path $Workspace "AGENTS.md")); hasContextMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/CONTEXT.md")); hasTodoMd = (Test-Path -LiteralPath (Join-Path $Workspace "docs/TODO.md")) }
 executionMemory = [ordered]@{ lessonCount = $lessons.Count; lessons = $lessons }
 BaselineMetrics = $bm
 }
@@ -440,7 +421,7 @@ $sealPath = Join-Path $offDir "state-seal.json"
 return (Invoke-SenGovMutex -LockTarget $sealPath -Callback {
 $savedSeal = if ($VerifySeal.IsPresent -and (Test-Path -LiteralPath $sealPath)) { Read-SenSafeJson -Path $sealPath } else { $null }
 $fileHashes = [ordered]@{}
-foreach ($jf in @(Get-ChildItem -LiteralPath $offDir -Filter "*.json" -File -EA SilentlyContinue | Where-Object { $_.Name -ne "state-seal.json" } | Sort-Object Name)) {
+foreach ($jf in @(Get-ChildItem -LiteralPath $offDir -Filter "*.json" -File -EA SilentlyContinue | Where-Object { $_.Name -notin @("state-seal.json", "config.json") } | Sort-Object Name)) {
 $fileHashes[$jf.Name] = (Get-FileHash -LiteralPath $jf.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $rawPairs = ($fileHashes.Keys | ForEach-Object { "$_=$($fileHashes[$_])" }) -join ";"
@@ -463,7 +444,7 @@ RemediationCommand = "Sync-SenOfficeState -Workspace '$Workspace' -PruneStale -U
 }
 function Initialize-SenIntake {
 [CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Alias("Prompt", "Title")][Parameter(Mandatory)][string]$Request, [int]$FileCount = 1, [string[]]$Files = @(), [string]$UserName = "", [string]$TaskId = "", [int]$Tier = 0, [switch]$SkipOfficeLaunch)
+param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Alias("Prompt", "Title")][Parameter(Mandatory)][string]$Request, [int]$FileCount = 1, [string[]]$Files = @(), [string]$UserName = "", [string]$TaskId = "", [int]$Tier = 0, [string]$SessionId = "", [string]$RequestId = "", [switch]$EnforceDeliveryGate, [switch]$SkipOfficeLaunch)
 $uName = $UserName
 if ([string]::IsNullOrWhiteSpace($uName)) {
 foreach ($pf in @((Join-Path $Workspace ".agents/rules/profile.md"), (Join-Path $Workspace ".agents/profile.md"), (Join-Path $Workspace "AGENTS.md"))) {
@@ -478,8 +459,12 @@ $risk = if (Get-Command Get-SenTaskRiskScore -EA SilentlyContinue) { Get-SenTask
 $t = if ($Tier -in 1..3) { [Math]::Max($Tier, [int]$risk.Tier) } else { [int]$risk.Tier }; $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
 if ((-not $SkipOfficeLaunch.IsPresent) -and (Get-Command Start-SenOfficeIfIdle -EA SilentlyContinue)) { [void](Start-SenOfficeIfIdle -Workspace $Workspace) }
 if ($t -ge 2 -and (Get-Command Initialize-SenProcessAudit -EA SilentlyContinue)) { [void](Initialize-SenProcessAudit -Workspace $Workspace -Tier $t -PreserveLatched) }
+$sessId = if ($SessionId) { $SessionId } else { "sess-" + [DateTime]::UtcNow.ToString("yyyyMMddHHmmss") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6)) }
+$reqId = if ($RequestId) { $RequestId } else { "req-" + ([Guid]::NewGuid().ToString("N").Substring(0, 8)) }
+$oblReg = @("OBL-01:IntakeInitialized", $(if ($t -ge 2) { "OBL-02:RestorePointCaptured" }), "OBL-03:OfficeShowcasePhase1", "OBL-04:TasksTracked", "OBL-05:TestEvidenceVerified", "OBL-06:StateSealIntact") | Where-Object { $_ }
 $obj = [pscustomobject]@{
-taskId = $TaskId; userName = $uName; request = $Request; tier = $t; tierLabelVi = [string]$risk.LabelVi; tierLabelEn = [string]$risk.LabelEn
+sessionId = $sessId; requestId = $reqId; taskId = $TaskId; userName = $uName; request = $Request; tier = $t; tierLabelVi = [string]$risk.LabelVi; tierLabelEn = [string]$risk.LabelEn
+codeRevision = (Get-SenRepoCodeRevision -Workspace $Workspace); obligations = @($oblReg); enforceDeliveryGate = [bool]$EnforceDeliveryGate.IsPresent
 requiresDialecticalProof = ($t -ge 2); requiresResourceCostTable = ($t -ge 2); requiresRestorePoint = ($t -ge 2)
 requiresSubagentInTurn1 = ($t -ge 2); requiresMermaidDiagrams = ($t -eq 3); createdAt = $now
 }
@@ -488,7 +473,7 @@ return $obj
 }
 function Test-SenIntakeCompleteness {
 [CmdletBinding()]
-param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Alias("ResponseText")][string]$DraftResponse = "", [int]$Tier = 0)
+param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [Alias("ResponseText")][string]$DraftResponse = "", [int]$Tier = 0, [switch]$EnforceAllObligations)
 $inObj = Read-SenSafeJson -Path (Join-Path $Workspace ".agents/office/current-intake.json")
 $tier = if ($Tier -in 1..3) { $Tier } elseif ($null -ne $inObj -and $inObj.PSObject.Properties['tier']) { [int]$inObj.tier } else { 1 }
 $uName = if ($null -ne $inObj -and $inObj.PSObject.Properties['userName']) { [string]$inObj.userName } else { "" }
@@ -503,17 +488,22 @@ $hasRp = (Test-Path -LiteralPath $rpDir) -and (@(Get-ChildItem -LiteralPath $rpD
 if ($tier -ge 2 -and (-not $hasRp)) { $miss.Add("MissingRestorePoint") }
 $sc = Read-SenSafeJson -Path (Join-Path $Workspace ".agents/office/showcase.json")
 $ev = Read-SenSafeJson -Path (Join-Path $Workspace ".agents/office/evidence.json")
+$evArr = if ($null -eq $ev) { @() } elseif ($ev.PSObject.Properties['evidence']) { @($ev.evidence) } else { @($ev) }
+$validEvCnt = @($evArr | Where-Object { $_ -and [string]$_.status -eq "PASS" -and [bool]$_.verified }).Count
 $sf = Join-Path $Workspace ".agents/office/state-seal.json"
 $sOk = (Test-Path -LiteralPath $sf) -and (-not (Sync-SenOfficeState -Workspace $Workspace -VerifySeal).Tampered)
-$tCnt = if (Get-Command Get-SenTasks -EA SilentlyContinue) { @(Get-SenTasks -Workspace $Workspace).Count } else { 0 }
+$tCnt = if (Get-Command Get-SenTasks -EA SilentlyContinue) { @(Get-SenTasks -Workspace $Workspace | Where-Object { $_ -and (-not ($_.PSObject.Properties['isTelemetryOnly'] -and [bool]$_.isTelemetryOnly)) }).Count } else { 0 }
 $obl = @(
 [pscustomobject]@{ id = "OBL-01:IntakeInitialized"; status = $(if ($null -ne $inObj) { "PASS" } else { "MISSING" }); trigger = $true; execution = ($null -ne $inObj); result = ($null -ne $inObj); evidence = "current-intake.json" },
 [pscustomobject]@{ id = "OBL-02:RestorePointCaptured"; status = $(if ($hasRp -or $tier -lt 2) { "PASS" } else { "MISSING" }); trigger = ($tier -ge 2); execution = $hasRp; result = $hasRp; evidence = ".agents/.sen-restore" },
 [pscustomobject]@{ id = "OBL-03:OfficeShowcasePhase1"; status = $(if ($sc -and $sc.phase1) { "PASS" } elseif ($sc) { "PARTIAL" } else { "MISSING" }); trigger = $true; execution = ($null -ne $sc); result = [bool]($sc -and $sc.phase1); evidence = "showcase.json" },
 [pscustomobject]@{ id = "OBL-04:TasksTracked"; status = $(if ($tCnt -gt 0) { "PASS" } else { "MISSING" }); trigger = $true; execution = ($tCnt -gt 0); result = ($tCnt -gt 0); evidence = "tasks.json" },
-[pscustomobject]@{ id = "OBL-05:TestEvidenceVerified"; status = $(if ($ev -and @($ev.evidence | Where-Object { $_.status -eq "PASS" }).Count -gt 0) { "PASS" } elseif ($ev) { "PARTIAL" } else { "MISSING" }); trigger = $true; execution = ($null -ne $ev); result = ($null -ne $ev); evidence = "evidence.json" },
+[pscustomobject]@{ id = "OBL-05:TestEvidenceVerified"; status = $(if ($validEvCnt -gt 0) { "PASS" } elseif ($ev) { "PARTIAL" } else { "MISSING" }); trigger = $true; execution = ($null -ne $ev); result = ($validEvCnt -gt 0); evidence = "evidence.json" },
 [pscustomobject]@{ id = "OBL-06:StateSealIntact"; status = $(if ($sOk) { "PASS" } elseif (Test-Path -LiteralPath $sf) { "PARTIAL" } else { "MISSING" }); trigger = $true; execution = (Test-Path -LiteralPath $sf); result = $sOk; evidence = "state-seal.json" }
 )
+if ([string]::IsNullOrWhiteSpace($DraftResponse) -or $EnforceAllObligations.IsPresent) {
+foreach ($o in $obl) { if ([bool]$o.trigger -and [string]$o.status -ne "PASS" -and (-not $miss.Contains("MissingObligation:$($o.id)"))) { $miss.Add("MissingObligation:$($o.id)") } }
+}
 $bm = (Get-SenMemorySnapshot -Workspace $Workspace).BaselineMetrics
 return [pscustomobject]@{ Passed = ($miss.Count -eq 0); Tier = $tier; UserName = $uName; MissingElements = @($miss.ToArray()); ObligationMatrix = $obl; BaselineMetrics = $bm; ReminderText = "[SEN WATCHDOG] Verify Tier $tier requirements: $($miss -join ', ')" }
 }

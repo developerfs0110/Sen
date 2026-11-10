@@ -8,7 +8,7 @@
 
 ## What Sen Is
 
-**Sen (`sen-method` `v0.5.1`)** is a structured methodology and multi-harness AI engineering operating system (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**) combining an **ultra-lean core rule (`<= 5.75 KB`)** with a **deterministic PowerShell runtime (`117` exported cmdlets, `10` `sen-*` skills, `0` external dependencies)**. Every work request is automatically scored (`Get-SenTaskRiskScore`) and classified into 3 tiers so the AI knows when to act immediately, when to run optimistic parallel execution with dialectical proof & critique, and when to design, plan, and coordinate specialist roles. You stay in complete control of progress, code health, legal compliance, and token usage in plain language without memorizing slash commands.
+**Sen (`sen-method` `v0.5.1`)** is a structured methodology and multi-harness AI engineering operating system (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**) combining an **ultra-lean core rule (`<= 5.75 KB`)** with a **deterministic PowerShell runtime (`117` exported cmdlets, `9` `sen-*` skills, `0` external dependencies)**. Every work request is automatically scored (`Get-SenTaskRiskScore`) and classified into 3 tiers so the AI knows when to act immediately, when to run optimistic parallel execution with dialectical proof & critique, and when to design, plan, and coordinate specialist roles. You stay in complete control of progress, code health, legal compliance, and token usage in plain language without memorizing slash commands.
 
 ## Problem Sen Solves
 

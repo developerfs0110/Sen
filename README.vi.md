@@ -8,7 +8,7 @@
 
 ## Sen là gì
 
-**Sen (`sen-method` `v0.5.1`)** là phương pháp luận và hệ điều hành điều phối đội ngũ AI agent đa nền tảng (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**), kết hợp **Luật lõi siêu gọn (`<= 5.75 KB`)** với **Runtime thực thi tất định (`117` cmdlets, `10` kỹ năng `sen-*`, `0` phụ thuộc ngoài)**. Mọi yêu cầu công việc đều tự động được chấm điểm rủi ro (`Get-SenTaskRiskScore`) và phân thành 3 cấp độ để AI biết lúc nào làm ngay, lúc nào thực thi song song lạc quan kèm chứng minh — phản biện, và lúc nào cần thiết kế, lập kế hoạch cùng đội ngũ agent chuyên trách. Bạn luôn nắm quyền kiểm soát tiến độ, chất lượng mã nguồn, pháp lý và chi phí token bằng ngôn ngữ tự nhiên mà không cần học thuộc câu lệnh phức tạp.
+**Sen (`sen-method` `v0.5.1`)** là phương pháp luận và hệ điều hành điều phối đội ngũ AI agent đa nền tảng (**Google Antigravity IDE**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Windsurf**, **Codex CLI / OpenCode**), kết hợp **Luật lõi siêu gọn (`<= 5.75 KB`)** với **Runtime thực thi tất định (`117` cmdlets, `9` kỹ năng `sen-*`, `0` phụ thuộc ngoài)**. Mọi yêu cầu công việc đều tự động được chấm điểm rủi ro (`Get-SenTaskRiskScore`) và phân thành 3 cấp độ để AI biết lúc nào làm ngay, lúc nào thực thi song song lạc quan kèm chứng minh — phản biện, và lúc nào cần thiết kế, lập kế hoạch cùng đội ngũ agent chuyên trách. Bạn luôn nắm quyền kiểm soát tiến độ, chất lượng mã nguồn, pháp lý và chi phí token bằng ngôn ngữ tự nhiên mà không cần học thuộc câu lệnh phức tạp.
 
 ## Vấn đề Sen giải quyết
 

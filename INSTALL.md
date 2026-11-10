@@ -1,7 +1,7 @@
 # Sen — Agent Installation Instructions (`INSTALL.md`)
 
 > **Audience:** AI coding agents running inside Antigravity IDE, Claude Code, Cursor, GitHub Copilot, Windsurf, or Codex CLI / OpenCode.
-> **Version:** `sen-method` `v0.5.1` (`117` exported cmdlets, `10` `sen-*` skills, `258+` automated tests across `14` test suites, `26/26` completed tasks `TASK-01` -> `TASK-26`).
+> **Version:** `sen-method` `v0.5.1` (`117` exported cmdlets, `9` `sen-*` skills + `vn-law-check`, `258+` automated tests across `14` test suites, `26/26` completed tasks `TASK-01` -> `TASK-26`).
 > **Language rule:** Converse with the user in the language they used to prompt you (Vietnamese if they wrote in Vietnamese, English otherwise).
 
 When a user asks you to install **Sen** from `https://github.com/developerfs0110/Sen` (or a fork/mirror URL they provided), follow these exact bootstrap steps:

@@ -74,34 +74,34 @@ function Set-SenVerificationPolicy {
     $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
 
     $record = [pscustomobject][ordered]@{
-        claimId             = $ClaimId
-        taskType            = $TaskType
-        state               = "VERIFYING"
-        maxReviewRounds     = [int]$effRounds
-        maxRepairAttempts   = [int]$effRepairs
-        maxTestRetries      = [int]$MaxTestRetries
-        tokenBudget         = [int]$TokenBudget
-        timeBudgetSeconds   = [int]$TimeBudgetSeconds
-        maxToolCalls        = [int]$MaxToolCalls
-        costBudgetUsd       = [double]$CostBudgetUsd
-        currentRound        = 0
-        repairAttempts      = 0
-        regressionCount     = 0
-        tokensUsed          = 0
-        elapsedSeconds      = 0
-        toolCallsUsed       = 0
-        estimatedCostUsd    = 0.0
-        scopePaths          = @($ScopePaths)
-        acceptanceCriteria  = @($AcceptanceCriteria)
-        criteriaHash        = $critHash
-        restorePointId      = $RestorePointId
-        unresolvedFindings  = @()
-        resolvedFindingIds  = @()
-        backlogItems        = @()
-        residualRisks       = @()
-        roundHistory        = @()
-        escalationDossier   = $null
-        updatedAt           = $nowIso
+        claimId            = $ClaimId
+        taskType           = $TaskType
+        state              = "VERIFYING"
+        maxReviewRounds    = [int]$effRounds
+        maxRepairAttempts  = [int]$effRepairs
+        maxTestRetries     = [int]$MaxTestRetries
+        tokenBudget        = [int]$TokenBudget
+        timeBudgetSeconds  = [int]$TimeBudgetSeconds
+        maxToolCalls       = [int]$MaxToolCalls
+        costBudgetUsd      = [double]$CostBudgetUsd
+        currentRound       = 0
+        repairAttempts     = 0
+        regressionCount    = 0
+        tokensUsed         = 0
+        elapsedSeconds     = 0
+        toolCallsUsed      = 0
+        estimatedCostUsd   = 0.0
+        scopePaths         = @($ScopePaths)
+        acceptanceCriteria = @($AcceptanceCriteria)
+        criteriaHash       = $critHash
+        restorePointId     = $RestorePointId
+        unresolvedFindings = @()
+        resolvedFindingIds = @()
+        backlogItems       = @()
+        residualRisks      = @()
+        roundHistory       = @()
+        escalationDossier  = $null
+        updatedAt          = $nowIso
     }
     return (Save-SenBoundedLoopRecord -Workspace $Workspace -Record $record)
 }
@@ -116,20 +116,20 @@ function New-SenEscalationDossier {
     $c0List = @($unresolved | Where-Object { [string]$_.severity -eq "C0" })
     $c1List = @($unresolved | Where-Object { [string]$_.severity -eq "C1" })
     return [pscustomobject][ordered]@{
-        claimId             = [string]$LoopRecord.claimId
-        escalationReason    = $EscalationReason
-        roundsExecuted      = [int]$LoopRecord.currentRound
-        repairsExecuted     = [int]$LoopRecord.repairAttempts
-        unresolvedC0Count   = $c0List.Count
-        unresolvedC1Count   = $c1List.Count
-        regressionCount     = [int]$LoopRecord.regressionCount
-        quarantinedPaths    = @($LoopRecord.scopePaths)
-        evidencePreserved   = $true
-        restorePointId      = [string]$LoopRecord.restorePointId
-        whatWasTried        = @($LoopRecord.roundHistory)
-        residualRisks       = @($unresolved)
-        reviewRequiredAt    = "PRE_GIT_PUSH_GATE"
-        generatedAt         = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        claimId           = [string]$LoopRecord.claimId
+        escalationReason  = $EscalationReason
+        roundsExecuted    = [int]$LoopRecord.currentRound
+        repairsExecuted   = [int]$LoopRecord.repairAttempts
+        unresolvedC0Count = $c0List.Count
+        unresolvedC1Count = $c1List.Count
+        regressionCount   = [int]$LoopRecord.regressionCount
+        quarantinedPaths  = @($LoopRecord.scopePaths)
+        evidencePreserved = $true
+        restorePointId    = [string]$LoopRecord.restorePointId
+        whatWasTried      = @($LoopRecord.roundHistory)
+        residualRisks     = @($unresolved)
+        reviewRequiredAt  = "PRE_GIT_PUSH_GATE"
+        generatedAt       = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
 }
 
@@ -380,14 +380,14 @@ function Invoke-SenBoundedRepairRound {
     $hist = [System.Collections.Generic.List[object]]::new()
     foreach ($h in @($loop.roundHistory)) { if ($null -ne $h) { $hist.Add($h) } }
     $hist.Add([ordered]@{
-        repairAttempt    = $repAttempt
-        resolvedFindings = $prog.ResolvedFindings
-        newFindings      = $prog.NewFindings
-        regressions      = $prog.Regressions
-        remainingCount   = $prog.RemainingCount
-        riskDelta        = $prog.RiskDelta
-        timestamp        = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-    })
+            repairAttempt    = $repAttempt
+            resolvedFindings = $prog.ResolvedFindings
+            newFindings      = $prog.NewFindings
+            regressions      = $prog.Regressions
+            remainingCount   = $prog.RemainingCount
+            riskDelta        = $prog.RiskDelta
+            timestamp        = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        })
     $loop | Add-Member -NotePropertyName "roundHistory" -NotePropertyValue @($hist.ToArray()) -Force
 
     $nextState = "ACCEPTED"; $reason = "All Gate 1 C0/C1 findings resolved and re-verified."; $dossier = $null
@@ -668,7 +668,7 @@ function Invoke-SenPostCodePipeline {
     if ([string]::IsNullOrWhiteSpace($SubjectPath) -and $ModifiedFiles.Count -gt 0) { $SubjectPath = $ModifiedFiles[0] }
     $evCmd = if (-not [string]::IsNullOrWhiteSpace($EvidenceCommand)) { $EvidenceCommand } else { "Invoke-SenPostCodePipeline" }
 
-    if (-not [string]::IsNullOrWhiteSpace($TaskId) -and (-not [string]::IsNullOrWhiteSpace($SubjectPath) -or $ModifiedFiles.Count -gt 0)) {
+    if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
         [void](Register-SenEvidence -Workspace $Workspace -EvidenceId "EV-$TaskId" -TaskId $TaskId -Type "unit" -Command $evCmd -ExitCode $ExitCode -SubjectPath $SubjectPath -CodePaths $ModifiedFiles)
     }
     $evCheck = Test-SenEvidenceValidity -Workspace $Workspace

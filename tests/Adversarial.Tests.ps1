@@ -533,4 +533,165 @@ Test "CL-01..CL-11 Claude Deep Review Regression: Risk Score Edge Cases, Live Ev
     }
 }
 
+Test "OA-01..OA-12 Operational Assurance End-to-End Suite (GPT Deep Review 2 Remediation)" {
+    $ws = New-AdversarialTestWorkspace
+    try {
+        $pwshExe     = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        $guardScript = Join-Path $PSScriptRoot "../scripts/guard.ps1"
+        $postScript  = Join-Path $PSScriptRoot "../scripts/office-post.ps1"
+
+        # OA-01: PreToolUse blocks when requireManualIntake is set without intake, and auto-bootstraps current-intake.json on first tool call
+        $inFile = Join-Path $ws ".agents/office/current-intake.json"
+        if (Test-Path -LiteralPath $inFile) { Remove-Item -LiteralPath $inFile -Force }
+        $denyManual = ((@{
+            toolCall = @{ name = "read_file"; args = @{ Path = (Join-Path $ws "docs/CONTEXT.md") } }
+            workspacePaths = @($ws)
+            requireManualIntake = $true
+        } | ConvertTo-Json -Depth 6 -Compress) | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $guardScript) | ConvertFrom-Json
+        Assert-Equal "deny" $denyManual.decision "OA-01: guard.ps1 must block when requireManualIntake is true and current-intake.json is missing"
+
+        $askBoot = ((@{
+            toolCall = @{ name = "read_file"; args = @{ Path = (Join-Path $ws "docs/CONTEXT.md") } }
+            workspacePaths = @($ws)
+            sessionId = "sess-oa01"
+            requestId = "req-oa01"
+        } | ConvertTo-Json -Depth 6 -Compress) | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $guardScript) | ConvertFrom-Json
+        Assert-Equal "ask" $askBoot.decision "OA-01: guard.ps1 must allow benign tool call while bootstrapping intake"
+        Assert-True (Test-Path -LiteralPath $inFile) "OA-01: guard.ps1 must auto-bootstrap .agents/office/current-intake.json before first tool call"
+
+        # OA-02: Tier 2/3 task missing obligations (restore point, subagent, Mermaid, verified evidence) is blocked by Test-SenIntakeCompleteness and Test-SenDeliveryGate
+        [void](Initialize-SenIntake -Workspace $ws -TaskId "OA-02-T3" -Request "Design auth & database migration" -Tier 3 -FileCount 5 -SessionId "sess-oa02" -RequestId "req-oa02" -EnforceDeliveryGate -SkipOfficeLaunch)
+        [void](New-SenTask -Workspace $ws -Id "OA-02-T3" -Title "Auth & DB Migration" -Tier 3 -Status "in_progress")
+        $intakeInc = Test-SenIntakeCompleteness -Workspace $ws -EnforceAllObligations
+        Assert-True (-not $intakeInc.Passed) "OA-02: Test-SenIntakeCompleteness -EnforceAllObligations must fail when OBL-03..OBL-06 are missing"
+        $gateInc = Test-SenDeliveryGate -Workspace $ws -EnforceIntake
+        Assert-True (-not $gateInc.Passed) "OA-02: Test-SenDeliveryGate must block when intake obligations are incomplete"
+
+        # OA-03: [x] in docs/TODO.md without verified evidence in evidence.json must become needs_verification, NEVER done
+        $todoDir = Join-Path $ws "docs"
+        if (-not (Test-Path -LiteralPath $todoDir)) { [IO.Directory]::CreateDirectory($todoDir) | Out-Null }
+        [IO.File]::WriteAllText((Join-Path $todoDir "TODO.md"), "# Backlog`n`n- [x] **OA-03-FAKE: Claimed done in Markdown only**`n", [Text.Encoding]::UTF8)
+        [void](Sync-SenPlanToTasks -Workspace $ws)
+        $oa03Task = @(Get-SenTasks -Workspace $ws | Where-Object { $_.id -eq "OA-03-FAKE" })[0]
+        Assert-Equal "needs_verification" $oa03Task.status "OA-03: [x] in TODO.md without verified evidence must set status to needs_verification, not done"
+        Assert-True ([bool]$oa03Task.documentationComplete) "OA-03: documentationComplete must be true"
+        Assert-True (-not [bool]$oa03Task.executionVerified) "OA-03: executionVerified must be false"
+        $todoRes = Complete-SenTaskReview -Workspace $ws -Id "OA-03-FAKE" -Passed $true -Reviewer "pm" -EvidenceCommand "todo-verified" -ExitCode 0 -FromTodoSync
+        Assert-True (-not $todoRes.Completed) "OA-03: Complete-SenTaskReview must reject todo-verified placeholder even with -FromTodoSync"
+        [void](Clear-SenTasks -Workspace $ws)
+        Remove-Item -LiteralPath (Join-Path $todoDir "TODO.md") -Force -ErrorAction SilentlyContinue
+
+        # OA-04: PreToolUse records executionId in execution-ledger.jsonl; PostToolUse failure/timeout blocks Test-SenDeliveryGate
+        [void](Initialize-SenIntake -Workspace $ws -TaskId "OA-04" -Request "Simple check" -Tier 1 -FileCount 1 -SkipOfficeLaunch)
+        [void](New-SenTask -Workspace $ws -Id "OA-04-T1" -Title "Hook Reconcile Task" -Tier 1 -Status "in_progress")
+        [void](Complete-SenTaskReview -Workspace $ws -Id "OA-04-T1" -Passed $true -Reviewer "qa" -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+        [void]((@{
+            toolCall = @{ name = "run_command"; args = @{ CommandLine = "git status" } }
+            workspacePaths = @($ws)
+            executionId = "exec-oa04-fail"
+        } | ConvertTo-Json -Depth 6 -Compress) | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $guardScript)
+        [void]((@{
+            toolCall = @{ name = "run_command"; args = @{ CommandLine = "git status" } }
+            workspacePaths = @($ws)
+            executionId = "exec-oa04-fail"
+            simulateFailure = $true
+        } | ConvertTo-Json -Depth 6 -Compress) | & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $postScript)
+        $gateHookFail = Test-SenDeliveryGate -Workspace $ws
+        Assert-True (-not $gateHookFail.Passed) "OA-04: Test-SenDeliveryGate must block when PostToolUse hook failed/timed out leaving unreconciled execution"
+        Assert-True ($gateHookFail.UnreconciledExecutions.Count -gt 0) "OA-04: UnreconciledExecutions must list failed hook execution"
+        Remove-Item -LiteralPath (Join-Path $ws ".agents/office/execution-ledger.jsonl") -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Join-Path $ws ".agents/office/hook-failures.jsonl") -Force -ErrorAction SilentlyContinue
+
+        # OA-05: Default exit code (omitting -ExitCode without -ExecuteCommand or verified evidence.json) is rejected
+        [void](New-SenTask -Workspace $ws -Id "OA-05-T1" -Title "Default ExitCode Check" -Tier 1 -Status "in_progress")
+        $defaultEcRes = Complete-SenTaskReview -Workspace $ws -Id "OA-05-T1" -Passed $true -Reviewer "qa" -EvidenceCommand "tests/run.ps1"
+        Assert-True (-not $defaultEcRes.Completed) "OA-05: Complete-SenTaskReview must reject when -ExitCode is omitted and -ExecuteCommand is not used"
+        $evMeta = Register-SenEvidence -Workspace $ws -EvidenceId "EV-OA05" -TaskId "OA-05-T1" -Command "Get-Date | Out-Null; exit 0" -ExecuteCommand
+        Assert-True (-not [string]::IsNullOrWhiteSpace($evMeta.executionId)) "OA-05: Register-SenEvidence must record executionId"
+        Assert-True (-not [string]::IsNullOrWhiteSpace($evMeta.outputHash)) "OA-05: Register-SenEvidence must compute SHA-256 outputHash"
+        Assert-Equal "VerifiedEvidence" $evMeta.evidenceType "OA-05: Executed evidence must have evidenceType = VerifiedEvidence"
+        $verifiedEcRes = Complete-SenTaskReview -Workspace $ws -Id "OA-05-T1" -Passed $true -Reviewer "qa" -EvidenceCommand "Get-Date | Out-Null; exit 0"
+        Assert-True $verifiedEcRes.Completed "OA-05: Complete-SenTaskReview must succeed once verified PASS evidence exists in evidence.json"
+
+        # OA-06: Mutex acquisition timeout fails closed instead of writing unlocked
+        $wsHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($ws.ToLowerInvariant()))).Replace("-", "").Substring(0, 16)
+        $mtxName = "Global\SenGovMutex_$wsHash"
+        $psBg = [powershell]::Create().AddScript({
+            param($mName)
+            $m = [Threading.Mutex]::new($false, $mName)
+            [void]$m.WaitOne(2000)
+            Start-Sleep -Milliseconds 600
+            $m.ReleaseMutex()
+            $m.Dispose()
+        }).AddArgument($mtxName)
+        $asyncHandle = $psBg.BeginInvoke()
+        Start-Sleep -Milliseconds 150
+        $mutexFailedClosed = $false
+        try {
+            [void](Invoke-SenGovMutex -Workspace $ws -TimeoutMs 50 -Action { return "should-not-run" })
+        } catch { $mutexFailedClosed = $true }
+        $psBg.EndInvoke($asyncHandle) | Out-Null; $psBg.Dispose()
+        Assert-True $mutexFailedClosed "OA-06: Invoke-SenGovMutex must fail closed (throw) when mutex lock times out"
+
+        # OA-07: Modifying Plan/Spec after Stage 2 latch invalidates artifactHash and forces re-verification; stub plan fails S2-IMPL-PLAN
+        [void](Initialize-SenProcessAudit -Workspace $ws -ProjectName "OA07App" -Tier 3 -ProjectScope "core")
+        $spDir = Join-Path $ws "docs/superpowers/specs"
+        $plDir = Join-Path $ws "docs/superpowers/plans"
+        [IO.Directory]::CreateDirectory($spDir) | Out-Null
+        [IO.Directory]::CreateDirectory($plDir) | Out-Null
+        $spFile = Join-Path $spDir "2026-11-10-oa07-spec.md"
+        $plFile = Join-Path $plDir "2026-11-10-oa07-plan.md"
+        [IO.File]::WriteAllText($spFile, "# Spec`nBest-of-the-Best`n| Option | Resource Cost |`n|---|---|`n| A | Low |", [Text.Encoding]::UTF8)
+        [IO.File]::WriteAllText($plFile, "# Stub Plan without tasks", [Text.Encoding]::UTF8)
+        [void](Write-SenOfficeShowcase -Workspace $ws -Phase 1 -TaskId "OA-05-T1" -Title "OA07App" -Tier 3 -Blueprint "Spec" -Diagrams @("graph TD; A-->B"))
+        $g2Stub = Test-SenStageGate -Workspace $ws -Stage 2
+        Assert-True ($g2Stub.MissingSteps -contains "S2-IMPL-PLAN") "OA-07: Stub plan without ### Task N must fail S2-IMPL-PLAN"
+        [IO.File]::WriteAllText($plFile, "### Task 1 (OA07-T1): Real Plan`n- [x] Step 1: Verify", [Text.Encoding]::UTF8)
+        $g2Latched = Test-SenStageGate -Workspace $ws -Stage 2
+        Assert-True $g2Latched.Passed "OA-07: Valid Spec and Plan must pass and latch Stage 2"
+        # Now tamper with the Plan after latching so it becomes invalid again
+        [IO.File]::WriteAllText($plFile, "# Corrupted Plan after latch", [Text.Encoding]::UTF8)
+        $g2Tampered = Test-SenStageGate -Workspace $ws -Stage 2
+        Assert-True (-not $g2Tampered.Passed) "OA-07: Modifying Plan after Stage 2 latch must invalidate artifactHash and fail Stage 2 gate"
+
+        # OA-08: POSIX office-post.sh parity with office-post.ps1 (evidence metadata + showcase phase2 + state-seal)
+        $shText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "../scripts/office-post.sh"), [Text.Encoding]::UTF8)
+        Assert-True ($shText -match 'sc_obj\["phase2"\]' -and $shText -match '"evidenceType": "VerifiedEvidence"' -and $shText -match 'reconcile_ledger') "OA-08: office-post.sh must maintain full schema parity (phase2 showcase, VerifiedEvidence metadata, execution ledger reconciliation)"
+
+        # OA-09: Hung task watchdog detects and cleans hung tasks via cross-platform Get-SenHungProcessIds
+        $hungPids = @(Get-SenHungProcessIds -Workspace $ws -MaxProcessSeconds 99999)
+        Assert-Equal 0 $hungPids.Count "OA-09: Get-SenHungProcessIds must execute cleanly across platforms"
+
+        # OA-10: Test-SenHarnessStatus executes live guard probe and reports AutomationLevel, HookExecutable, HookProbePassed
+        [void](Install-SenHarness -Workspace $ws -Harness @("claude", "copilot"))
+        $hStatus = @(Test-SenHarnessStatus -Workspace $ws)
+        $claudeSt = $hStatus | Where-Object { $_.Id -eq "claude" } | Select-Object -First 1
+        $copilotSt = $hStatus | Where-Object { $_.Id -eq "copilot" } | Select-Object -First 1
+        Assert-Equal "full" $claudeSt.AutomationLevel "OA-10: Claude must report AutomationLevel = full"
+        Assert-True $claudeSt.HookProbePassed "OA-10: Claude HookProbePassed must be true when guard probe succeeds"
+        Assert-Equal "rules-only" $copilotSt.AutomationLevel "OA-10: Copilot must report AutomationLevel = rules-only"
+
+        # OA-11: Silent task dropping from tasks.json is caught by Test-SenDeliveryGate DAG reconciliation
+        [void](Clear-SenTasks -Workspace $ws)
+        [void](New-SenTask -Workspace $ws -Id "OA-11-KEEP" -Title "Kept Task" -Tier 2 -Status "in_progress")
+        [void](New-SenTask -Workspace $ws -Id "OA-11-DROP" -Title "Dropped Task" -Tier 2 -Status "in_progress")
+        [void](Complete-SenTaskReview -Workspace $ws -Id "OA-11-KEEP" -Passed $true -Reviewer "qa" -EvidenceCommand "tests/run.ps1" -ExitCode 0)
+        $keptOnly = @(Get-SenTasks -Workspace $ws | Where-Object { $_.id -eq "OA-11-KEEP" })
+        [void](Save-SenTasks -Workspace $ws -Tasks $keptOnly -Internal)
+        $gateDrop = Test-SenDeliveryGate -Workspace $ws
+        Assert-True (-not $gateDrop.Passed) "OA-11: Test-SenDeliveryGate must block when a planned task is silently dropped from tasks.json"
+        Assert-True ($gateDrop.DroppedTaskIds -contains "OA-11-DROP") "OA-11: DroppedTaskIds must report OA-11-DROP"
+
+        # OA-12: Task with unmet Acceptance Criteria (MUST_EXIST or -AcceptanceVerified:$false) is rejected by Complete-SenTaskReview
+        [void](Clear-SenTasks -Workspace $ws)
+        [void](New-SenTask -Workspace $ws -Id "OA-12-AC" -Title "AC Task" -Tier 2 -Status "in_progress" -AcceptanceCriteria @("MUST_EXIST:src/missing-artifact.ts"))
+        $acRes = Complete-SenTaskReview -Workspace $ws -Id "OA-12-AC" -Passed $true -Reviewer "qa" -EvidenceCommand "tests/run.ps1" -ExitCode 0
+        Assert-True (-not $acRes.Completed) "OA-12: Complete-SenTaskReview must reject task completion when MUST_EXIST acceptance criterion is unmet"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+
 

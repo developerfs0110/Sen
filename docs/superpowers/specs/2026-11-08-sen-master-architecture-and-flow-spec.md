@@ -1,13 +1,13 @@
-# Đặc Tả Kiến Trúc Tổng Thể, Luồng Nghiệp Vụ & Luồng Kỹ Thuật — Sen (`sen-method` `v0.5.0`)
+# Đặc Tả Kiến Trúc Tổng Thể, Luồng Nghiệp Vụ & Luồng Kỹ Thuật — Sen (`sen-method` `v0.5.1`)
 
-- **Ngày ban hành:** 2026-11-08
-- **Phiên bản áp dụng:** `v0.5.0` (bao gồm `Sen.Governance.psm1`, `Sen.Adversarial.psm1` `AV-01..AV-10`, và `Sen.BoundedLoop.psm1` `BVC-01..BVC-10`)
-- **Trạng thái:** Đã kiểm chứng thực nghiệm (`115/115` cmdlets, `258/258` bài kiểm thử tự động, `Measure-SenCodeHealth = 100/100`, `Validate-Repo.ps1 = 0 lỗi`)
+- **Ngày ban hành:** 2026-11-08 (cập nhật đồng bộ `v0.5.1` ngày 2026-11-10)
+- **Phiên bản áp dụng:** `v0.5.1` (bao gồm `Sen.Governance.psm1`, `Sen.Adversarial.psm1` `AV-01..AV-10`, và `Sen.BoundedLoop.psm1` `BVC-01..BVC-10`)
+- **Trạng thái:** Đã kiểm chứng thực nghiệm (`117/117` cmdlets, `9` kỹ năng `sen-*` + `vn-law-check`, `258+` bài kiểm thử tự động, `Measure-SenCodeHealth = 100/100`, `Validate-Repo.ps1 = 0 lỗi`)
 - **Tài liệu liên quan:** [`README.md`](../../../README.md) · [`CHANGELOG.md`](../../../CHANGELOG.md) · [`docs/CONTEXT.md`](../../CONTEXT.md) · [`docs/TODO.md`](../../TODO.md) · [`rules/AGENTS.md`](../../../rules/AGENTS.md)
 
 ---
 
-## 1. Tầm Nhìn Nguyên Thủy (`v0.0`) & Sự Tiến Hóa Đến `v0.5.0`
+## 1. Tầm Nhìn Nguyên Thủy (`v0.0`) & Sự Tiến Hóa Đến `v0.5.1`
 
 ### 1.1. Tầm nhìn nguyên thủy (`Ver 0 / v0.1.0` — 2026-11-06)
 - **Khẩu hiệu cốt lõi:** *"Sen: làm việc với đội AI một cách gọn, rõ, nhẹ."* / *"Calm, clear AI work."*
@@ -18,12 +18,12 @@
   4. **Trực quan hóa minh bạch (Visual Transparency):** Quan sát đội ngũ AI làm việc như nhìn qua camera văn phòng (`sen-office`) kèm đối chiếu đầu ra dự kiến và thực tế.
   5. **Tiết kiệm Token (Token Economy):** Luật lõi luôn bật siêu nhỏ (`<= 5.75 KB`, `< 95 dòng`), khởi động phiên chỉ đọc 1 file (`docs/CONTEXT.md`), ghi nhận telemetry bằng Hook `0 token`.
 
-### 1.2. Kiến trúc 2 Tầng ("Bề Mặt Tối Giản — Động Cơ Tất Định Ngầm") ở `v0.5.0`
+### 1.2. Kiến trúc 2 Tầng ("Bề Mặt Tối Giản — Động Cơ Tất Định Ngầm") ở `v0.5.1`
 Qua thực tiễn triển khai các dự án thực chiến (`MemoReel`, `OmniHub`, `@ll25usBot`, và tự nâng cấp chính `Sen`), một chân lý kỹ thuật đã lộ rõ: **Nếu chỉ dùng lời nhắc văn bản (Prompt/Markdown Rules), AI sẽ liên tục mắc bệnh "quên quy trình", "tự khen phương án của mình", "báo cáo xong giả tạo", hoặc "rơi vào vòng lặp tranh luận vô tận".**
 
-Vì vậy, `Sen v0.5.0` tách kiến trúc thành **2 tầng độc lập (Dual-Layer Architecture)**:
+Vì vậy, `Sen v0.5.1` tách kiến trúc thành **2 tầng độc lập (Dual-Layer Architecture)**:
 - **Tầng Nổi (User Surface — Giữ nguyên 100% sự gọn, rõ, nhẹ của `v0.1.0`):** Người dùng vẫn chỉ nói chuyện tự nhiên, nhận phản hồi tức thì (`Instant-Ack`), đọc bảng phương án *Best-of-the-Best* + **Tài nguyên tiêu tốn** ở Turn 1 và nhận kết quả nghiệm thu ở Turn 2.
-- **Tầng Chìm (Deterministic Engine Under the Hood — `8` mô-đun PowerShell, `115` cmdlets, Hooks `0-token`):** Tự động khóa an toàn đường dẫn/lệnh hủy diệt, đồng bộ 2 chiều Markdown ↔ `tasks.json`, kiểm chứng đối kháng 4 vai trò (`AV-01..AV-10`), khống chế vòng lặp phản biện có trần dừng (`BVC-01..BVC-10`), cô lập điểm nghẽn (`Quarantine-and-Continue`), phát hiện chuỗi hành động lặp lại liên phiên & đóng gói kép `SKILL.md` + script `0-token` (`Register-SenActionPattern`, `New-SenCapturedSkill, Invoke-SenPostCodePipeline`), niêm phong trạng thái SHA-256 (`Sync-SenOfficeState`), cổng Git Hook vật lý (`Install-SenGitHooks`), và tự chữa lành CI từ xa (`Invoke-SenCiPushLoop`).
+- **Tầng Chìm (Deterministic Engine Under the Hood — `8` mô-đun PowerShell, `117` cmdlets, Hooks `0-token`):** Tự động khóa an toàn đường dẫn/lệnh hủy diệt, đồng bộ 2 chiều Markdown ↔ `tasks.json`, kiểm chứng đối kháng 4 vai trò (`AV-01..AV-10`), khống chế vòng lặp phản biện có trần dừng (`BVC-01..BVC-10`), cô lập điểm nghẽn (`Quarantine-and-Continue`), phát hiện chuỗi hành động lặp lại liên phiên & đóng gói kép `SKILL.md` + script `0-token` (`Register-SenActionPattern`, `New-SenCapturedSkill, Invoke-SenPostCodePipeline`), niêm phong trạng thái SHA-256 (`Sync-SenOfficeState`), cổng Git Hook vật lý (`Install-SenGitHooks`), và tự chữa lành CI từ xa (`Invoke-SenCiPushLoop`).
 
 ---
 
@@ -152,7 +152,7 @@ stateDiagram-v2
 
 ---
 
-## 5. Ma Trận Kiến Trúc 8 Mô-đun PowerShell & `115` Cmdlets (`v0.5.0`)
+## 5. Ma Trận Kiến Trúc 8 Mô-đun PowerShell & `117` Cmdlets (`v0.5.1`)
 
 Toàn bộ phần lõi thực thi của Sen được chia thành **8 mô-đun `.psm1` chuẩn ASCII** (mỗi file đều tuân thủ nghiêm ngặt trần `AI-Native <= 800 dòng / 45 KB`, đạt điểm `Measure-SenCodeHealth = 100/100`):
 
@@ -162,25 +162,25 @@ Toàn bộ phần lõi thực thi của Sen được chia thành **8 mô-đun `.
 | 2 | `Sen.Runtime.psm1` | **15** | Ghi/đọc JSON nguyên tử, che mật khẩu/API key (`Protect-SenRedactedText`), điều khiển sự kiện Văn phòng 3D/2D (`Write-SenOfficeEvent`, `Write-SenOfficeShowcase`), cầu chì chống lặp lỗi 3 lần (`Test-SenStuckLoop`), đọc hạn mức IDE (`Get-SenAntigravityQuota`), chấm điểm rủi ro tất định (`Get-SenTaskRiskScore` với `ComplexityLevel C0..C4` & `ExpressMode`), và kiểm định Clean Code 6 chiều (`Measure-SenCodeHealth`). |
 | 3 | `Sen.Orchestrator.psm1` | **17** | Quản lý vòng đời Task DAG & khóa file `allowedPaths` (`Save-SenTasks` có khóa `Named Mutex` liên tiến trình, `New-SenTask`, `Start-SenTask`, `Unlock-SenTask`, `Complete-SenTaskReview`), giám sát & thu dọn tiến trình treo 3 tín hiệu (`Test-SenHungTasks`, `Clear-SenHungTasks` kèm quét `Win32_Process` & POSIX `ps`), cổng nghiệm thu tổng (`Test-SenDeliveryGate` có `-EnforcePhysicalDiff` & `RemediationCommands`), điểm khôi phục nhanh (`New-SenRestorePoint`, `Restore-SenRestorePoint`), chỉ số chất lượng (`Get-SenQualityMetrics`) và Backlog (`Add-SenBacklogItem`). |
 | 4 | `Sen.Harness.psm1` | **17** | Cầu nối đa nền tảng 6+ IDE/CLI (`Get-SenSupportedHarnesses`, `Install-SenHarness`, `Uninstall-SenHarness`, `Test-SenHarnessStatus`, `ConvertFrom-SenHookPayload`), cài đặt Git Hook vật lý (`Install-SenGitHooks`), đồng bộ 2 chiều 0-token Markdown ↔ DAG (`Sync-SenPlanToTasks`, `Sync-SenTasksToMarkdown`), kiểm toán quy trình 12 bước (`Initialize-SenProcessAudit`, `Test-SenStageGate`, `Test-SenProjectCompliance`), vòng lặp tự chữa lành CI từ xa (`Get-SenRemoteCiStatus`, `Invoke-SenCiPushLoop`) và khóa đẳng cấu 6 tầng (`Test-SenCapabilityParity`). |
-| 5 | `Sen.Governance.psm1` | **21** | Ma trận truy vết yêu cầu 7 mắt xích (`Register-SenRequirement` tự động gắn cờ `NEEDS_CLARIFICATION` khi tiêu đề có `TODO/TBD/???`, `Get-SenRequirementTraceability`), xác thực bằng chứng sống (`Register-SenEvidence` kèm băm `SHA-256` & `TTLMinutes`, `Test-SenEvidenceValidity`), đồng bộ tự chữa lành & niêm phong trạng thái SHA-256 (`Sync-SenOfficeState`), máy trạng thái Task bất biến (`Invoke-SenTaskTransition`), phân tích tác động thay đổi DAG (`Invoke-SenChangeImpactAnalysis`), phục hồi sau crash (`Invoke-SenCheckpointResume`), chống thoát Symlink & bảo vệ đường dẫn nhạy cảm (`Resolve-SenWorkspaceRoot`, `Test-SenSafeWorkspacePath`), chống xóa assertion (`Test-SenSuiteIntegrity`), nâng cấp độ giữa chừng (`Test-SenMidTaskEscalation`), dự toán token (`Measure-SenTokenEstimate`), chuyển đổi phiên bản `core`/`full` (`Set-SenEdition`), ghi chú phát hành song ngữ (`New-SenReleaseNote`, `Test-SenReleaseNoteGate`), mục bảo lưu (`Get-SenDeferredItems`), bộ nhớ bài học (`Add-SenExecutionLesson`, `Get-SenExecutionLessons` hỗ trợ lọc `-Stack` & `expiresAt`, `Get-SenMemorySnapshot`) và gỡ cài đặt (`Uninstall-SenSelf`). |
+| 5 | `Sen.Governance.psm1` | **23** | Cổng tiếp nhận chống quên 6 nghĩa vụ (`Initialize-SenIntake`, `Test-SenIntakeCompleteness`), ma trận truy vết yêu cầu 7 mắt xích (`Register-SenRequirement` tự động gắn cờ `NEEDS_CLARIFICATION` khi tiêu đề có `TODO/TBD/???`, `Get-SenRequirementTraceability`), xác thực bằng chứng sống (`Register-SenEvidence` kèm băm `SHA-256` & `TTLMinutes`, `Test-SenEvidenceValidity`), đồng bộ tự chữa lành & niêm phong trạng thái SHA-256 (`Sync-SenOfficeState`), máy trạng thái Task bất biến (`Invoke-SenTaskTransition`), phân tích tác động thay đổi DAG (`Invoke-SenChangeImpactAnalysis`), phục hồi sau crash (`Invoke-SenCheckpointResume`), chống thoát Symlink & bảo vệ đường dẫn nhạy cảm (`Resolve-SenWorkspaceRoot`, `Test-SenSafeWorkspacePath`), chống xóa assertion (`Test-SenSuiteIntegrity`), nâng cấp độ giữa chừng (`Test-SenMidTaskEscalation`), dự toán token (`Measure-SenTokenEstimate`), chuyển đổi phiên bản `core`/`full` (`Set-SenEdition`), ghi chú phát hành song ngữ (`New-SenReleaseNote`, `Test-SenReleaseNoteGate`), mục bảo lưu (`Get-SenDeferredItems`), bộ nhớ bài học (`Add-SenExecutionLesson`, `Get-SenExecutionLessons` hỗ trợ lọc `-Stack` & `expiresAt`, `Get-SenMemorySnapshot`) và gỡ cài đặt (`Uninstall-SenSelf`). |
 | 6 | `Sen.Adversarial.psm1` | **14** | Động cơ kiểm chứng đối kháng 4 vai trò (`AV-01..AV-10`): băm SHA-256 (`Get-SenFileSha256`, `Get-SenTextSha256`, `Get-SenCodeRevisionSnapshot`), Kế hoạch làm sai 7 phần (`New-SenFalsificationPlan`, `Test-SenFalsificationPlan`), đăng ký Claim & thực thi bằng chứng/phản ví dụ (`Register-SenClaim`, `Invoke-SenExecutableEvidence`, `Register-SenCounterexample`), gói đánh giá mù (`Get-SenBlindReviewPackage`), phán quyết độc lập 4 trạng thái (`Invoke-SenIndependentVerdict`), khóa chống gian lận chỉ số (`Lock-SenQualityBaseline`, `Test-SenAntiMetricGaming`), kiểm thử âm (`Invoke-SenGovernanceNegativeTest`) và kiểm toán biện chứng 6 vector (`Invoke-SenDialecticalAudit`). |
 | 7 | `Sen.BoundedLoop.psm1` | **9** | Động cơ khống chế vòng lặp phản biện có giới hạn (`BVC-01..BVC-10`) & tự động đóng gói kỹ năng: khởi tạo chính sách & ngân sách (`Set-SenVerificationPolicy`), phân loại lỗi `C0..C3` & tách Gate 1 / Gate 2 (`Invoke-SenFindingTriage`), đo tiến triển ròng & phát hiện hồi quy (`Measure-SenAdversarialProgress`), vòng sửa chữa có trần (`Invoke-SenBoundedRepairRound`), hồ sơ leo thang (`New-SenEscalationDossier`), cô lập hiện trường & chạy tiếp việc độc lập (`Invoke-SenEscalationQuarantine`), 8 kịch bản kiểm chứng (`Invoke-SenBoundedVerificationScenarios`), phát hiện chuỗi hành động lặp lại liên phiên (`Register-SenActionPattern`) và đóng gói kép `SKILL.md` + script `0-token` (`New-SenCapturedSkill, Invoke-SenPostCodePipeline`). |
 | 8 | `Sen.Packages.psm1` & `Sen.Legal.psm1` | **13 + 1** | Quản lý cài đặt, khóa commit (`sen.lock.json`), kiểm tra cập nhật định kỳ 0-token, sao lưu nguyên tử & hoàn tác gói (`Install-SenPackage`, `Update-SenPackages`, `Restore-SenPackage`, `Install-SenCreativePack` với Git Sparse-Checkout), cùng bộ quét tuân thủ pháp lý Việt Nam 2025–2026 (`Invoke-SenVnLawScan` trả về 3 trạng thái `PASS / FAIL / UNKNOWN` kèm `LegalDisclaimer`). |
 
 ---
 
-## 6. Hệ Sinh Thái 10 Kỹ Năng (`sen-*`) & Cầu Nối Đa Nền Tảng
+## 6. Hệ Sinh Thái 9 Kỹ Năng (`sen-*`) + Gói Pháp Lý (`vn-law-check`) & Cầu Nối Đa Nền Tảng
 
 1. **`sen-setup`**: Trình cài đặt 9 bước có bản đồ lộ trình trực quan và chế độ cài nhanh 1 bước (`Express 1-Step Mode`).
 2. **`sen-onboarding`**: Hướng dẫn tương tác cho người mới bắt đầu và chạy bài tập thực hành Cấp 1 đầu tiên.
 3. **`sen-environment`**: Dò tìm sâu công cụ phát triển (`PATH`, `extraPaths`, `nvm`, `fnm`, `pyenv`) và cài đặt qua 1 bảng chọn duy nhất (`winget`/`brew`).
 4. **`sen-office`**: Điều khiển Văn phòng 3D/2D hoạt động theo **3 pha tự động** (*Pha 1: Demo khi rảnh* $\rightarrow$ *Pha 2: 2D Live Gọn 100% dữ liệu thật khi đang chạy việc* $\rightarrow$ *Pha 3: Ngủ đông Hibernated khi xong việc*).
 5. **`sen-clean-code`**: Kiểm định và tái cấu trúc mã nguồn theo 6 tiêu chuẩn công nghiệp (`ISO/IEC 5055`, `SonarQube`, `PSScriptAnalyzer/ESLint`, `AI-Native 800L/45KB`).
-6. **`sen-vn-law`**: Kiểm toán tuân thủ pháp luật Việt Nam (`Luật 91/2025/QH15`, `NĐ 356/2025/NĐ-CP`, `Luật TMĐT 122/2025/QH15`, `Luật AI 134/2025/QH15`).
-7. **`sen-delivery-report`**: Sinh báo cáo nghiệm thu có bằng chứng thực thi và đồng bộ điểm lưu `docs/CONTEXT.md`.
-8. **`sen-release-readiness`**: Kiểm toán song song 8 lĩnh vực trước khi phát hành sản phẩm ra thị trường.
-9. **`sen-skill-capture`**: Đóng gói các quy trình lặp lại 2–3 lần thành kỹ năng tái sử dụng trong workspace.
-10. **`sen-update`**: Kiểm tra cập nhật định kỳ 0-token và nâng cấp an toàn có sao lưu hoàn tác nguyên tử.
+6. **`sen-delivery-report`**: Sinh báo cáo nghiệm thu có bằng chứng thực thi và đồng bộ điểm lưu `docs/CONTEXT.md`.
+7. **`sen-release-readiness`**: Kiểm toán song song 8 lĩnh vực trước khi phát hành sản phẩm ra thị trường.
+8. **`sen-skill-capture`**: Đóng gói các quy trình lặp lại 2–3 lần thành kỹ năng tái sử dụng trong workspace.
+9. **`sen-update`**: Kiểm tra cập nhật định kỳ 0-token và nâng cấp an toàn có sao lưu hoàn tác nguyên tử.
+10. **Gói đồng hành `vn-law-check`**: Kiểm toán tuân thủ pháp luật Việt Nam (`Luật 91/2025/QH15`, `NĐ 356/2025/NĐ-CP`, `Luật TMĐT 122/2025/QH15`, `Luật AI 134/2025/QH15`).
 
 ---
 

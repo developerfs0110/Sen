@@ -47,6 +47,19 @@ try {
         try { $sealIntactBeforeHook = (-not (Sync-SenOfficeState -Workspace $ws -VerifySeal).Tampered) } catch { $sealIntactBeforeHook = $false }
     }
     $hookMutatedOfficeJson = $false
+    $execIdArg = if ($payload.PSObject.Properties['executionId'] -and $payload.executionId) { [string]$payload.executionId } else { "" }
+    if ($payload.PSObject.Properties['simulateFailure'] -and [bool]$payload.simulateFailure) {
+        throw "Simulated PostToolUse hook exception"
+    }
+    if ($payload.PSObject.Properties['simulateTimeout'] -and [bool]$payload.simulateTimeout) {
+        if (Get-Command Complete-SenHookExecution -ErrorAction SilentlyContinue) {
+            [void](Complete-SenHookExecution -Workspace $ws -ExecutionId $execIdArg -ToolName $toolName -Status "timeout" -ErrorText "PostToolUse hook execution timed out")
+        }
+        exit 0
+    }
+    if ((Get-Command Complete-SenHookExecution -ErrorAction SilentlyContinue) -and ((-not [string]::IsNullOrWhiteSpace($execIdArg)) -or (Test-Path -LiteralPath (Join-Path $ws ".agents/office/execution-ledger.jsonl")))) {
+        [void](Complete-SenHookExecution -Workspace $ws -ExecutionId $execIdArg -ToolName $toolName -Status "reconciled")
+    }
 
     # Zero-token Auto-Orchestration: sync Plan / TODO Markdown to .agents/office/tasks.json on write/edit
     if (($toolName -eq "write_file" -or $toolName -eq "edit_file") -and $pathArg -match '(?i)((specs|plans)[\\/][^\\/]+\.md|TODO\.md)$') {
@@ -273,5 +286,13 @@ try {
     Write-SenOfficeEvent -Workspace $ws -From $from -To $to -Lane $lane -EcoText $ecoText -FullText $fullText `
         -Kind $kind -Hold 1 -Source "hook-post" -Tool $toolName -Target $targetVal -Command $cmdArg -Model $model | Out-Null
 }
-catch { <# PostToolUse telemetry is best-effort and must never fail a tool call #> }
+catch {
+    try {
+        if ($ws -and (Get-Command Complete-SenHookExecution -ErrorAction SilentlyContinue)) {
+            $errExecId = if ($payload -and $payload.PSObject.Properties['executionId']) { [string]$payload.executionId } else { "" }
+            [void](Complete-SenHookExecution -Workspace $ws -ExecutionId $errExecId -ToolName $(if ($toolName) { $toolName } else { "hook" }) -Status "unreconciled" -ErrorText $_.Exception.Message)
+        }
+    }
+    catch { <# Fallback ignore #> }
+}
 exit 0
