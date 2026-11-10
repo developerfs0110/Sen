@@ -397,6 +397,7 @@ function Invoke-SenWorkspaceSessionResume {
     if (Get-Command Repair-SenOfficeMojibake -EA SilentlyContinue) { [void](Repair-SenOfficeMojibake -Workspace $Workspace) }
     if ($HasLegacyMarkers -and (Get-Command Sync-SenPlanToTasks -EA SilentlyContinue)) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
     if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/tasks.json")) -and (Get-Command Invoke-SenCheckpointResume -EA SilentlyContinue)) { [void](Invoke-SenCheckpointResume -Workspace $Workspace) }
+    [void](Complete-SenHookExecution -Workspace $Workspace -Status "reconciled")
     [void](Suspend-SenStaleCrossProjectTasks -Workspace $Workspace -ProjectPath $Target)
     if ($sealOk) { [void](Sync-SenOfficeState -Workspace $Workspace -UpdateSeal) }
 }
@@ -424,33 +425,40 @@ function Invoke-SenPreToolHookBootstrap {
     catch { <# Non-fatal pre-tool intake/ledger tracking #> }
 }
 
+function Update-SenJsonlReconciliation {
+    param([string]$FilePath, [string]$ExecutionId = "", [string]$ToolName = "", [string]$Status = "reconciled", [string]$ErrorText = "", [string]$NowIso = "")
+    if (-not (Test-Path -LiteralPath $FilePath)) { return }
+    $lines = @([IO.File]::ReadAllLines($FilePath, [Text.Encoding]::UTF8) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $outLines = [Collections.Generic.List[string]]::new(); $matched = $false; $reconcileAll = ($Status -eq "reconciled" -and [string]::IsNullOrWhiteSpace($ExecutionId) -and [string]::IsNullOrWhiteSpace($ToolName))
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $obj = $lines[$i] | ConvertFrom-Json -EA SilentlyContinue
+        $canMatch = ($reconcileAll -or (-not $matched)) -and ($null -ne $obj) -and ([string]$obj.status -in @("pending", "unresolved", "unreconciled", "failed", "timeout")) -and ($reconcileAll -or (-not $ExecutionId -and (-not $ToolName -or [string]$obj.toolName -eq $ToolName)) -or ([string]$obj.executionId -eq $ExecutionId))
+        if ($canMatch) {
+            $obj | Add-Member -NotePropertyName "status" -NotePropertyValue $Status -Force
+            $obj | Add-Member -NotePropertyName "completedAt" -NotePropertyValue $NowIso -Force
+            if ($ErrorText) { $obj | Add-Member -NotePropertyName "error" -NotePropertyValue $ErrorText -Force }
+            $outLines.Add(($obj | ConvertTo-Json -Compress)); $matched = $true
+        }
+        else { $outLines.Add($lines[$i]) }
+    }
+    if ($matched) { [IO.File]::WriteAllLines($FilePath, $outLines.ToArray(), [Text.UTF8Encoding]::new($false)) }
+}
+
 function Complete-SenHookExecution {
     param([string]$Workspace, [string]$ExecutionId = "", [string]$ToolName = "", [string]$Status = "reconciled", [string]$ErrorText = "")
     if ([string]::IsNullOrWhiteSpace($Workspace)) { return }
     $offDir = Join-Path $Workspace ".agents/office"
-    $ledPath = Join-Path $offDir "execution-ledger.jsonl"
+    $ledPath = Join-Path $offDir "execution-ledger.jsonl"; $failPath = Join-Path $offDir "hook-failures.jsonl"
     $act = {
-        if (Test-Path -LiteralPath $ledPath) {
-            $lines = @([IO.File]::ReadAllLines($ledPath, [Text.Encoding]::UTF8) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-            $outLines = [Collections.Generic.List[string]]::new()
-            $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $matched = $false
-            for ($i = 0; $i -lt $lines.Count; $i++) {
-                $obj = $lines[$i] | ConvertFrom-Json -EA SilentlyContinue
-                if ((-not $matched) -and $null -ne $obj -and [string]$obj.status -eq "pending" -and ((-not $ExecutionId -and (-not $ToolName -or [string]$obj.toolName -eq $ToolName)) -or ([string]$obj.executionId -eq $ExecutionId))) {
-                    $obj | Add-Member -NotePropertyName "status" -NotePropertyValue $Status -Force
-                    $obj | Add-Member -NotePropertyName "completedAt" -NotePropertyValue $now -Force
-                    if ($ErrorText) { $obj | Add-Member -NotePropertyName "error" -NotePropertyValue $ErrorText -Force }
-                    $outLines.Add(($obj | ConvertTo-Json -Compress)); $matched = $true
-                }
-                else { $outLines.Add($lines[$i]) }
-            }
-            if ($matched) { [IO.File]::WriteAllLines($ledPath, $outLines.ToArray(), [Text.UTF8Encoding]::new($false)) }
-        }
+        $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        Update-SenJsonlReconciliation -FilePath $ledPath -ExecutionId $ExecutionId -ToolName $ToolName -Status $Status -ErrorText $ErrorText -NowIso $now
         if ($Status -in @("unreconciled", "failed", "timeout") -or (-not [string]::IsNullOrWhiteSpace($ErrorText))) {
             if (-not (Test-Path -LiteralPath $offDir)) { [IO.Directory]::CreateDirectory($offDir) | Out-Null }
-            $failPath = Join-Path $offDir "hook-failures.jsonl"
-            $fObj = [ordered]@{ timestamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); executionId = $ExecutionId; hook = "office-post"; toolName = $ToolName; status = "unreconciled"; error = $ErrorText }
+            $fObj = [ordered]@{ timestamp = $now; executionId = $ExecutionId; hook = "office-post"; toolName = $ToolName; status = "unreconciled"; error = $ErrorText }
             [IO.File]::AppendAllText($failPath, (($fObj | ConvertTo-Json -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+        }
+        elseif ($Status -eq "reconciled") {
+            Update-SenJsonlReconciliation -FilePath $failPath -ExecutionId $ExecutionId -ToolName $ToolName -Status "reconciled" -NowIso $now
         }
     }
     if (Get-Command Invoke-SenWithFileMutex -EA SilentlyContinue) { [void](Invoke-SenWithFileMutex -FilePath $ledPath -Action $act) } else { & $act }
