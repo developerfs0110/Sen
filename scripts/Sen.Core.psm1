@@ -113,7 +113,7 @@ $hiddenOffices = @($winProcs | Where-Object { [string]$_.CommandLine -match '(?i
 $keepPid = if ($hiddenOffices.Count -gt 0) { [int]$hiddenOffices[0].ProcessId } else { 0 }
 foreach ($wp in $winProcs) {
 $wpId = if ($wp) { [int]$wp.ProcessId } else { 0 }; $cmd = [string]$wp.CommandLine
-if ($wpId -le 0 -or $anc.Contains($wpId) -or $wpId -eq $keepPid -or ($cmd -match '(?i)(shellIntegration\.ps1|PowerShellEditorServices|\bvite\b|\bnpm(\.cmd)?\s+run\s+(dev|start|serve|preview)\b)')) { continue }
+if ($wpId -le 0 -or $anc.Contains($wpId) -or $wpId -eq $keepPid -or ($cmd -match '(?i)(shellIntegration\.ps1|PowerShellEditorServices|\bvite\b|\bnpm(\.cmd)?\s+run\s+(dev|start|serve|preview)\b|\bInvoke-SenCiPushLoop\b|\brun\.ps1\b)')) { continue }
 if ($isTempWs -and ($cmd.Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { continue }
 $isTarget = ($cmd -match '(?i)(Test-SenDeliveryGate|Invoke-SenPostCodePipeline|Measure-SenCodeHealth|Invoke-SenVnLawScan)') -or (($cmd -match '(?i)start-office\.ps1') -and ($wpId -ne $keepPid)) -or ((-not $HasActiveLongRunning) -and ($cmd -match '(?i)(-Command\s+"try\s*\{\s*\$OutputEncoding|Sen\.psm1)') -and ($cmd -notmatch '(?i)\b(run\.ps1|Invoke-SenCiPushLoop)\b'))
 $proc = if ($isTarget) { Get-Process -Id $wpId -EA SilentlyContinue } else { $null }
