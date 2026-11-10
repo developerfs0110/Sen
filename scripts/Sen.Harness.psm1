@@ -370,16 +370,10 @@ try { $resp = & $inv "https://api.github.com/repos/$RepoSlug/actions/runs?per_pa
 if ($null -eq $resp -and $null -eq $RestInvoker) {
 try {
 $actHtml = (Invoke-WebRequest -Uri "https://github.com/$RepoSlug/actions" -UseBasicParsing -TimeoutSec 15).Content
-$rIds = @([regex]::Matches($actHtml, "/$RepoSlug/actions/runs/(\d+)") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique | Select-Object -First 4)
-foreach ($rid in $rIds) {
-$rh = (Invoke-WebRequest -Uri "https://github.com/$RepoSlug/actions/runs/$rid" -UseBasicParsing -TimeoutSec 15).Content
-$shaVal = [regex]::Match($rh, "/$RepoSlug/commit/([0-9a-f]{7,40})").Groups[1].Value
-if ($HeadSha -and ($shaVal -notlike "$HeadSha*") -and ($HeadSha -notlike "$shaVal*")) { continue }
-$ariaVal = [regex]::Match($rh, '(?i)aria-label="(completed successfully|failed|in progress|queued|cancelled)[^"]*"').Groups[1].Value.ToLowerInvariant()
-$stVal = if ($ariaVal -match 'completed|failed|cancelled') { "completed" } else { "in_progress" }
-$conVal = if ($ariaVal -match 'successfully') { "success" } elseif ($ariaVal -match 'failed') { "failure" } elseif ($ariaVal -match 'cancelled') { "cancelled" } else { "" }
-return [pscustomobject][ordered]@{ Found = $true; RunId = [long]$rid; Status = $stVal; Conclusion = $conVal; HtmlUrl = "https://github.com/$RepoSlug/actions/runs/$rid"; HeadSha = $(if ($HeadSha) { $HeadSha } else { $shaVal }); FailedSteps = @() }
-}
+$embJson = [regex]::Match($actHtml, '<script type="application/json" data-target="react-app\.embeddedData">([^<]+)</script>').Groups[1].Value
+$wRuns = if ($embJson) { @((ConvertFrom-Json $embJson).payload.allWorkflowRunsRoute.workflowRuns) } else { @() }
+$mapped = @($wRuns | ForEach-Object { [pscustomobject]@{ id = [long]$_.id; head_sha = ([string]$_.description.linkUrl -replace '^.*/commit/', ''); status = $(if ([string]$_.state.status -match 'COMPLETED') { 'completed' } else { 'in_progress' }); conclusion = ([string]$_.state.conclusion -replace '^WORKFLOW_RUN_CONCLUSION_', '').ToLowerInvariant(); html_url = [string]$_.runUrl; jobs_url = '' } })
+if ($mapped.Count -gt 0) { $resp = [pscustomobject]@{ workflow_runs = $mapped } }
 } catch { <# Ignore HTML fallback error #> }
 }
 if ($null -eq $resp) { return [pscustomobject][ordered]@{ Found = $false; RunId = 0; Status = "error"; Conclusion = "error"; HtmlUrl = ""; HeadSha = $HeadSha; FailedSteps = @("API error: $apiErr") } }

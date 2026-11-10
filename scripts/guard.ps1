@@ -345,7 +345,7 @@ try {
 
     # 5. Zero-Amnesia Pre-Commit / Pre-Push Auto-Seal, CodeHealth, Raw Byte Budget & Mandatory Invoke-SenCiPushLoop Gate
     if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
-        $isTestWs = $primaryWs -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test)|TestDrive)'
+        $isTestWs = ([string]::IsNullOrWhiteSpace($primaryWs) -and $cmd -notmatch '(?i)\bgit\s+-C\b') -or ($primaryWs -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test)|TestDrive)')
         if ((-not $isTestWs) -and ($env:SEN_CI_PUSH_LOOP -ne "1") -and ($cmd -match '(?i)\bgit\b[^|;&\r\n]*\bpush\b') -and ($cmd -notmatch '(?i)\bInvoke-SenCiPushLoop\b')) {
             Out-Decision "deny" "[SEN GUARD] Blocked: Direct 'git push' is prohibited by Rule 12 (Zero-Amnesia CI Gate). You MUST call Invoke-SenCiPushLoop -RepoPath '<path>' so pre-push verification and remote GitHub Actions CI status are checked automatically." $primaryWs $toolName $primaryWs $cmd
         }

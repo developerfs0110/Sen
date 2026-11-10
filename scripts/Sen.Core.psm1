@@ -106,9 +106,10 @@ $maxSec = [Math]::Max(5, $MaxProcessSeconds); $procCutoff = (Get-Date).ToUnivers
 $isTempWs = $Workspace -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(orch|harness|gov|adv|.*-test|test_)|TestDrive)'
 $normWs = $Workspace.Replace('\', '/').TrimEnd('/')
 try {
-$winProcs = if ($env:OS -eq 'Windows_NT' -and (Get-Command Get-CimInstance -EA SilentlyContinue)) { @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -EA SilentlyContinue) } else { @() }
+$allProcs = if ($env:OS -eq 'Windows_NT' -and (Get-Command Get-CimInstance -EA SilentlyContinue)) { @(Get-CimInstance Win32_Process -EA SilentlyContinue) } else { @() }
+$winProcs = @($allProcs | Where-Object { $_.Name -match '^(?i)(powershell|pwsh)(\.exe)?$' })
 $anc = [Collections.Generic.HashSet[int]]::new(); $curP = $PID
-for ($k = 0; $k -lt 4; $k++) { [void]$anc.Add($curP); $pe = $winProcs | Where-Object { [int]$_.ProcessId -eq $curP } | Select-Object -First 1; if ($pe -and [int]$pe.ParentProcessId -gt 0) { $curP = [int]$pe.ParentProcessId } else { break } }
+for ($k = 0; $k -lt 6; $k++) { [void]$anc.Add($curP); $pe = $allProcs | Where-Object { [int]$_.ProcessId -eq $curP } | Select-Object -First 1; if ($pe -and [int]$pe.ParentProcessId -gt 0) { $curP = [int]$pe.ParentProcessId } else { break } }
 $hiddenOffices = @($winProcs | Where-Object { [string]$_.CommandLine -match '(?i)start-office\.ps1' } | Sort-Object CreationDate)
 $keepPid = if ($hiddenOffices.Count -gt 0) { [int]$hiddenOffices[0].ProcessId } else { 0 }
 foreach ($wp in $winProcs) {
