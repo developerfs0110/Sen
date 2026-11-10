@@ -502,12 +502,12 @@ function New-SenCapturedSkill {
   if (($cleanSkill -match '^sen-') -and (-not $AllowCorePrefix.IsPresent)) {
     throw "SkillName '$cleanSkill' cannot use reserved 'sen-' prefix. Choose a project/workspace name without 'sen-'."
   }
-  $combinedText = ((@($Description) + @($Steps) + @($Commands)) -join "`n") -replace '`', ''
+  $combinedText = ((@($Description) + @($Steps) + @($Commands)) -join "`n") -replace [string][char]27, 'e' -replace '`', ''
   if ($combinedText -match '(?i)(ignore\s+(all\s+)?previous\s+instructions|disregard\s+.*rules|system\s+override|SEN_TRUSTED_|Sync-SenOfficeState\s+.*-UpdateSeal|Lock-SenQualityBaseline\s+.*-Force|\bClear-SenTasks\b)') {
     throw "Skill capture blocked: prompt-injection or guard-bypass directive detected in skill content."
   }
   foreach ($cmdItem in @($Commands)) {
-    $normCmd = ([string]$cmdItem) -replace '`', ''
+    $normCmd = ([string]$cmdItem) -replace [string][char]27, 'e' -replace '`', ''
     if ($normCmd -match '(?i)(\brm\s+-[a-z]*r|\bRemove-Item\b[^|;&]*\s-r(e(c(u(r(s(e)?)?)?)?)?)?\b|\b(Invoke-Expression|iex)\b|(\bcurl\b|\bwget\b)[^|;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell)\b|[/\\](\.ssh|\.aws|\.gnupg|\.kube|\.gemini)[/\\]|id_rsa|id_ed25519|\.agents[/\\]office|guard\.(ps1|sh)|settings\.json|hooks\.json|\bClear-SenTasks\b)') {
       throw "Skill capture blocked: destructive or unsafe command pattern detected in 0-token runner script."
     }
