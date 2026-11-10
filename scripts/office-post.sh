@@ -4,11 +4,12 @@
 
 set -u
 RAW="$(cat 2>/dev/null || true)"
-[ -z "$RAW" ] && exit 0
+[ -z "$RAW" ] && { printf '{}\n'; exit 0; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ "${SEN_FORCE_POSIX_PY:-0}" != "1" ] && command -v pwsh >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/office-post.ps1" ]; then
   printf '%s' "$RAW" | SEN_TRUSTED_HOOK=1 pwsh -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT_DIR/office-post.ps1" >/dev/null 2>&1 || true
+  printf '{}\n'
   exit 0
 fi
 
@@ -55,7 +56,7 @@ try:
     ws = ws_list[0]
     off_dir = os.path.join(ws, ".agents", "office")
     seal_p = os.path.join(off_dir, "state-seal.json")
-    seal_intact = True
+    seal_intact = False
     if os.path.isfile(seal_p):
         try:
             saved = json.load(open(seal_p, "r", encoding="utf-8"))
@@ -112,14 +113,24 @@ try:
     is_err = bool(resp.get("is_error") or resp.get("isError")) or (has_ec and ec_val != 0)
 
     tasks_p = os.path.join(off_dir, "tasks.json")
-    def load_tasks():
-        if not os.path.isfile(tasks_p): return []
+    def load_tasks_full():
+        if not os.path.isfile(tasks_p): return [], []
         try:
             o = json.load(open(tasks_p, "r", encoding="utf-8"))
-            return o.get("tasks", []) if isinstance(o, dict) else o
-        except Exception: return []
+            if isinstance(o, dict):
+                return o.get("tasks", []), o.get("plannedTaskIds", [])
+            return o, []
+        except Exception: return [], []
+    def load_tasks():
+        return load_tasks_full()[0]
     def save_tasks(tlist):
-        write_atomic(tasks_p, {"version": 1, "updatedAt": now_iso, "tasks": tlist})
+        disk_tasks, planned = load_tasks_full()
+        pset = list(dict.fromkeys([str(x) for x in planned if x]))
+        for t in tlist:
+            tid = str(t.get("id") or "")
+            if tid and t.get("status") != "backlog" and not t.get("isTelemetryOnly") and tid not in pset:
+                pset.append(tid)
+        write_atomic(tasks_p, {"version": 1, "updatedAt": now_iso, "plannedTaskIds": pset, "tasks": tlist})
 
     role, lane, model, eco = "be", "Execution", "inherit", tname
     if tname in ("invoke_subagent", "Task"):
@@ -233,5 +244,6 @@ except Exception as ex:
         pass
 ' <<< "$RAW" 2>/dev/null || true
 fi
+printf '{}\n'
 exit 0
 

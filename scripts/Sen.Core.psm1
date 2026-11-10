@@ -138,9 +138,17 @@ function Install-SenHarnessHookFile {
     if ([string]::IsNullOrWhiteSpace($HookRelPath)) { return $null }
     $fullP = Join-Path $Workspace $HookRelPath; $isWin = ($env:OS -eq "Windows_NT"); $ext = if ($isWin) { "ps1" } else { "sh" }
     $pBase = if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1")) -or ($HookRelPath -match '\.agents[/\\]plugins[/\\]sen-method')) { ".agents/plugins/sen-method/scripts" } else { "scripts" }
-    $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/guard.$ext" } else { "sh $pBase/guard.$ext" }
-    $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/office-post.$ext" } else { "sh $pBase/office-post.$ext" }
+    $gCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/guard.ps1" } else { "sh $pBase/guard.$ext" }
+    $pCmd = if ($isWin) { "powershell -NoProfile -ExecutionPolicy Bypass -File $pBase/office-post.ps1" } else { "sh $pBase/office-post.$ext" }
     if ($HarnessId -eq "antigravity") {
+        $plugDir = Split-Path -Parent $fullP
+        $fwdDir = Join-Path $plugDir ".agents/plugins/sen-method/scripts"
+        if (-not (Test-Path -LiteralPath $fwdDir)) { [IO.Directory]::CreateDirectory($fwdDir) | Out-Null }
+        $utf8 = [Text.UTF8Encoding]::new($false)
+        [IO.File]::WriteAllText((Join-Path $fwdDir "guard.ps1"), "& (Join-Path `$PSScriptRoot '../../../../scripts/guard.ps1')`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $fwdDir "office-post.ps1"), "& (Join-Path `$PSScriptRoot '../../../../scripts/office-post.ps1')`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $fwdDir "guard.sh"), "#!/usr/bin/env sh`nexec sh `"`$(dirname `"`$0`")/../../../../scripts/guard.sh`"`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $fwdDir "office-post.sh"), "#!/usr/bin/env sh`nexec sh `"`$(dirname `"`$0`")/../../../../scripts/office-post.sh`"`n", $utf8)
         $agObj = [ordered]@{ "sen-destructive-command-guard" = [ordered]@{ PreToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file"; hooks = @([ordered]@{ type = "command"; command = $gCmd; timeout = 10 }) }); PostToolUse = @([ordered]@{ matcher = "run_command|write_file|edit_file|read_file|grep_search|find_by_name|invoke_subagent|send_message|manage_subagents"; hooks = @([ordered]@{ type = "command"; command = $pCmd; timeout = 5 }) }) } }
         Write-SenAtomicJson -Path $fullP -InputObject $agObj -Depth 8
         return $fullP
@@ -164,6 +172,10 @@ function Resolve-SenRequestedHarnesses {
 
 function Test-SenHarnessLiveProbe {
     param([string]$Workspace)
+    foreach ($hf in @(".agents/plugins/sen-method/hooks.json", ".cursor/hooks.json", ".claude/settings.json")) {
+        $hp = Join-Path $Workspace $hf
+        if ((Test-Path -LiteralPath $hp) -and ([IO.File]::ReadAllText($hp) -match '(\$p=@\(|-Command\s+\\")')) { return $false }
+    }
     $gScript = Join-Path $Workspace ".agents/plugins/sen-method/scripts/guard.ps1"
     if (-not (Test-Path -LiteralPath $gScript)) { $gScript = Join-Path $Workspace "scripts/guard.ps1" }
     if (-not (Test-Path -LiteralPath $gScript)) { $gScript = Join-Path $PSScriptRoot "guard.ps1" }
@@ -262,7 +274,8 @@ function Register-SenHookExecution {
     $eid = if ($ExecutionId) { $ExecutionId } else { "hexec-" + ([Guid]::NewGuid().ToString("N").Substring(0, 10)) }
     $entry = [ordered]@{ executionId = $eid; toolName = $ToolName; target = $Target; status = "pending"; startedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
     $line = ($entry | ConvertTo-Json -Compress) + "`n"
-    [IO.File]::AppendAllText($ledPath, $line, [Text.UTF8Encoding]::new($false))
+    $act = { [IO.File]::AppendAllText($ledPath, $line, [Text.UTF8Encoding]::new($false)) }
+    if (Get-Command Invoke-SenWithFileMutex -EA SilentlyContinue) { [void](Invoke-SenWithFileMutex -FilePath $ledPath -Action $act) } else { & $act }
     return $entry
 }
 
@@ -300,28 +313,31 @@ function Complete-SenHookExecution {
     if ([string]::IsNullOrWhiteSpace($Workspace)) { return }
     $offDir = Join-Path $Workspace ".agents/office"
     $ledPath = Join-Path $offDir "execution-ledger.jsonl"
-    if (Test-Path -LiteralPath $ledPath) {
-        $lines = @([IO.File]::ReadAllLines($ledPath, [Text.Encoding]::UTF8) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $outLines = [Collections.Generic.List[string]]::new()
-        $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $matched = $false
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            $obj = $lines[$i] | ConvertFrom-Json -EA SilentlyContinue
-            if ($null -ne $obj -and [string]$obj.status -eq "pending" -and ((-not $ExecutionId -and (-not $ToolName -or [string]$obj.toolName -eq $ToolName)) -or ([string]$obj.executionId -eq $ExecutionId))) {
-                $obj | Add-Member -NotePropertyName "status" -NotePropertyValue $Status -Force
-                $obj | Add-Member -NotePropertyName "completedAt" -NotePropertyValue $now -Force
-                if ($ErrorText) { $obj | Add-Member -NotePropertyName "error" -NotePropertyValue $ErrorText -Force }
-                $outLines.Add(($obj | ConvertTo-Json -Compress)); $matched = $true
+    $act = {
+        if (Test-Path -LiteralPath $ledPath) {
+            $lines = @([IO.File]::ReadAllLines($ledPath, [Text.Encoding]::UTF8) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $outLines = [Collections.Generic.List[string]]::new()
+            $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $matched = $false
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                $obj = $lines[$i] | ConvertFrom-Json -EA SilentlyContinue
+                if ((-not $matched) -and $null -ne $obj -and [string]$obj.status -eq "pending" -and ((-not $ExecutionId -and (-not $ToolName -or [string]$obj.toolName -eq $ToolName)) -or ([string]$obj.executionId -eq $ExecutionId))) {
+                    $obj | Add-Member -NotePropertyName "status" -NotePropertyValue $Status -Force
+                    $obj | Add-Member -NotePropertyName "completedAt" -NotePropertyValue $now -Force
+                    if ($ErrorText) { $obj | Add-Member -NotePropertyName "error" -NotePropertyValue $ErrorText -Force }
+                    $outLines.Add(($obj | ConvertTo-Json -Compress)); $matched = $true
+                }
+                else { $outLines.Add($lines[$i]) }
             }
-            else { $outLines.Add($lines[$i]) }
+            if ($matched) { [IO.File]::WriteAllLines($ledPath, $outLines.ToArray(), [Text.UTF8Encoding]::new($false)) }
         }
-        if ($matched) { [IO.File]::WriteAllLines($ledPath, $outLines.ToArray(), [Text.UTF8Encoding]::new($false)) }
+        if ($Status -in @("unreconciled", "failed", "timeout") -or (-not [string]::IsNullOrWhiteSpace($ErrorText))) {
+            if (-not (Test-Path -LiteralPath $offDir)) { [IO.Directory]::CreateDirectory($offDir) | Out-Null }
+            $failPath = Join-Path $offDir "hook-failures.jsonl"
+            $fObj = [ordered]@{ timestamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); executionId = $ExecutionId; hook = "office-post"; toolName = $ToolName; status = "unreconciled"; error = $ErrorText }
+            [IO.File]::AppendAllText($failPath, (($fObj | ConvertTo-Json -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
+        }
     }
-    if ($Status -in @("unreconciled", "failed", "timeout") -or (-not [string]::IsNullOrWhiteSpace($ErrorText))) {
-        if (-not (Test-Path -LiteralPath $offDir)) { [IO.Directory]::CreateDirectory($offDir) | Out-Null }
-        $failPath = Join-Path $offDir "hook-failures.jsonl"
-        $fObj = [ordered]@{ timestamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); executionId = $ExecutionId; hook = "office-post"; toolName = $ToolName; status = "unreconciled"; error = $ErrorText }
-        [IO.File]::AppendAllText($failPath, (($fObj | ConvertTo-Json -Compress) + "`n"), [Text.UTF8Encoding]::new($false))
-    }
+    if (Get-Command Invoke-SenWithFileMutex -EA SilentlyContinue) { [void](Invoke-SenWithFileMutex -FilePath $ledPath -Action $act) } else { & $act }
 }
 
 function Test-SenDeliveryReconciliation {
@@ -467,7 +483,8 @@ if (-not $global:SenCoreBootstrapActive) {
     $global:SenCoreBootstrapActive = $true
     try {
         try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue } catch { <# Ignore policy lock #> }
-        foreach ($modName in @("Sen.Runtime.psm1", "Sen.Legal.psm1", "Sen.Orchestrator.psm1", "Sen.Packages.psm1", "Sen.Harness.psm1", "Sen.Governance.psm1", "Sen.Adversarial.psm1", "Sen.BoundedLoop.psm1", "Sen.psm1")) {
+        $modList = if ($global:SenLightweightHook) { @("Sen.Runtime.psm1", "Sen.Orchestrator.psm1", "Sen.Governance.psm1") } else { @("Sen.Runtime.psm1", "Sen.Legal.psm1", "Sen.Orchestrator.psm1", "Sen.Packages.psm1", "Sen.Harness.psm1", "Sen.Governance.psm1", "Sen.Adversarial.psm1", "Sen.BoundedLoop.psm1", "Sen.psm1") }
+        foreach ($modName in $modList) {
             $modPath = Join-Path -Path $PSScriptRoot -ChildPath $modName
             if (-not (Test-Path -LiteralPath $modPath)) {
                 throw "Critical Sen module missing (fail-closed): $modPath"

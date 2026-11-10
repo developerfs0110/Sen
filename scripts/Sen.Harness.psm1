@@ -1,7 +1,7 @@
 # scripts/Sen.Harness.psm1 - Sen Multi-Harness Adapter & Sync
 $ErrorActionPreference = "Stop"
 $senAdversarialPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Adversarial.psm1"
-if (Test-Path -LiteralPath $senAdversarialPath) {
+if ((-not $global:SenCoreBootstrapActive) -and (Test-Path -LiteralPath $senAdversarialPath)) {
   Import-Module -Name $senAdversarialPath -Global -Force
 }
 function Get-SenSupportedHarnesses {
@@ -158,7 +158,7 @@ function Install-SenGitHooks {
   param([Parameter(Mandatory)][Alias("WorkspacePath", "Path")][string]$Workspace, [switch]$Force)
   $hooksDir = Join-Path (Join-Path $Workspace ".git") "hooks"
   if (-not (Test-Path -LiteralPath $hooksDir)) { [IO.Directory]::CreateDirectory($hooksDir) | Out-Null }
-  $wsNorm = $Workspace.Replace('\', '/')
+  $wsNorm = $Workspace.Replace('\', '/').Replace("'", "''")
   $cmdBody = "\`$m = if (Test-Path '$wsNorm/scripts/Sen.psm1') { '$wsNorm/scripts/Sen.psm1' } else { '$wsNorm/.agents/plugins/sen-method/scripts/Sen.psm1' }; Import-Module \`$m -ErrorAction SilentlyContinue; \`$gate = Test-SenDeliveryGate -Workspace '$wsNorm'; if (-not \`$gate.Passed) { Write-Error (\`$gate.Issues -join '; '); exit 1 }"
   $scriptTxt = "#!/usr/bin/env sh`n# Sen Zero-Trust Physical Git Gate`nif command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$cmdBody`"; else powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$cmdBody`"; fi`n"
   $utf8 = [Text.UTF8Encoding]::new($false)
@@ -204,7 +204,7 @@ function Sync-SenTasksToMarkdown {
   foreach ($t in @(Get-SenTasks -Workspace $Workspace)) { if ($t -and [string]$t.status -eq "done") { [void]$doneIds.Add([string]$t.id) } }
   if ($doneIds.Count -eq 0) { return [pscustomobject]@{ UpdatedFiles = 0 } }
   $upd = 0; $utf8 = [Text.UTF8Encoding]::new($false)
-  foreach ($tp in @((Join-Path $Workspace "docs/TODO.md"), (Join-Path $Workspace "Code/sen-method/docs/TODO.md"))) {
+  foreach ($tp in @((Join-Path $Workspace "docs/TODO.md"))) {
     if (-not (Test-Path -LiteralPath $tp)) { continue }
     $txt = [IO.File]::ReadAllText($tp, $utf8); $orig = $txt
     foreach ($did in $doneIds) { $txt = [regex]::Replace($txt, "(?m)^(-\s*)\[[ ~]\](\s*\*\*$([regex]::Escape($did))\b)", '$1[x]$2') }
@@ -395,8 +395,8 @@ function Invoke-SenCiPushLoop {
     if (-not $SkipPush) {
       $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"; Push-Location -LiteralPath $RepoPath
       try {
-        $stLines = @(git status --porcelain 2>&1)
-        if (($stLines -join "`n") -match '(?im)^.. (?:"?([^\r\n"]*?(?:^|[/\\])(?:\.env(?:\.(?!example|sample|template)\S+)?|id_rsa|id_ed25519|\S+\.(?:pem|pfx|p12)))"?)\s*$') {
+        $stLines = @(git status --porcelain -uall 2>&1)
+        if (($stLines -join "`n") -match '(?im)^.. (?:"?([^\r\n"]*?(?:^|[/\\])(?:\.env(?:\.(?!example|sample|template)\S+)?|id_rsa|id_ed25519|credentials\.json|\.npmrc|\.netrc|\S+\.(?:pem|pfx|p12|key)))"?)\s*$') {
           return [pscustomobject][ordered]@{ LocalPassed = $false; Pushed = $false; CiPassed = $false; Attempts = $att; HeadSha = ""; Errors = @("SensitiveFileBlocked:$($matches[1])"); CiStatus = $null }
         }
         if ($stLines.Count -gt 0) { [void](git add -A 2>&1); [void](git commit -m $CommitMessage 2>&1) }

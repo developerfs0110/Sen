@@ -8,129 +8,81 @@
 $ErrorActionPreference = "Stop"
 
 function Read-SenBoundedLoops {
-    param([string]$Workspace)
-    $loopFile = Join-Path -Path $Workspace -ChildPath ".agents/office/bounded-loops.json"
-    $raw = Read-SenSafeJson -Path $loopFile
-    if ($null -eq $raw) { return @() }
-    $items = [System.Collections.Generic.List[object]]::new()
-    foreach ($entry in $raw) {
-        if ($null -eq $entry) { continue }
-        if ($entry -is [System.Array]) {
-            foreach ($sub in $entry) { if ($null -ne $sub) { $items.Add($sub) } }
-        }
-        elseif ($entry.PSObject.Properties['value'] -and $entry.PSObject.Properties['Count'] -and $entry.value -is [System.Array]) {
-            foreach ($sub in $entry.value) { if ($null -ne $sub) { $items.Add($sub) } }
-        }
-        else {
-            $items.Add($entry)
-        }
+  param([string]$Workspace)
+  $raw = Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/bounded-loops.json")
+  if ($null -eq $raw) { return @() }
+  $items = [System.Collections.Generic.List[object]]::new()
+  foreach ($entry in $raw) {
+    if ($null -eq $entry) { continue }
+    if ($entry -is [System.Array]) { foreach ($sub in $entry) { if ($null -ne $sub) { $items.Add($sub) } } }
+    elseif ($entry.PSObject.Properties['value'] -and $entry.PSObject.Properties['Count'] -and $entry.value -is [System.Array]) {
+      foreach ($sub in $entry.value) { if ($null -ne $sub) { $items.Add($sub) } }
     }
-    return @($items.ToArray())
+    else { $items.Add($entry) }
+  }
+  return @($items.ToArray())
 }
 
 function Save-SenBoundedLoopRecord {
-    param([string]$Workspace, $Record)
-    $loopFile = Join-Path -Path $Workspace -ChildPath ".agents/office/bounded-loops.json"
+  param([string]$Workspace, $Record)
+  $loopFile = Join-Path -Path $Workspace -ChildPath ".agents/office/bounded-loops.json"
+  $sb = {
     $list = [System.Collections.Generic.List[object]]::new()
     foreach ($item in (Read-SenBoundedLoops -Workspace $Workspace)) {
-        if ($null -ne $item -and [string]$item.claimId -ne [string]$Record.claimId) {
-            $list.Add($item)
-        }
+      if ($null -ne $item -and [string]$item.claimId -ne [string]$Record.claimId) { $list.Add($item) }
     }
     $list.Add($Record)
     Write-SenAtomicJson -Path $loopFile -InputObject ($list.ToArray()) -Depth 10
     return $Record
+  }
+  if (Get-Command Invoke-SenWithFileMutex -ErrorAction SilentlyContinue) { return (Invoke-SenWithFileMutex -FilePath $loopFile -Action $sb) }
+  return (& $sb)
 }
 
 function Set-SenVerificationPolicy {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$ClaimId,
-        [ValidateSet("Small", "Medium", "Complex", "HighSecurity", "MajorArchitecture")][string]$TaskType = "Medium",
-        [int]$MaxReviewRounds = 0,
-        [int]$MaxRepairAttempts = 0,
-        [int]$MaxTestRetries = 1,
-        [int]$TokenBudget = 50000,
-        [int]$TimeBudgetSeconds = 900,
-        [int]$MaxToolCalls = 50,
-        [double]$CostBudgetUsd = 5.0,
-        [string[]]$ScopePaths = @(),
-        [string[]]$AcceptanceCriteria = @(),
-        [string]$RestorePointId = "",
-        [switch]$ResetApprovedByHuman
-    )
-    $existing = (Read-SenBoundedLoops -Workspace $Workspace) | Where-Object { [string]$_.claimId -eq $ClaimId } | Select-Object -First 1
-    if ($null -ne $existing -and (-not $ResetApprovedByHuman.IsPresent)) {
-        return $existing
-    }
-
-    $defRounds = switch ($TaskType) { "Small" { 1 } "Medium" { 2 } default { 3 } }
-    $defRepairs = switch ($TaskType) { "Small" { 1 } default { 2 } }
-    $effRounds = if ($MaxReviewRounds -gt 0) { $MaxReviewRounds } else { $defRounds }
-    $effRepairs = if ($MaxRepairAttempts -gt 0) { $MaxRepairAttempts } else { $defRepairs }
-    $critText = (@($AcceptanceCriteria | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) | Sort-Object) -join "|"
-    $critHash = Get-SenTextSha256 -Text $critText
-    $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-    $record = [pscustomobject][ordered]@{
-        claimId            = $ClaimId
-        taskType           = $TaskType
-        state              = "VERIFYING"
-        maxReviewRounds    = [int]$effRounds
-        maxRepairAttempts  = [int]$effRepairs
-        maxTestRetries     = [int]$MaxTestRetries
-        tokenBudget        = [int]$TokenBudget
-        timeBudgetSeconds  = [int]$TimeBudgetSeconds
-        maxToolCalls       = [int]$MaxToolCalls
-        costBudgetUsd      = [double]$CostBudgetUsd
-        currentRound       = 0
-        repairAttempts     = 0
-        regressionCount    = 0
-        tokensUsed         = 0
-        elapsedSeconds     = 0
-        toolCallsUsed      = 0
-        estimatedCostUsd   = 0.0
-        scopePaths         = @($ScopePaths)
-        acceptanceCriteria = @($AcceptanceCriteria)
-        criteriaHash       = $critHash
-        restorePointId     = $RestorePointId
-        unresolvedFindings = @()
-        resolvedFindingIds = @()
-        backlogItems       = @()
-        residualRisks      = @()
-        roundHistory       = @()
-        escalationDossier  = $null
-        updatedAt          = $nowIso
-    }
-    return (Save-SenBoundedLoopRecord -Workspace $Workspace -Record $record)
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Workspace,
+    [Parameter(Mandatory = $true)][string]$ClaimId,
+    [ValidateSet("Small", "Medium", "Complex", "HighSecurity", "MajorArchitecture")][string]$TaskType = "Medium",
+    [int]$MaxReviewRounds = 0, [int]$MaxRepairAttempts = 0, [int]$MaxTestRetries = 1,
+    [int]$TokenBudget = 50000, [int]$TimeBudgetSeconds = 900, [int]$MaxToolCalls = 50, [double]$CostBudgetUsd = 5.0,
+    [string[]]$ScopePaths = @(), [string[]]$AcceptanceCriteria = @(), [string]$RestorePointId = "", [switch]$ResetApprovedByHuman
+  )
+  $existing = (Read-SenBoundedLoops -Workspace $Workspace) | Where-Object { [string]$_.claimId -eq $ClaimId } | Select-Object -First 1
+  if ($null -ne $existing -and (-not $ResetApprovedByHuman.IsPresent)) { return $existing }
+  $defRounds = switch ($TaskType) { "Small" { 1 } "Medium" { 2 } default { 3 } }
+  $defRepairs = switch ($TaskType) { "Small" { 1 } default { 2 } }
+  $effRounds = if ($MaxReviewRounds -gt 0) { $MaxReviewRounds } else { $defRounds }
+  $effRepairs = if ($MaxRepairAttempts -gt 0) { $MaxRepairAttempts } else { $defRepairs }
+  $critText = (@($AcceptanceCriteria | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) | Sort-Object) -join "|"
+  $critHash = Get-SenTextSha256 -Text $critText
+  $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $record = [pscustomobject][ordered]@{
+    claimId = $ClaimId; taskType = $TaskType; state = "VERIFYING"
+    maxReviewRounds = [int]$effRounds; maxRepairAttempts = [int]$effRepairs; maxTestRetries = [int]$MaxTestRetries
+    tokenBudget = [int]$TokenBudget; timeBudgetSeconds = [int]$TimeBudgetSeconds; maxToolCalls = [int]$MaxToolCalls; costBudgetUsd = [double]$CostBudgetUsd
+    currentRound = 0; repairAttempts = 0; regressionCount = 0; tokensUsed = 0; elapsedSeconds = 0; toolCallsUsed = 0; estimatedCostUsd = 0.0
+    scopePaths = @($ScopePaths); acceptanceCriteria = @($AcceptanceCriteria); criteriaHash = $critHash; restorePointId = $RestorePointId
+    unresolvedFindings = @(); resolvedFindingIds = @(); backlogItems = @(); residualRisks = @(); roundHistory = @(); escalationDossier = $null; updatedAt = $nowIso
+  }
+  return (Save-SenBoundedLoopRecord -Workspace $Workspace -Record $record)
 }
 
 function New-SenEscalationDossier {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]$LoopRecord,
-        [Parameter(Mandatory = $true)][string]$EscalationReason
-    )
-    $unresolved = @($LoopRecord.unresolvedFindings | Where-Object { $null -ne $_ })
-    $c0List = @($unresolved | Where-Object { [string]$_.severity -eq "C0" })
-    $c1List = @($unresolved | Where-Object { [string]$_.severity -eq "C1" })
-    return [pscustomobject][ordered]@{
-        claimId           = [string]$LoopRecord.claimId
-        escalationReason  = $EscalationReason
-        roundsExecuted    = [int]$LoopRecord.currentRound
-        repairsExecuted   = [int]$LoopRecord.repairAttempts
-        unresolvedC0Count = $c0List.Count
-        unresolvedC1Count = $c1List.Count
-        regressionCount   = [int]$LoopRecord.regressionCount
-        quarantinedPaths  = @($LoopRecord.scopePaths)
-        evidencePreserved = $true
-        restorePointId    = [string]$LoopRecord.restorePointId
-        whatWasTried      = @($LoopRecord.roundHistory)
-        residualRisks     = @($unresolved)
-        reviewRequiredAt  = "PRE_GIT_PUSH_GATE"
-        generatedAt       = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-    }
+  [CmdletBinding()]
+  param([Parameter(Mandatory = $true)]$LoopRecord, [Parameter(Mandatory = $true)][string]$EscalationReason)
+  $unresolved = @($LoopRecord.unresolvedFindings | Where-Object { $null -ne $_ })
+  $c0List = @($unresolved | Where-Object { [string]$_.severity -eq "C0" })
+  $c1List = @($unresolved | Where-Object { [string]$_.severity -eq "C1" })
+  return [pscustomobject][ordered]@{
+    claimId = [string]$LoopRecord.claimId; escalationReason = $EscalationReason
+    roundsExecuted = [int]$LoopRecord.currentRound; repairsExecuted = [int]$LoopRecord.repairAttempts
+    unresolvedC0Count = $c0List.Count; unresolvedC1Count = $c1List.Count; regressionCount = [int]$LoopRecord.regressionCount
+    quarantinedPaths = @($LoopRecord.scopePaths); evidencePreserved = $true; restorePointId = [string]$LoopRecord.restorePointId
+    whatWasTried = @($LoopRecord.roundHistory); residualRisks = @($unresolved); reviewRequiredAt = "PRE_GIT_PUSH_GATE"
+    generatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+  }
 }
 
 function Invoke-SenEscalationQuarantine {
@@ -219,8 +171,9 @@ function Invoke-SenFindingTriage {
 
     foreach ($f in @($Findings)) {
         if ($null -eq $f) { continue }
-        $fid = if ($f.PSObject.Properties['id'] -and $f.id) { [string]$f.id } else { "F-" + [Guid]::NewGuid().ToString("N").Substring(0, 6) }
         $title = [string]$f.title
+        $path = if ($f.PSObject.Properties['path']) { [string]$f.path } else { "" }
+        $fid = if ($f.PSObject.Properties['id'] -and $f.id) { [string]$f.id } else { "F-" + (Get-SenTextSha256 -Text "$title|$path").Substring(0, 8) }
         $rawSev = if ($f.PSObject.Properties['severity'] -and $f.severity) { ([string]$f.severity).ToUpperInvariant() } else { "C2" }
         $cmd = if ($f.PSObject.Properties['testCommand']) { [string]$f.testCommand } else { "" }
         $hasEv = (-not [string]::IsNullOrWhiteSpace($cmd)) -and ($cmd -notmatch '^(?i)\s*(none|manual|verbal|n/a|ok)\s*$')
@@ -234,14 +187,14 @@ function Invoke-SenFindingTriage {
         # BVC-03 Anti-downgrade floor for critical security/data-loss findings
         $c0Re = '(?i)(\bsqli\b|sql\s*injection|command\s*injection|\brce\b|path\s*traversal|symlink\s*escape|privilege\s*escalation|secret\s*leak|auth(entication|orization)?\s*bypass|state\s*tamper|data\s*loss|drop\s*table|corruption|security\s*breach)'
         $c1Re = '(?i)(\bxss\b|race\s*condition|deadlock|memory\s*poison|\bcsrf\b|dns\s*rebinding)'
-        $sev = if ($title -match $c0Re) { "C0" } elseif ($rawSev -eq "C3" -and $title -match $c1Re) { "C1" } else { $rawSev }
-        $path = if ($f.PSObject.Properties['path']) { [string]$f.path } else { "" }
+        $sev = if ($title -match $c0Re) { "C0" } elseif ($rawSev -in @("C2", "C3") -and $title -match $c1Re) { "C1" } else { $rawSev }
+        $isSecC1 = ($sev -eq "C1" -and $title -match $c1Re)
         $inScope = ($scopeList.Count -eq 0) -or ([string]::IsNullOrWhiteSpace($path)) -or (Test-SenPathOverlap -PathsA $scopeList -PathsB @($path))
         $isSubj = ($f.PSObject.Properties['isSubjective'] -and [bool]$f.isSubjective) -or ($sev -eq "C3")
         if ($isSubj -and $sev -ne "C3") { $subjectiveConflicts++ }
 
         $item = [pscustomobject][ordered]@{ id = $fid; title = $title; severity = $sev; path = $path; inScope = [bool]$inScope; testCommand = $cmd }
-        if ($sev -eq "C3" -or ((-not $inScope) -and $sev -ne "C0")) {
+        if ($sev -eq "C3" -or ((-not $inScope) -and $sev -ne "C0" -and (-not $isSecC1))) {
             $gate2Backlog.Add($item)
             if (Get-Command Add-SenBacklogItem -ErrorAction SilentlyContinue) { [void](Add-SenBacklogItem -Workspace $Workspace -Id "BL-$fid" -Title "[Gate2-$sev] $title (from $ClaimId)") }
         }
@@ -281,50 +234,41 @@ function Invoke-SenFindingTriage {
 }
 
 function Measure-SenAdversarialProgress {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $false)][object[]]$PreviousFindings = @(),
-        [Parameter(Mandatory = $false)][object[]]$CurrentFindings = @(),
-        [Parameter(Mandatory = $false)][string[]]$HistoricalResolvedIds = @()
-    )
-    $prevIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($pf in @($PreviousFindings)) { if ($pf -and $pf.id) { [void]$prevIds.Add([string]$pf.id) } }
-    $histResolved = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($rid in @($HistoricalResolvedIds)) { if ($rid) { [void]$histResolved.Add([string]$rid) } }
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $false)][object[]]$PreviousFindings = @(),
+    [Parameter(Mandatory = $false)][object[]]$CurrentFindings = @(),
+    [Parameter(Mandatory = $false)][string[]]$HistoricalResolvedIds = @()
+  )
+  $getFid = { param($x) if ($x.PSObject.Properties['id'] -and $x.id) { [string]$x.id } else { "F-" + (Get-SenTextSha256 -Text "$([string]$x.title)|$([string]$x.path)").Substring(0, 8) } }
+  $prevIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($pf in @($PreviousFindings)) { if ($null -ne $pf) { [void]$prevIds.Add((& $getFid $pf)) } }
+  $histResolved = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($rid in @($HistoricalResolvedIds)) { if ($rid) { [void]$histResolved.Add([string]$rid) } }
 
-    $nowIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    $newFindingsCount = 0
-    $regressions = 0
-    $validRemaining = [System.Collections.Generic.List[object]]::new()
-    foreach ($rf in @($CurrentFindings)) {
-        if ($null -eq $rf) { continue }
-        $idStr = [string]$rf.id
-        [void]$nowIds.Add($idStr)
-        $validRemaining.Add($rf)
-        if ($histResolved.Contains($idStr)) { $regressions++ }
-        elseif (-not $prevIds.Contains($idStr)) { $newFindingsCount++ }
-    }
-
-    $resolvedThisRound = 0
-    foreach ($oldId in $prevIds) {
-        if (-not $nowIds.Contains($oldId)) {
-            $resolvedThisRound++
-            [void]$histResolved.Add($oldId)
-        }
-    }
-
-    $riskDelta = ($validRemaining.Count - $prevIds.Count)
-    $nonProgress = ($validRemaining.Count -gt 0) -and (($newFindingsCount -ge $resolvedThisRound -and ($newFindingsCount -gt 0 -or $resolvedThisRound -eq 0)) -or ($regressions -gt 0) -or ($riskDelta -ge 0))
-    return [pscustomobject][ordered]@{
-        ResolvedFindings   = $resolvedThisRound
-        NewFindings        = $newFindingsCount
-        Regressions        = $regressions
-        RemainingCount     = $validRemaining.Count
-        RiskDelta          = $riskDelta
-        NonProgress        = [bool]$nonProgress
-        ValidRemaining     = @($validRemaining.ToArray())
-        UpdatedResolvedIds = @($histResolved)
-    }
+  $nowIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $newFindingsCount = 0; $regressions = 0
+  $validRemaining = [System.Collections.Generic.List[object]]::new()
+  foreach ($rf in @($CurrentFindings)) {
+    if ($null -eq $rf) { continue }
+    $idStr = & $getFid $rf
+    if (-not ($rf.PSObject.Properties['id'] -and $rf.id)) { $rf | Add-Member -NotePropertyName "id" -NotePropertyValue $idStr -Force }
+    [void]$nowIds.Add($idStr)
+    $validRemaining.Add($rf)
+    if ($histResolved.Contains($idStr)) { $regressions++ }
+    elseif (-not $prevIds.Contains($idStr)) { $newFindingsCount++ }
+  }
+  $resolvedThisRound = 0
+  foreach ($oldId in $prevIds) {
+    if (-not $nowIds.Contains($oldId)) { $resolvedThisRound++; [void]$histResolved.Add($oldId) }
+  }
+  $riskDelta = ($validRemaining.Count - $prevIds.Count)
+  $nonProgress = ($validRemaining.Count -gt 0) -and (($newFindingsCount -ge $resolvedThisRound -and ($newFindingsCount -gt 0 -or $resolvedThisRound -eq 0)) -or ($regressions -gt 0) -or ($riskDelta -ge 0))
+  return [pscustomobject][ordered]@{
+    ResolvedFindings = $resolvedThisRound; NewFindings = $newFindingsCount; Regressions = $regressions
+    RemainingCount = $validRemaining.Count; RiskDelta = $riskDelta; NonProgress = [bool]$nonProgress
+    ValidRemaining = @($validRemaining.ToArray()); UpdatedResolvedIds = @($histResolved)
+  }
 }
 
 function Invoke-SenBoundedRepairRound {
@@ -482,243 +426,197 @@ function Invoke-SenBoundedVerificationScenarios {
     }
     finally {
         if (Test-Path -LiteralPath $sb) {
-            Get-ChildItem -LiteralPath $sb -File -Recurse | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+            Remove-Item -LiteralPath $sb -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
     $allOk = (@($scenarios | Where-Object { -not $_.Passed }).Count -eq 0)
     return [pscustomobject][ordered]@{
-        Passed         = $allOk
-        TotalScenarios = $scenarios.Count
-        Scenarios      = @($scenarios.ToArray())
-        VerifiedAt     = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        Passed = $allOk; TotalScenarios = $scenarios.Count; Scenarios = @($scenarios.ToArray())
+        VerifiedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
 }
 
 function Register-SenActionPattern {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$PatternName,
-        [Parameter(Mandatory = $true)][string[]]$Steps,
-        [string]$Category = "workflow",
-        [int]$RepeatThreshold = 2
-    )
-    $normSteps = (@($Steps | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ }) -join "|")
-    $stepHash = Get-SenTextSha256 -Text $normSteps
-    $patId = "pat-" + $stepHash.Substring(0, 12)
-    $patFile = Join-Path -Path $Workspace -ChildPath ".agents/office/action-patterns.json"
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Workspace,
+    [Parameter(Mandatory = $true)][string]$PatternName,
+    [Parameter(Mandatory = $true)][string[]]$Steps,
+    [string]$Category = "workflow",
+    [int]$RepeatThreshold = 2
+  )
+  $normSteps = (@($Steps | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ }) -join "|")
+  $stepHash = Get-SenTextSha256 -Text $normSteps
+  $patId = "pat-" + $stepHash.Substring(0, 12)
+  $patFile = Join-Path -Path $Workspace -ChildPath ".agents/office/action-patterns.json"
+  $sb = {
     $rawList = Read-SenSafeJson -Path $patFile
     $patItems = [System.Collections.Generic.List[object]]::new()
     if ($null -ne $rawList) {
-        foreach ($rItem in @($rawList)) {
-            if ($null -ne $rItem -and $rItem.PSObject.Properties['patternId']) { $patItems.Add($rItem) }
-        }
+      foreach ($rItem in @($rawList)) { if ($null -ne $rItem -and $rItem.PSObject.Properties['patternId']) { $patItems.Add($rItem) } }
     }
-
     $nowIso = [DateTimeOffset]::UtcNow.ToString("o")
     $matched = $patItems | Where-Object { ([string]$_.patternId -eq $patId) -or ([string]$_.patternName -ieq $PatternName) } | Select-Object -First 1
     if ($null -ne $matched) {
-        $newCount = [int]$matched.occurrences + 1
-        $matched | Add-Member -NotePropertyName "occurrences" -NotePropertyValue $newCount -Force
-        $matched | Add-Member -NotePropertyName "lastSeenAt" -NotePropertyValue $nowIso -Force
-        $matched | Add-Member -NotePropertyName "steps" -NotePropertyValue @($Steps) -Force
-        $matched | Add-Member -NotePropertyName "repeatThreshold" -NotePropertyValue $RepeatThreshold -Force
-        $record = $matched
+      $matched | Add-Member -NotePropertyName "occurrences" -NotePropertyValue ([int]$matched.occurrences + 1) -Force
+      $matched | Add-Member -NotePropertyName "lastSeenAt" -NotePropertyValue $nowIso -Force
+      $matched | Add-Member -NotePropertyName "steps" -NotePropertyValue @($Steps) -Force
+      $matched | Add-Member -NotePropertyName "repeatThreshold" -NotePropertyValue $RepeatThreshold -Force
+      $record = $matched
     }
     else {
-        $record = [pscustomobject][ordered]@{
-            patternId       = $patId
-            patternName     = $PatternName
-            category        = $Category
-            steps           = @($Steps)
-            occurrences     = 1
-            repeatThreshold = $RepeatThreshold
-            capturedSkill   = ""
-            firstSeenAt     = $nowIso
-            lastSeenAt      = $nowIso
-        }
-        $patItems.Add($record)
+      $record = [pscustomobject][ordered]@{
+        patternId = $patId; patternName = $PatternName; category = $Category; steps = @($Steps)
+        occurrences = 1; repeatThreshold = $RepeatThreshold; capturedSkill = ""; firstSeenAt = $nowIso; lastSeenAt = $nowIso
+      }
+      $patItems.Add($record)
     }
-
     Write-SenAtomicJson -Path $patFile -InputObject @($patItems.ToArray()) -Depth 8
-    $shouldCap = ([int]$record.occurrences -ge $RepeatThreshold) -and [string]::IsNullOrWhiteSpace([string]$record.capturedSkill)
-    $sugName = (($PatternName.ToLowerInvariant() -replace '^sen[-_\s]*', '') -replace '[^a-z0-9]+', '-').Trim('-')
-    $sugName = ($sugName -replace '^sen-', '').Trim('-')
-
-    return [pscustomobject][ordered]@{
-        PatternId          = [string]$record.patternId
-        PatternName        = [string]$record.patternName
-        Category           = [string]$record.category
-        Occurrences        = [int]$record.occurrences
-        RepeatThreshold    = [int]$RepeatThreshold
-        ShouldCapture      = [bool]$shouldCap
-        CapturedSkill      = [string]$record.capturedSkill
-        SuggestedSkillName = $sugName
-        Steps              = @($Steps)
-    }
+    return $record
+  }
+  $record = if (Get-Command Invoke-SenWithFileMutex -ErrorAction SilentlyContinue) { Invoke-SenWithFileMutex -FilePath $patFile -Action $sb } else { & $sb }
+  $shouldCap = ([int]$record.occurrences -ge $RepeatThreshold) -and [string]::IsNullOrWhiteSpace([string]$record.capturedSkill)
+  $sugName = ((($PatternName.ToLowerInvariant() -replace '^sen[-_\s]*', '') -replace '[^a-z0-9]+', '-').Trim('-') -replace '^sen-', '').Trim('-')
+  return [pscustomobject][ordered]@{
+    PatternId = [string]$record.patternId; PatternName = [string]$record.patternName; Category = [string]$record.category
+    Occurrences = [int]$record.occurrences; RepeatThreshold = [int]$RepeatThreshold; ShouldCapture = [bool]$shouldCap
+    CapturedSkill = [string]$record.capturedSkill; SuggestedSkillName = $sugName; Steps = @($Steps)
+  }
 }
 
 function New-SenCapturedSkill {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$SkillName,
-        [Parameter(Mandatory = $true)][string]$Description,
-        [Parameter(Mandatory = $true)][string[]]$Steps,
-        [string[]]$Commands = @(),
-        [string]$PatternId = "",
-        [switch]$Force,
-        [switch]$AllowCorePrefix
-    )
-    $cleanSkill = ($SkillName.Trim().ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
-    if ([string]::IsNullOrWhiteSpace($cleanSkill)) { throw "SkillName cannot be empty." }
-    if (($cleanSkill -match '^sen-') -and (-not $AllowCorePrefix.IsPresent)) {
-        throw "SkillName '$cleanSkill' cannot use reserved 'sen-' prefix. Choose a project/workspace name without 'sen-'."
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Workspace,
+    [Parameter(Mandatory = $true)][string]$SkillName,
+    [Parameter(Mandatory = $true)][string]$Description,
+    [Parameter(Mandatory = $true)][string[]]$Steps,
+    [string[]]$Commands = @(),
+    [string]$PatternId = "",
+    [switch]$Force,
+    [switch]$AllowCorePrefix
+  )
+  $cleanSkill = ($SkillName.Trim().ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
+  if ([string]::IsNullOrWhiteSpace($cleanSkill)) { throw "SkillName cannot be empty." }
+  if (($cleanSkill -match '^sen-') -and (-not $AllowCorePrefix.IsPresent)) {
+    throw "SkillName '$cleanSkill' cannot use reserved 'sen-' prefix. Choose a project/workspace name without 'sen-'."
+  }
+  $combinedText = ((@($Description) + @($Steps) + @($Commands)) -join "`n") -replace '`', ''
+  if ($combinedText -match '(?i)(ignore\s+(all\s+)?previous\s+instructions|disregard\s+.*rules|system\s+override|SEN_TRUSTED_|Sync-SenOfficeState\s+.*-UpdateSeal|Lock-SenQualityBaseline\s+.*-Force|\bClear-SenTasks\b)') {
+    throw "Skill capture blocked: prompt-injection or guard-bypass directive detected in skill content."
+  }
+  foreach ($cmdItem in @($Commands)) {
+    $normCmd = ([string]$cmdItem) -replace '`', ''
+    if ($normCmd -match '(?i)(\brm\s+-[a-z]*r|\bRemove-Item\b[^|;&]*\s-r(e(c(u(r(s(e)?)?)?)?)?)?\b|\b(Invoke-Expression|iex)\b|(\bcurl\b|\bwget\b)[^|;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell)\b|[/\\](\.ssh|\.aws|\.gnupg|\.kube|\.gemini)[/\\]|id_rsa|id_ed25519|\.agents[/\\]office|guard\.(ps1|sh)|settings\.json|hooks\.json|\bClear-SenTasks\b)') {
+      throw "Skill capture blocked: destructive or unsafe command pattern detected in 0-token runner script."
     }
-    $combinedText = (@($Description) + @($Steps) + @($Commands)) -join "`n"
-    if ($combinedText -match '(?i)(ignore\s+(all\s+)?previous\s+instructions|disregard\s+.*rules|system\s+override|SEN_TRUSTED_HOOK|SEN_TRUSTED_INSTALLER|Sync-SenOfficeState\s+.*-UpdateSeal|Lock-SenQualityBaseline\s+.*-Force)') {
-        throw "Skill capture blocked: prompt-injection or guard-bypass directive detected in skill content."
-    }
-    foreach ($cmdItem in @($Commands)) {
-        if ([string]$cmdItem -match '(?i)(\brm\s+-[a-z]*r|\bRemove-Item\b[^|;&]*\s-r(e(c(u(r(s(e)?)?)?)?)?)?\b|\b(Invoke-Expression|iex)\b|(\bcurl\b|\bwget\b)[^|;\r\n]*\|\s*(sh|bash|zsh|pwsh|powershell)\b|[/\\](\.ssh|\.aws|\.gnupg|\.kube)[/\\]|id_rsa|id_ed25519|\.agents[/\\]office|guard\.(ps1|sh))') {
-            throw "Skill capture blocked: destructive or unsafe command pattern detected in 0-token runner script."
-        }
-    }
+  }
 
-    $skillDir = Join-Path -Path $Workspace -ChildPath ".agents/skills/$cleanSkill"
-    $skillMdPath = Join-Path -Path $skillDir -ChildPath "SKILL.md"
-    if ((Test-Path -LiteralPath $skillMdPath) -and (-not $Force.IsPresent)) {
-        throw "Skill '$cleanSkill' already exists at $skillMdPath. Pass -Force to overwrite."
-    }
-    if (-not (Test-Path -LiteralPath $skillDir)) { [System.IO.Directory]::CreateDirectory($skillDir) | Out-Null }
+  $skillDir = Join-Path -Path $Workspace -ChildPath ".agents/skills/$cleanSkill"
+  $skillMdPath = Join-Path -Path $skillDir -ChildPath "SKILL.md"
+  if ((Test-Path -LiteralPath $skillMdPath) -and (-not $Force.IsPresent)) {
+    throw "Skill '$cleanSkill' already exists at $skillMdPath. Pass -Force to overwrite."
+  }
+  if (-not (Test-Path -LiteralPath $skillDir)) { [System.IO.Directory]::CreateDirectory($skillDir) | Out-Null }
 
-    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-    $validCmds = @($Commands | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    $ps1Path = ""; $shPath = ""
-    if ($validCmds.Count -gt 0) {
-        $scrDir = Join-Path -Path $skillDir -ChildPath "scripts"
-        if (-not (Test-Path -LiteralPath $scrDir)) { [System.IO.Directory]::CreateDirectory($scrDir) | Out-Null }
-        $ps1Path = Join-Path -Path $scrDir -ChildPath "run.ps1"
-        $shPath = Join-Path -Path $scrDir -ChildPath "run.sh"
-        $ps1Body = "# Auto-generated 0-token runner for skill: $cleanSkill`n`$ErrorActionPreference = 'Stop'`n" + ($validCmds -join "`n") + "`n"
-        $shBody = "#!/usr/bin/env sh`nset -eu`n" + ($validCmds -join "`n") + "`n"
-        [System.IO.File]::WriteAllText($ps1Path, $ps1Body, $utf8NoBom)
-        [System.IO.File]::WriteAllText($shPath, $shBody, $utf8NoBom)
-    }
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+  $validCmds = @($Commands | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+  $ps1Path = ""; $shPath = ""
+  if ($validCmds.Count -gt 0) {
+    $scrDir = Join-Path -Path $skillDir -ChildPath "scripts"
+    if (-not (Test-Path -LiteralPath $scrDir)) { [System.IO.Directory]::CreateDirectory($scrDir) | Out-Null }
+    $ps1Path = Join-Path -Path $scrDir -ChildPath "run.ps1"; $shPath = Join-Path -Path $scrDir -ChildPath "run.sh"
+    [System.IO.File]::WriteAllText($ps1Path, ("# Auto-generated 0-token runner for skill: $cleanSkill`n`$ErrorActionPreference = 'Stop'`n" + ($validCmds -join "`n") + "`n"), $utf8NoBom)
+    [System.IO.File]::WriteAllText($shPath, ("#!/usr/bin/env sh`nset -eu`n" + ($validCmds -join "`n") + "`n"), $utf8NoBom)
+  }
 
-    $shortDesc = ([string]$Description -replace '[\r\n]+', ' ').Trim()
-    if ($shortDesc.Length -gt 300) { $shortDesc = $shortDesc.Substring(0, 297) + "..." }
-    $stepLines = [System.Collections.Generic.List[string]]::new()
-    for ($idx = 0; $idx -lt $Steps.Count; $idx++) { $stepLines.Add("$($idx + 1). $($Steps[$idx])") }
-    $mdSb = [System.Text.StringBuilder]::new()
-    [void]$mdSb.AppendLine("---`nname: $cleanSkill`ndescription: $shortDesc`n---`n`n# $cleanSkill`n`n## Workflow Steps")
-    foreach ($sl in $stepLines) { [void]$mdSb.AppendLine($sl) }
-    if ($validCmds.Count -gt 0) {
-        [void]$mdSb.AppendLine("`n## Automated Execution (0-Token Scripts)`n- PowerShell: ``scripts/run.ps1```n- POSIX Shell: ``scripts/run.sh``")
-    }
-    [System.IO.File]::WriteAllText($skillMdPath, $mdSb.ToString(), $utf8NoBom)
+  $shortDesc = ([string]$Description -replace '[\r\n]+', ' ').Trim()
+  if ($shortDesc.Length -gt 300) { $shortDesc = $shortDesc.Substring(0, 297) + "..." }
+  $mdSb = [System.Text.StringBuilder]::new()
+  [void]$mdSb.AppendLine("---`nname: $cleanSkill`ndescription: $shortDesc`n---`n`n# $cleanSkill`n`n## Workflow Steps")
+  for ($idx = 0; $idx -lt $Steps.Count; $idx++) { [void]$mdSb.AppendLine("$($idx + 1). $($Steps[$idx])") }
+  if ($validCmds.Count -gt 0) {
+    [void]$mdSb.AppendLine("`n## Automated Execution (0-Token Scripts)`n- PowerShell: ``scripts/run.ps1```n- POSIX Shell: ``scripts/run.sh``")
+  }
+  [System.IO.File]::WriteAllText($skillMdPath, $mdSb.ToString(), $utf8NoBom)
 
-    $normSteps = (@($Steps | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ }) -join "|")
-    $computedPatId = "pat-" + (Get-SenTextSha256 -Text $normSteps).Substring(0, 12)
-    $effPatId = if (-not [string]::IsNullOrWhiteSpace($PatternId)) { $PatternId } else { $computedPatId }
-    $patFile = Join-Path -Path $Workspace -ChildPath ".agents/office/action-patterns.json"
-    $rawPats = Read-SenSafeJson -Path $patFile
-    if ($null -ne $rawPats) {
-        $patList = [System.Collections.Generic.List[object]]::new()
-        foreach ($p in @($rawPats)) {
-            if ($null -eq $p -or (-not $p.PSObject.Properties['patternId'])) { continue }
-            $pSlug = (([string]$p.patternName.ToLowerInvariant() -replace '^sen[-_\s]*', '') -replace '[^a-z0-9]+', '-').Trim('-')
-            if (([string]$p.patternId -eq $effPatId) -or ([string]$p.patternId -eq $computedPatId) -or ($pSlug -eq $cleanSkill)) {
-                $p | Add-Member -NotePropertyName "capturedSkill" -NotePropertyValue $cleanSkill -Force
-                $effPatId = [string]$p.patternId
-            }
-            $patList.Add($p)
-        }
-        Write-SenAtomicJson -Path $patFile -InputObject @($patList.ToArray()) -Depth 8
+  $normSteps = (@($Steps | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ }) -join "|")
+  $computedPatId = "pat-" + (Get-SenTextSha256 -Text $normSteps).Substring(0, 12)
+  $effPatId = if (-not [string]::IsNullOrWhiteSpace($PatternId)) { $PatternId } else { $computedPatId }
+  $patFile = Join-Path -Path $Workspace -ChildPath ".agents/office/action-patterns.json"
+  $rawPats = Read-SenSafeJson -Path $patFile
+  if ($null -ne $rawPats) {
+    $patList = [System.Collections.Generic.List[object]]::new()
+    foreach ($p in @($rawPats)) {
+      if ($null -eq $p -or (-not $p.PSObject.Properties['patternId'])) { continue }
+      $pSlug = (([string]$p.patternName.ToLowerInvariant() -replace '^sen[-_\s]*', '') -replace '[^a-z0-9]+', '-').Trim('-')
+      if (([string]$p.patternId -eq $effPatId) -or ([string]$p.patternId -eq $computedPatId) -or ($pSlug -eq $cleanSkill)) {
+        $p | Add-Member -NotePropertyName "capturedSkill" -NotePropertyValue $cleanSkill -Force
+        $effPatId = [string]$p.patternId
+      }
+      $patList.Add($p)
     }
+    Write-SenAtomicJson -Path $patFile -InputObject @($patList.ToArray()) -Depth 8
+  }
 
-    return [pscustomobject][ordered]@{
-        SkillName     = $cleanSkill
-        SkillPath     = $skillMdPath
-        SkillHash     = (Get-SenTextSha256 -Text $mdSb.ToString())
-        ScriptPs1Path = $ps1Path
-        ScriptShPath  = $shPath
-        PatternId     = $effPatId
-        Created       = $true
-    }
+  return [pscustomobject][ordered]@{
+    SkillName = $cleanSkill; SkillPath = $skillMdPath; SkillHash = (Get-SenTextSha256 -Text $mdSb.ToString())
+    ScriptPs1Path = $ps1Path; ScriptShPath = $shPath; PatternId = $effPatId; Created = $true
+  }
 }
 
 function Invoke-SenPostCodePipeline {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace,
-        [string]$CodePath = "",
-        [string]$TaskId = "",
-        [string]$SubjectPath = "",
-        [string[]]$ModifiedFiles = @(),
-        [string]$EvidenceCommand = "",
-        [int]$ExitCode = 0,
-        [switch]$InstallHooks,
-        [switch]$SkipHealth
-    )
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace,
+    [string]$CodePath = "", [string]$TaskId = "", [string]$SubjectPath = "",
+    [string[]]$ModifiedFiles = @(), [string]$EvidenceCommand = "", [int]$ExitCode = 0,
+    [switch]$InstallHooks, [switch]$SkipHealth
+  )
+  $effCodePath = if (-not [string]::IsNullOrWhiteSpace($CodePath)) { $CodePath } else { Join-Path -Path $Workspace -ChildPath "scripts" }
+  if (-not (Test-Path -LiteralPath $effCodePath)) { $effCodePath = $Workspace }
+  if ([string]::IsNullOrWhiteSpace($SubjectPath) -and $ModifiedFiles.Count -gt 0) { $SubjectPath = $ModifiedFiles[0] }
+  $evCmd = if (-not [string]::IsNullOrWhiteSpace($EvidenceCommand)) { $EvidenceCommand } else { "cmd /c exit $ExitCode" }
 
-    $effCodePath = if (-not [string]::IsNullOrWhiteSpace($CodePath)) { $CodePath } else { Join-Path -Path $Workspace -ChildPath "scripts" }
-    if (-not (Test-Path -LiteralPath $effCodePath)) { $effCodePath = $Workspace }
-    if ([string]::IsNullOrWhiteSpace($SubjectPath) -and $ModifiedFiles.Count -gt 0) { $SubjectPath = $ModifiedFiles[0] }
-    $evCmd = if (-not [string]::IsNullOrWhiteSpace($EvidenceCommand)) { $EvidenceCommand } else { "Invoke-SenPostCodePipeline" }
+  if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
+    [void](Register-SenEvidence -Workspace $Workspace -EvidenceId "EV-$TaskId" -TaskId $TaskId -Type "unit" -Command $evCmd -ExitCode $ExitCode -SubjectPath $SubjectPath -CodePaths $ModifiedFiles)
+  }
+  $evCheck = Test-SenEvidenceValidity -Workspace $Workspace
+  $evValid = if ($evCheck.PSObject.Properties['AllValid']) { [bool]$evCheck.AllValid } else { [bool]$evCheck.Valid }
+  $health = if ($SkipHealth.IsPresent) { [pscustomobject]@{ Healthy = $true; Score = 100 } } else { Measure-SenCodeHealth -Path $effCodePath }
 
-    if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
-        [void](Register-SenEvidence -Workspace $Workspace -EvidenceId "EV-$TaskId" -TaskId $TaskId -Type "unit" -Command $evCmd -ExitCode $ExitCode -SubjectPath $SubjectPath -CodePaths $ModifiedFiles)
-    }
-    $evCheck = Test-SenEvidenceValidity -Workspace $Workspace
-    $evValid = if ($evCheck.PSObject.Properties['AllValid']) { [bool]$evCheck.AllValid } else { [bool]$evCheck.Valid }
-    $health = if ($SkipHealth.IsPresent) { [pscustomobject]@{ Healthy = $true; Score = 100 } } else { Measure-SenCodeHealth -Path $effCodePath }
+  $parityPassed = $true
+  if ((Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath "plugin.json")) -and (Get-Command Test-SenCapabilityParity -ErrorAction SilentlyContinue)) {
+    $parityPassed = [bool](Test-SenCapabilityParity -SenRoot $Workspace).Passed
+  }
+  if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
+    [void](Write-SenOfficeShowcase -Workspace $Workspace -Phase 2 -TaskId $(if ($TaskId) { $TaskId } else { "POST-CODE" }) -Title (Split-Path $Workspace -Leaf) -Tier 3 -Blueprint "Verified Post-Code Pipeline Output" -VerifiedOutputs @("docs/CONTEXT.md"))
+  }
 
-    $parityPassed = $true
-    if ((Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath "plugin.json")) -and (Get-Command Test-SenCapabilityParity -ErrorAction SilentlyContinue)) {
-        $par = Test-SenCapabilityParity -SenRoot $Workspace
-        $parityPassed = [bool]$par.Passed
-    }
-    if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
-        [void](Write-SenOfficeShowcase -Workspace $Workspace -Phase 2 -TaskId $(if ($TaskId) { $TaskId } else { "POST-CODE" }) -Title (Split-Path $Workspace -Leaf) -Tier 3 -Blueprint "Verified Post-Code Pipeline Output" -VerifiedOutputs @("docs/CONTEXT.md"))
-    }
+  $patSteps = @(
+    "Step1: Register-SenEvidence & Test-SenEvidenceValidity (SHA-256)",
+    "Step2: Measure-SenCodeHealth & Test-SenAntiMetricGaming",
+    "Step3: Invoke-SenBoundedRepairRound / Escalation Check",
+    "Step4: Test-SenCapabilityParity & Sync-SenOfficeState -UpdateSeal",
+    "Step5: Test-SenDeliveryGate & Write-SenOfficeShowcase",
+    "Step6: Install-SenGitHooks & Invoke-SenCiPushLoop"
+  )
+  $pat = Register-SenActionPattern -Workspace $Workspace -PatternName "post-code-verification" -Steps $patSteps -Category "post-code" -RepeatThreshold 2
+  if ((Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath ".agents/office/process-audit.json")) -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) {
+    [void](Test-SenProjectCompliance -Workspace $Workspace -ProjectPath $Workspace)
+  }
+  $seal = Sync-SenOfficeState -Workspace $Workspace -PruneStale -UpdateSeal
+  if ($InstallHooks -or (Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath ".git"))) { [void](Install-SenGitHooks -Workspace $Workspace -Force) }
+  $gate = if ([bool]$health.Healthy) { Test-SenDeliveryGate -Workspace $Workspace -SkipCodeHealth } else { Test-SenDeliveryGate -Workspace $Workspace }
+  $allPassed = ([bool]$health.Healthy -and $evValid -and $parityPassed -and [bool]$gate.Passed)
 
-    $patSteps = @(
-        "Step1: Register-SenEvidence & Test-SenEvidenceValidity (SHA-256)",
-        "Step2: Measure-SenCodeHealth & Test-SenAntiMetricGaming",
-        "Step3: Invoke-SenBoundedRepairRound / Escalation Check",
-        "Step4: Test-SenCapabilityParity & Sync-SenOfficeState -UpdateSeal",
-        "Step5: Test-SenDeliveryGate & Write-SenOfficeShowcase",
-        "Step6: Install-SenGitHooks & Invoke-SenCiPushLoop"
-    )
-    $pat = Register-SenActionPattern -Workspace $Workspace -PatternName "post-code-verification" -Steps $patSteps -Category "post-code" -RepeatThreshold 2
-    if ((Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath ".agents/office/process-audit.json")) -and (Get-Command Test-SenProjectCompliance -ErrorAction SilentlyContinue)) {
-        [void](Test-SenProjectCompliance -Workspace $Workspace -ProjectPath $Workspace)
-    }
-    $seal = Sync-SenOfficeState -Workspace $Workspace -PruneStale -UpdateSeal
-
-    if ($InstallHooks -or (Test-Path -LiteralPath (Join-Path -Path $Workspace -ChildPath ".git"))) {
-        [void](Install-SenGitHooks -Workspace $Workspace -Force)
-    }
-
-    $gate = if ([bool]$health.Healthy) { Test-SenDeliveryGate -Workspace $Workspace -SkipCodeHealth } else { Test-SenDeliveryGate -Workspace $Workspace }
-    $allPassed = ([bool]$health.Healthy -and $evValid -and $parityPassed -and [bool]$gate.Passed)
-
-    return [pscustomobject][ordered]@{
-        Passed              = $allPassed
-        EvidenceValid       = $evValid
-        CodeHealthScore     = [int]$health.Score
-        CodeHealthy         = [bool]$health.Healthy
-        ParityPassed        = $parityPassed
-        StateSealHash       = [string]$seal.CompositeHash
-        PatternId           = [string]$pat.PatternId
-        ShouldCaptureSkill  = [bool]$pat.ShouldCapture
-        DeliveryGatePassed  = [bool]$gate.Passed
-        ReadyToPush         = $allPassed
-        Issues              = @($gate.Issues)
-        RemediationCommands = @($gate.RemediationCommands)
-    }
+  return [pscustomobject][ordered]@{
+    Passed = $allPassed; EvidenceValid = $evValid; CodeHealthScore = [int]$health.Score; CodeHealthy = [bool]$health.Healthy
+    ParityPassed = $parityPassed; StateSealHash = [string]$seal.CompositeHash; PatternId = [string]$pat.PatternId
+    ShouldCaptureSkill = [bool]$pat.ShouldCapture; DeliveryGatePassed = [bool]$gate.Passed; ReadyToPush = $allPassed
+    Issues = @($gate.Issues); RemediationCommands = @($gate.RemediationCommands)
+  }
 }
 
 Export-ModuleMember -Function Set-SenVerificationPolicy, New-SenEscalationDossier, Invoke-SenEscalationQuarantine, Invoke-SenFindingTriage, Measure-SenAdversarialProgress, Invoke-SenBoundedRepairRound, Invoke-SenBoundedVerificationScenarios, Register-SenActionPattern, New-SenCapturedSkill, Invoke-SenPostCodePipeline

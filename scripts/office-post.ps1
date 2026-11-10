@@ -10,14 +10,16 @@ try {
     if ([string]::IsNullOrWhiteSpace($raw) -and $input) {
         $raw = (@($input) -join "`n")
     }
-    if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
+    if ([string]::IsNullOrWhiteSpace($raw)) { [Console]::Out.Write("{}"); exit 0 }
     $payload = $raw | ConvertFrom-Json
-    $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
+    if ($raw -match '"(name|tool_name)"\s*:\s*"(read_file|Read|grep_search|Grep|find_by_name|Glob)"') { $global:SenLightweightHook = $true }
+    $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Core.psm1"
     if (-not (Test-Path -LiteralPath $senModule)) {
-        $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Runtime.psm1"
+        $senModule = Join-Path -Path $PSScriptRoot -ChildPath "Sen.psm1"
     }
-    if (-not (Test-Path -LiteralPath $senModule)) { exit 0 }
-    Import-Module $senModule -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $senModule)) { [Console]::Out.Write("{}"); exit 0 }
+    Import-Module $senModule -Force -DisableNameChecking -ErrorAction SilentlyContinue
+    $global:SenLightweightHook = $false
 
     if (Get-Command ConvertFrom-SenHookPayload -ErrorAction SilentlyContinue) {
         $norm = ConvertFrom-SenHookPayload -InputObject $payload
@@ -37,12 +39,17 @@ try {
         if ($payload.cwd -and -not [string]::IsNullOrWhiteSpace([string]$payload.cwd)) { $wsCandidates.Add([string]$payload.cwd) }
         $wsList = @($wsCandidates.ToArray())
         $ws = if ($wsList.Count -gt 0) { [string]$wsList[0] } else { "" }
-        $toolName = ""; $pathArg = ""; $cmdArg = ""; $queryArg = ""; $hasEc = $false; $ecVal = -1; $isErr = $false
+        $rawT = if ($payload.toolCall -and $payload.toolCall.name) { [string]$payload.toolCall.name } elseif ($payload.tool_name) { [string]$payload.tool_name } else { "" }
+        $toolName = if ($rawT -match '^(?i)(read_file|read|view_file)$') { "read_file" } elseif ($rawT -match '^(?i)(grep_search|find_by_name|grep|glob)$') { "grep_search" } else { $rawT }
+        $tArgs = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } else { $payload }
+        $pathArg = if ($tArgs.Path) { [string]$tArgs.Path } elseif ($tArgs.file_path) { [string]$tArgs.file_path } elseif ($tArgs.SearchPath) { [string]$tArgs.SearchPath } elseif ($tArgs.path) { [string]$tArgs.path } else { "" }
+        $queryArg = if ($tArgs.Query) { [string]$tArgs.Query } elseif ($tArgs.Pattern) { [string]$tArgs.Pattern } elseif ($tArgs.pattern) { [string]$tArgs.pattern } else { "" }
+        $cmdArg = ""; $hasEc = $false; $ecVal = -1; $isErr = $false
     }
-    if ([string]::IsNullOrWhiteSpace($ws)) { exit 0 }
+    if ([string]::IsNullOrWhiteSpace($ws)) { [Console]::Out.Write("{}"); exit 0 }
     $shortFile = if ($pathArg) { [System.IO.Path]::GetFileName($pathArg) } else { "" }
     $sealFile = Join-Path $ws ".agents/office/state-seal.json"
-    $sealIntactBeforeHook = $true
+    $sealIntactBeforeHook = $false
     if ((Test-Path -LiteralPath $sealFile) -and (Get-Command Sync-SenOfficeState -ErrorAction SilentlyContinue)) {
         try { $sealIntactBeforeHook = (-not (Sync-SenOfficeState -Workspace $ws -VerifySeal).Tampered) } catch { $sealIntactBeforeHook = $false }
     }
@@ -55,7 +62,7 @@ try {
         if (Get-Command Complete-SenHookExecution -ErrorAction SilentlyContinue) {
             [void](Complete-SenHookExecution -Workspace $ws -ExecutionId $execIdArg -ToolName $toolName -Status "timeout" -ErrorText "PostToolUse hook execution timed out")
         }
-        exit 0
+        [Console]::Out.Write("{}"); exit 0
     }
     if ((Get-Command Complete-SenHookExecution -ErrorAction SilentlyContinue) -and ((-not [string]::IsNullOrWhiteSpace($execIdArg)) -or (Test-Path -LiteralPath (Join-Path $ws ".agents/office/execution-ledger.jsonl")))) {
         [void](Complete-SenHookExecution -Workspace $ws -ExecutionId $execIdArg -ToolName $toolName -Status "reconciled")
@@ -79,7 +86,7 @@ try {
     }
 
     $cfg = Get-SenOfficeConfig -Workspace $ws
-    if ($cfg.mode -eq "off") { exit 0 }
+    if ($cfg.mode -eq "off") { [Console]::Out.Write("{}"); exit 0 }
     if ($toolName -in @("invoke_subagent", "write_file", "edit_file", "run_command") -and (Get-Command Start-SenOfficeIfIdle -ErrorAction SilentlyContinue)) {
         [void](Start-SenOfficeIfIdle -Workspace $ws)
     }
@@ -299,4 +306,5 @@ catch {
     }
     catch { <# Fallback ignore #> }
 }
+[Console]::Out.Write("{}")
 exit 0

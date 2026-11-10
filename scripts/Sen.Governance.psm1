@@ -27,6 +27,7 @@ if ($rWs.Count -gt 0 -and (Test-SenSymlinkEscape -FullTarget $ft -ResolvedWorksp
 return [pscustomobject]@{ Allowed = $false; Reason = "Symlink or junction escape outside workspace blocked: $ft"; NormalizedPath = $ft; IsSymlinkEscape = $true }
 }
 if ($ToolName -in @("write_file", "edit_file") -and $rWs.Count -gt 0) {
+if (($env:SEN_TRUSTED_INSTALLER -ne "1") -and ($ft.Replace('\', '/') -match '(?i)/\.gemini/(config/|settings\.json$|.*hooks\.json$)')) { return [pscustomobject]@{ Allowed = $false; Reason = "Protected hook/config path blocked: $ft"; NormalizedPath = $ft; IsSymlinkEscape = $false } }
 $ok = $false; $cmp = [StringComparison]::OrdinalIgnoreCase; $sep = [IO.Path]::DirectorySeparatorChar
 foreach ($rw in $rWs) { if ($ft.Equals($rw, $cmp) -or $ft.StartsWith($rw + $sep, $cmp) -or $ft.StartsWith($rw + '/', $cmp)) { $ok = $true; break } }
 if (-not $ok -and $env:USERPROFILE) {
@@ -300,7 +301,7 @@ function Test-SenSuiteIntegrity {
 $tDir = if ($TestsPath) { $TestsPath } else { Join-Path $PSScriptRoot "../tests" }
 if (-not (Test-Path -LiteralPath $tDir)) { return [pscustomobject]@{ Passed = $false; FileCount = 0; AssertionCount = 0; MinAssertions = $MinAssertions; Reason = "Missing: $tDir" } }
 $files = @(Get-ChildItem -LiteralPath $tDir -Filter "*.Tests.ps1" -File -EA SilentlyContinue); $aCnt = 0; $emp = [Collections.Generic.List[string]]::new()
-foreach ($f in $files) { $c = [regex]::Matches([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8), '\bAssert-[A-Za-z]+\b').Count; if ($c -eq 0) { $emp.Add($f.Name) }; $aCnt += $c }
+foreach ($f in $files) { $t = [regex]::Replace([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8), '(?m)^\s*#.*$', ''); $c = [regex]::Matches($t, '\bAssert-[A-Za-z]+\b').Count; if ($c -eq 0) { $emp.Add($f.Name) }; $aCnt += $c }
 $ok = ($files.Count -ge $MinFiles) -and ($aCnt -ge $MinAssertions) -and ($emp.Count -eq 0)
 return [pscustomobject]@{ Passed = $ok; FileCount = $files.Count; AssertionCount = $aCnt; MinAssertions = $MinAssertions; Reason = $(if ($ok) { "OK" } else { "Suite integrity failed" }) }
 }

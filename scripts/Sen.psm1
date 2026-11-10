@@ -3,7 +3,7 @@
 # Runtime, Office, Risk, Task DAG, Backlog, Restore Point, and Memory functions live in Sen.Runtime.psm1.
 
 $senRuntimeModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Runtime.psm1"
-if (Test-Path -LiteralPath $senRuntimeModulePath) {
+if ((-not $global:SenCoreBootstrapActive) -and (Test-Path -LiteralPath $senRuntimeModulePath)) {
     Import-Module -Name $senRuntimeModulePath -Global -Force
 }
 
@@ -548,29 +548,11 @@ function Get-SenInstallPlan {
 }
 
 
-$senPackagesModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Packages.psm1"
-if (Test-Path -LiteralPath $senPackagesModulePath) {
-    Import-Module -Name $senPackagesModulePath -Global -Force
-}
-
-$senHarnessModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Harness.psm1"
-if (Test-Path -LiteralPath $senHarnessModulePath) {
-    Import-Module -Name $senHarnessModulePath -Global -Force
-}
-
-$senGovernanceModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Governance.psm1"
-if (Test-Path -LiteralPath $senGovernanceModulePath) {
-    Import-Module -Name $senGovernanceModulePath -Global -Force
-}
-
-$senAdversarialModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Adversarial.psm1"
-if (Test-Path -LiteralPath $senAdversarialModulePath) {
-    Import-Module -Name $senAdversarialModulePath -Global -Force
-}
-
-$senBoundedLoopModulePath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.BoundedLoop.psm1"
-if (Test-Path -LiteralPath $senBoundedLoopModulePath) {
-    Import-Module -Name $senBoundedLoopModulePath -Global -Force
+if (-not $global:SenCoreBootstrapActive) {
+    $senCoreModPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Core.psm1"
+    if (Test-Path -LiteralPath $senCoreModPath) {
+        Import-Module -Name $senCoreModPath -Global -Force -DisableNameChecking
+    }
 }
 
 function Format-SenReleaseBullets {

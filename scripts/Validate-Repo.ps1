@@ -11,6 +11,9 @@ param(
 
 $resolvedRoot = $null
 try {
+    if ((-not $PSBoundParameters.ContainsKey("Root")) -and ($Root -eq ".") -and $PSScriptRoot -and (-not (Test-Path -LiteralPath ".\plugin.json")) -and (Test-Path -LiteralPath ".\Code\sen-method\plugin.json")) {
+        $Root = Join-Path -Path $PSScriptRoot -ChildPath ".."
+    }
     $resolvedRoot = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).Path
 }
 catch {
@@ -144,7 +147,7 @@ foreach ($f in $scanFiles) {
 
 # 5. Validate broken relative markdown links
 $mdFiles = Get-ChildItem -LiteralPath $resolvedRoot -Filter "*.md" -File -Recurse | Where-Object {
-    $_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini|\.agents|\.sen-restore|\.sen-backup)[\\/]'
+    $_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini|\.agents|\.sen-restore|\.sen-backup|node_modules|Antigravity IDE|VSCode-[^\\/]+|dist|build)[\\/]'
 }
 foreach ($md in $mdFiles) {
     $rawMd = Get-Content -LiteralPath $md.FullName -Raw -Encoding UTF8
@@ -197,7 +200,7 @@ foreach ($md in $mdFiles) {
 # 6. Validate ASCII-only encoding in .ps1 and .psm1 files
 $psFiles = Get-ChildItem -LiteralPath $resolvedRoot -File -Recurse | Where-Object {
     ($_.Extension -eq ".ps1" -or $_.Extension -eq ".psm1") -and
-    ($_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini|\.agents|\.sen-restore|\.sen-backup)[\\/]')
+    ($_.FullName -notmatch '[\\/](\.git|\.superpowers|\.gemini|\.agents|\.sen-restore|\.sen-backup|node_modules|Antigravity IDE|VSCode-[^\\/]+|dist|build)[\\/]')
 }
 foreach ($psf in $psFiles) {
     $bytes = [System.IO.File]::ReadAllBytes($psf.FullName)

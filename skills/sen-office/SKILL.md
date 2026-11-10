@@ -69,3 +69,49 @@ When `Get-SenOfficeConfig` has `mode != "off"`:
 - **Before presenting `sen-delivery-report` (Phase 2):**
   Call `Write-SenOfficeShowcase` updating `phase2` (`summary`, `verifiedOutputs`, and `gates` for `tests`, `build`, `security`, and `legal` set to `"PASS"`, `"WARN"`, or `"BLOCK"`).
 
+---
+
+### 4. Semantic Layered Mermaid Pro & Archify Standard (Rule 8)
+Whenever rendering inline Mermaid diagrams in chat, specs, plans, or READMEs, **never** output flat unstyled `flowchart` blocks or `<br/>` HTML tags. Always apply the Sen Semantic Layered Palette:
+
+```mermaid
+flowchart TB
+    subgraph L1["1. Client & Input Boundary"]
+        direction LR
+        U(["👤 User / Caller"])
+    end
+    subgraph L2["2. Core Processing & Validation"]
+        direction LR
+        G{"🛡️ Validation Gate"}
+        E["⚙️ Core Engine"]
+    end
+    subgraph L3["3. Persistence & Telemetry"]
+        direction LR
+        DB[("🗄️ Storage / DB")]
+        OBS["📊 Telemetry & Audit"]
+    end
+
+    U -->|"① Request"| G
+    G -->|"② Verified"| E
+    E -->|"③ Persist"| DB
+    E -.->|"④ Trace"| OBS
+
+    classDef actor fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc
+    classDef gate fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed
+    classDef engine fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#eef2ff
+    classDef storage fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ecfdf5
+    classDef obs fill:#4c1d95,stroke:#c084fc,stroke-width:2px,stroke-dasharray: 5 5,color:#faf5ff
+
+    class U actor
+    class G gate
+    class E engine
+    class DB storage
+    class OBS obs
+
+    style L1 fill:#0f172a,stroke:#334155,stroke-width:1px,color:#94a3b8
+    style L2 fill:#1e1b4b,stroke:#4f46e5,stroke-width:1.5px,color:#a5b4fc
+    style L3 fill:#022c22,stroke:#059669,stroke-width:1.5px,color:#6ee7b7
+```
+
+For interactive standalone HTML/SVG diagrams (with Pan/Zoom, Dark/Light theme, Path Tracing, and Before/After Architecture Diff), use `.agents/skills/archify/SKILL.md` or `generative_ui`.
+

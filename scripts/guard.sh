@@ -9,7 +9,9 @@ out_decision() {
   local dec="$1"
   local reason="${2:-}"
   if [ -n "$reason" ]; then
-    printf '{"decision":"%s","reason":"%s"}' "$dec" "$reason"
+    local safe_reason
+    safe_reason="$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\r\n\t' '   ')"
+    printf '{"decision":"%s","reason":"%s"}' "$dec" "$safe_reason"
   else
     printf '{"decision":"%s"}' "$dec"
   fi
@@ -63,7 +65,7 @@ try:
             if "/.git/config" in norm_rp or "/.git/hooks" in norm_rp:
                 print("DENY_GIT:" + rp)
                 sys.exit(0)
-            if os.environ.get("SEN_TRUSTED_INSTALLER") != "1" and re.search(r"(?i)(/\.agents/(office/[^/]+\.(json|jsonl)$|sen\.lock\.json$|plugins/sen-method/(scripts/|hooks\.json$|plugin\.json$))|/(\.claude/settings\.json|\.cursor/hooks\.json|guard\.(ps1|sh))$)", norm_rp):
+            if os.environ.get("SEN_TRUSTED_INSTALLER") != "1" and re.search(r"(?i)(/\.agents/(office/[^/]+\.(json|jsonl)$|sen\.lock\.json$|plugins/sen-method/(scripts/|hooks\.json$|plugin\.json$)|skills/[^/]+/scripts/)|/\.gemini/(config/|settings\.json$|.*hooks\.json$)|/(\.claude/settings\.json|\.cursor/hooks\.json|guard\.(ps1|sh))$)", norm_rp):
                 print("DENY_STATE:" + rp)
                 sys.exit(0)
             rw0 = os.path.realpath(ws_list[0])
@@ -147,7 +149,7 @@ else
   fi
   if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|read_file|Write|Edit|MultiEdit|Read)"'; then
     TARGET_P="$(printf '%s' "$FLAT_RAW" | sed -n 's/.*"\(Path\|file_path\|target_file\|path\)"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\2/p')"
-    if printf '%s' "$FLAT_RAW $TARGET_P" | grep -Eiq '(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519|\.npmrc|\.pypirc|\.netrc|\.\./|/\.git/(config|hooks)|/\.agents/(office|sen\.lock\.json|plugins/sen-method)|/(\.claude/settings\.json|\.cursor/hooks\.json))'; then
+    if printf '%s' "$FLAT_RAW $TARGET_P" | grep -Eiq '(/\.ssh/|/\.aws/|/\.gnupg/|/\.kube/|id_rsa|id_ed25519|\.npmrc|\.pypirc|\.netrc|\.\./|/\.git/(config|hooks)|/\.agents/(office|sen\.lock\.json|plugins/sen-method)|/\.gemini/(config/|settings\.json|.*hooks\.json)|/(\.claude/settings\.json|\.cursor/hooks\.json))'; then
       out_decision "deny" "[SEN GUARD] Blocked: protected state, git metadata, or path traversal detected in POSIX fallback."
     fi
     if printf '%s' "$FLAT_RAW" | grep -Eiq '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(write_file|edit_file|Write|Edit|MultiEdit)"'; then
@@ -279,12 +281,12 @@ if [ -n "$CMD_SCAN" ]; then
   if printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes)|streamwriter|open\(|fs\.write)[^|;&]*(^|[[:space:]"'\''/\\])\.agents[/\\]office([/\\]|$)|(^|[[:space:]"'\''/\\])\.agents[/\\]office[/\\][^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b|\.write\()'; then
     deny "Direct shell tampering with protected .agents/office state JSON"
   fi
-  if [ "${SEN_TRUSTED_INSTALLER:-0}" != "1" ] && printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes))[^|;&]*((^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))|((^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))[^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b)'; then
+  if [ "${SEN_TRUSTED_INSTALLER:-0}" != "1" ] && printf '%s' "$CMD_SCAN" | grep -Eiq '(>|>>|\b(tee|cp|mv|rm|del|remove-item|set-content|out-file|add-content)\b|writeall(text|lines|bytes))[^|;&]*((^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|\.gemini[/\\](config[/\\]|settings\.json|.*hooks\.json)|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))|((^|[[:space:]"'\''/\\])guard\.(ps1|sh)\b|\.agents[/\\](sen\.lock\.json|plugins[/\\]sen-method[/\\](scripts[/\\]|hooks\.json|plugin\.json))|\.gemini[/\\](config[/\\]|settings\.json|.*hooks\.json)|(\.claude[/\\]settings\.json|\.cursor[/\\]hooks\.json))[^|;&]*(>|>>|\b(tee|set-content|out-file|add-content)\b)'; then
     deny "Direct shell tampering with Sen runtime scripts, lockfile, or hook configuration"
   fi
 fi
-if [ "${SEN_TRUSTED_HOOK:-0}" != "1" ] && printf '%s' "$CMD" | grep -Eiq '\bSync-SenOfficeState\b[^|;&]*[[:space:]]-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*[[:space:]]-Force\b'; then
-  deny "Untrusted self-resealing of state-seal.json or quality-baseline.json via run_command"
+if [ "${SEN_TRUSTED_HOOK:-0}" != "1" ] && printf '%s' "$CMD" | grep -Eiq '\bSync-SenOfficeState\b[^|;&]*[[:space:]]-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*[[:space:]]-Force\b|\bClear-SenTasks\b|\bSEN_TRUSTED_(INSTALLER|HOOK)\b'; then
+  deny "Untrusted self-resealing of state-seal.json, quality-baseline.json, Clear-SenTasks, or SEN_TRUSTED bypass via run_command"
 fi
 
 out_decision "ask" ""

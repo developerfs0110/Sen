@@ -98,7 +98,7 @@ function Sync-SenOfficeActiveWorkspace {
     try { $sw = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/switch-workspace" -Method Post -ContentType "application/json" -Body (ConvertTo-Json @{ workspace = $normWs } -Compress) -TimeoutSec 1 -EA Stop; if ($sw -and $sw.switched) { return $true } } catch { <# Restart stale server #> }
     try {
         foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -EA SilentlyContinue)) {
-            if ($wp -and [int]$wp.ProcessId -ne $PID -and [string]$wp.CommandLine -match 'start-office\.ps1') { Stop-Process -Id ([int]$wp.ProcessId) -Force -EA SilentlyContinue }
+            if ($wp -and [int]$wp.ProcessId -ne $PID -and [string]$wp.CommandLine -match '(?i)(-File|-Command)\s+"?[^"]*start-office\.ps1') { Stop-Process -Id ([int]$wp.ProcessId) -Force -EA SilentlyContinue }
         }
         Start-Sleep -Milliseconds 150
     }
@@ -677,8 +677,9 @@ function Measure-SenCodeHealth {
         $lines = @([System.IO.File]::ReadAllLines($f.FullName))
         $totalLines += $lines.Count
         foreach ($ln in $lines) { if ($ln -match '(?i)\b(TODO|FIXME|HACK):') { $todoCount++ } }
-        if ($lines.Count -gt $maxL -or [int]$f.Length -gt $maxB) {
-            $oversized.Add([pscustomobject][ordered]@{ path = $rel; category = $cat; lines = $lines.Count; maxLines = $maxL; bytes = [int]$f.Length; maxBytes = $maxB; rule = "Sonar:S104/CWE-1080" })
+        $effBytes = [System.Text.Encoding]::UTF8.GetByteCount((($lines | ForEach-Object { $_.TrimStart() }) -join "`n"))
+        if ($lines.Count -gt $maxL -or $effBytes -gt $maxB) {
+            $oversized.Add([pscustomobject][ordered]@{ path = $rel; category = $cat; lines = $lines.Count; maxLines = $maxL; bytes = $effBytes; maxBytes = $maxB; rule = "Sonar:S104/CWE-1080" })
         }
         if ($cat -eq 'logic') {
             $subLines[$rel] = @($lines | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -ge 28 -and $_ -notmatch '^(#|//|param\(|\[Parameter|\[CmdletBinding|Export-ModuleMember|\}|\{|return\b)' })
@@ -723,14 +724,11 @@ function Measure-SenCodeHealth {
     }
 }
 
-$senLegalPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Legal.psm1"
-if (Test-Path -LiteralPath $senLegalPath) {
-    Import-Module -Name $senLegalPath -Global -Force
-}
-
-$senOrchestratorPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Orchestrator.psm1"
-if (Test-Path -LiteralPath $senOrchestratorPath) {
-    Import-Module -Name $senOrchestratorPath -Global -Force
+if (-not $global:SenCoreBootstrapActive) {
+    $senLegalPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Legal.psm1"
+    if (Test-Path -LiteralPath $senLegalPath) { Import-Module -Name $senLegalPath -Global -Force }
+    $senOrchestratorPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Orchestrator.psm1"
+    if (Test-Path -LiteralPath $senOrchestratorPath) { Import-Module -Name $senOrchestratorPath -Global -Force }
 }
 
 Export-ModuleMember -Function Write-SenAtomicJson, Read-SenSafeJson, Test-SenPathOverlap, Protect-SenRedactedText, Get-SenOfficeConfig, Set-SenOfficeConfig, Get-SenOfficeTabStatus, Write-SenOfficeEvent, Read-SenOfficeEvents, Clear-SenOfficeEvents, Test-SenStuckLoop, Write-SenOfficeShowcase, Read-SenOfficeShowcase, Get-SenAntigravityQuota, Get-SenTaskRiskScore, Measure-SenCodeHealth

@@ -66,7 +66,12 @@ $t | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
 $changed = $true
 }
 }
-if ($changed) { [void](Save-SenTasks -Workspace $Workspace -Tasks $list -Internal) }
+if ($changed) {
+$sealP = Join-Path $Workspace ".agents/office/state-seal.json"
+$hadValidSeal = (Test-Path -LiteralPath $sealP) -and (Get-Command Sync-SenOfficeState -EA SilentlyContinue) -and (-not (Sync-SenOfficeState -Workspace $Workspace -VerifySeal).Tampered)
+[void](Save-SenTasks -Workspace $Workspace -Tasks $list -Internal)
+if ($hadValidSeal) { [void](Sync-SenOfficeState -Workspace $Workspace -UpdateSeal) }
+}
 return @($list)
 }
 function Clear-SenTasks {
@@ -193,7 +198,7 @@ param(
 [Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path,
 [Parameter(Mandatory)][string]$Id, [bool]$Passed = $true,
 [string]$Reviewer = "tester", [string]$EvidenceCommand = "", [int]$ExitCode = 0,
-[Alias("Note")][string]$Notes = "", [string]$Verdict = "", [switch]$FromTodoSync, [switch]$ExecuteCommand, [bool]$AcceptanceVerified = $true
+[Alias("Note")][string]$Notes = "", [string]$Verdict = "", [switch]$FromTodoSync, [switch]$ExecuteCommand, [bool]$AcceptanceVerified = $true, [switch]$DisallowSelfReview
 )
 if ($Verdict -match '(?i)^(REJECT|FAIL)') { $Passed = $false }
 $tasks = @(Get-SenTasks -Workspace $Workspace)
@@ -202,6 +207,9 @@ if ($null -eq $target) { return [pscustomobject]@{ Completed = $false; Status = 
 $validRoles = @("reviewer", "tester", "qa", "sec", "security", "owner-judge", "judge", "pm", "arch", "lead", "techlead", "tech_lead")
 if ($validRoles -notcontains $Reviewer.Trim().ToLowerInvariant()) {
 return [pscustomobject]@{ Completed = $false; Status = [string]$target.status; Reason = "Unrecognized or unauthenticated Reviewer role '$Reviewer'." }
+}
+if (($DisallowSelfReview.IsPresent -or ($env:SEN_DISALLOW_SELF_REVIEW -eq "1")) -and ([string]$target.assignee -ieq $Reviewer.Trim())) {
+return [pscustomobject]@{ Completed = $false; Status = [string]$target.status; Reason = "Self-review blocked: Reviewer '$Reviewer' cannot be the same as task Assignee '$($target.assignee)'." }
 }
 $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
 $curRev = if ($target.PSObject.Properties['_rev']) { [int]$target._rev } else { 1 }
@@ -235,12 +243,19 @@ return [pscustomobject]@{ Completed = $false; Status = [string]$target.status; E
 }
 }
 $target.status = "done"
-$target.evidence = [pscustomobject][ordered]@{ command = $EvidenceCommand; exitCode = $ExitCode; reviewer = $Reviewer; verifiedAt = $now; notes = $Notes; executionId = $liveExec.ExecutionId; processId = $liveExec.ProcessId; outputHash = $liveExec.OutputHash; codeRevision = $liveExec.CodeRevision; evidenceType = $liveExec.EvidenceType }
+$target.evidence = [pscustomobject][ordered]@{ command = $EvidenceCommand; exitCode = $ExitCode; reviewer = $Reviewer; selfReviewed = ([string]$target.assignee -ieq $Reviewer.Trim()); verifiedAt = $now; notes = $Notes; executionId = $liveExec.ExecutionId; processId = $liveExec.ProcessId; outputHash = $liveExec.OutputHash; codeRevision = $liveExec.CodeRevision; evidenceType = $liveExec.EvidenceType }
 $target | Add-Member -NotePropertyName "_rev" -NotePropertyValue ($curRev + 1) -Force
 $target.updatedAt = $now
 [void](Save-SenTasks -Workspace $Workspace -Tasks $tasks -Internal)
 [void](Get-SenTasks -Workspace $Workspace)
 if (Get-Command Sync-SenTasksToMarkdown -EA SilentlyContinue) { [void](Sync-SenTasksToMarkdown -Workspace $Workspace) }
+$evFile = Join-Path $Workspace ".agents/office/evidence.json"
+if ((Test-Path -LiteralPath $evFile) -and (Get-Command Register-SenEvidence -EA SilentlyContinue)) {
+try {
+$evObj = Read-SenSafeJson -Path $evFile; $evArr = if ($null -eq $evObj) { @() } elseif ($evObj.PSObject.Properties['evidence']) { @($evObj.evidence) } else { @($evObj) }
+foreach ($er in @($evArr | Where-Object { $_ -and [string]$_.task_id -eq $Id })) { [void](Register-SenEvidence -Workspace $Workspace -EvidenceId ([string]$er.evidence_id) -TaskId $Id -Command $EvidenceCommand -ExitCode 0) }
+} catch { <# Ignore #> }
+}
 return [pscustomobject]@{ Completed = $true; Status = "done"; Task = $target; Reason = $null }
 }
 else {
@@ -380,9 +395,12 @@ param(
 [switch]$RequireActiveSessionTask, [switch]$CheckCodeHealth, [switch]$CheckVnLaw, [switch]$SkipCodeHealth, [switch]$SkipVnLaw, [switch]$EnforcePhysicalDiff, [switch]$SkipPhysicalDiff, [switch]$EnforceIntake
 )
 $targetDir = if (-not [string]::IsNullOrWhiteSpace($ProjectPath)) { $ProjectPath } else { $Workspace }
+$sealPathPre = Join-Path $Workspace ".agents/office/state-seal.json"
+$sealValidPre = (Test-Path -LiteralPath $sealPathPre) -and (Get-Command Sync-SenOfficeState -EA SilentlyContinue) -and (-not (Sync-SenOfficeState -Workspace $Workspace -VerifySeal).Tampered)
 if (Get-Command Sync-SenPlanToTasks -EA SilentlyContinue) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
 $hungObj = Test-SenHungTasks -Workspace $Workspace -StaleMinutes $StaleMinutes
 $tasks = @(Get-SenTasks -Workspace $Workspace)
+if ($sealValidPre -and (Sync-SenOfficeState -Workspace $Workspace -VerifySeal).Tampered) { [void](Sync-SenOfficeState -Workspace $Workspace -UpdateSeal) }
 $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" -and (-not ($_.PSObject.Properties['isTelemetryOnly'] -and [bool]$_.isTelemetryOnly)) })
 $incomplete = [Collections.Generic.List[string]]::new(); $rems = [Collections.Generic.List[string]]::new(); $doneCount = 0
 $placeholderRe = '^(?i)(todo-verified|subagent-verified|verified-in-session|session-verified|hook-telemetry|subagent-report|subagent-closed|(echo|write-host|write-output|true|rem|::)\b.*|.*fake-pass.*)$'
@@ -454,16 +472,10 @@ Reason = $reason; Issues = @($reasons.ToArray()); RemediationCommands = @($rems.
 function Get-SenRecoveryState {
 [CmdletBinding()] param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path)
 $tasks = @(Get-SenTasks -Workspace $Workspace)
-$inProgress = @($tasks | Where-Object { [string]$_.status -eq "in_progress" } | ForEach-Object { [string]$_.id })
-$reviewing = @($tasks | Where-Object { [string]$_.status -eq "reviewing" } | ForEach-Object { [string]$_.id })
-$ready = @($tasks | Where-Object { [string]$_.status -eq "ready" } | ForEach-Object { [string]$_.id })
-$pending = @($tasks | Where-Object { [string]$_.status -eq "pending" } | ForEach-Object { [string]$_.id })
-$done = @($tasks | Where-Object { [string]$_.status -eq "done" } | ForEach-Object { [string]$_.id })
-$backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" } | ForEach-Object { [string]$_.id })
-$failed = @($tasks | Where-Object { [string]$_.status -eq "failed" } | ForEach-Object { [string]$_.id })
+$idsBy = @{}; foreach ($s in @("in_progress","reviewing","ready","pending","done","backlog","failed")) { $idsBy[$s] = @($tasks | Where-Object { [string]$_.status -eq $s } | ForEach-Object { [string]$_.id }) }
 return [pscustomobject][ordered]@{
-needsRecovery = [bool](($inProgress.Count + $reviewing.Count + $failed.Count) -gt 0); totalTasks = $tasks.Count
-doneIds = $done; inProgressIds = $inProgress; reviewingIds = $reviewing; readyIds = $ready; pendingIds = $pending; failedIds = $failed; backlogIds = $backlog
+needsRecovery = [bool](($idsBy["in_progress"].Count + $idsBy["reviewing"].Count + $idsBy["failed"].Count) -gt 0); totalTasks = $tasks.Count
+doneIds = $idsBy["done"]; inProgressIds = $idsBy["in_progress"]; reviewingIds = $idsBy["reviewing"]; readyIds = $idsBy["ready"]; pendingIds = $idsBy["pending"]; failedIds = $idsBy["failed"]; backlogIds = $idsBy["backlog"]
 }
 }
 function Get-SenQualityMetrics {
@@ -472,94 +484,80 @@ $tasks = @(Get-SenTasks -Workspace $Workspace)
 $active = @($tasks | Where-Object { [string]$_.status -ne "backlog" }); $backlog = @($tasks | Where-Object { [string]$_.status -eq "backlog" })
 $done = @($active | Where-Object { [string]$_.status -eq "done" }); $inProg = @($active | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
 $ready = @($active | Where-Object { [string]$_.status -in @("ready", "pending") })
-$totalActive = $active.Count; $doneCount = $done.Count
-$firstPassCount = @($done | Where-Object { [int]$_.reworkCount -eq 0 }).Count; $reworkedCount = @($active | Where-Object { [int]$_.reworkCount -gt 0 }).Count
-$verifiedPassCount = @($done | Where-Object { $null -ne $_.evidence -and [int]$_.evidence.exitCode -eq 0 }).Count
-$successPct = if ($totalActive -gt 0) { [int][Math]::Round(($doneCount * 100.0) / $totalActive) } else { 100 }
-$firstPassPct = if ($doneCount -gt 0) { [int][Math]::Round(($firstPassCount * 100.0) / $doneCount) } else { 100 }
-$reworkPct = if ($totalActive -gt 0) { [int][Math]::Round(($reworkedCount * 100.0) / $totalActive) } else { 0 }
-$testPassPct = if ($doneCount -gt 0) { [int][Math]::Round(($verifiedPassCount * 100.0) / $doneCount) } else { 100 }
+$totAct = $active.Count; $doneCnt = $done.Count
+$fpCnt = @($done | Where-Object { [int]$_.reworkCount -eq 0 }).Count; $rwCnt = @($active | Where-Object { [int]$_.reworkCount -gt 0 }).Count
+$vpCnt = @($done | Where-Object { $null -ne $_.evidence -and [int]$_.evidence.exitCode -eq 0 }).Count
 $reqCovPct = 100
 if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/requirements.json")) -and (Get-Command Get-SenRequirementTraceability -EA SilentlyContinue)) {
 $rtm = Get-SenRequirementTraceability -Workspace $Workspace
 if ($rtm.TotalRequirements -gt 0) { $reqCovPct = [int][Math]::Round(($rtm.Verified * 100.0) / $rtm.TotalRequirements) }
 }
 return [pscustomobject][ordered]@{
-totalTasks = $tasks.Count; activeTasks = $totalActive; doneTasks = $doneCount; inProgressTasks = $inProg.Count
-readyTasks = $ready.Count; backlogTasks = $backlog.Count; taskSuccessRatePct = $successPct
-firstPassRatePct = $firstPassPct; reworkRatePct = $reworkPct; testPassRatePct = $testPassPct; requirementCoveragePct = $reqCovPct
+totalTasks = $tasks.Count; activeTasks = $totAct; doneTasks = $doneCnt; inProgressTasks = $inProg.Count; readyTasks = $ready.Count; backlogTasks = $backlog.Count
+taskSuccessRatePct = $(if ($totAct -gt 0) { [int][Math]::Round(($doneCnt * 100.0) / $totAct) } else { 100 })
+firstPassRatePct = $(if ($doneCnt -gt 0) { [int][Math]::Round(($fpCnt * 100.0) / $doneCnt) } else { 100 })
+reworkRatePct = $(if ($totAct -gt 0) { [int][Math]::Round(($rwCnt * 100.0) / $totAct) } else { 0 })
+testPassRatePct = $(if ($doneCnt -gt 0) { [int][Math]::Round(($vpCnt * 100.0) / $doneCnt) } else { 100 }); requirementCoveragePct = $reqCovPct
 }
 }
 function Add-SenBacklogItem {
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Workspace, [string]$Id = ("BL-" + [Guid]::NewGuid().ToString("N").Substring(0, 6)), [Parameter(Mandatory)][string]$Title, [string]$Priority = "P1", [string]$Details = "", [string]$Module = "Backlog")
 $task = New-SenTask -Workspace $Workspace -Id $Id -Title $Title -Tier 2 -RiskLevel "medium" -Module $Module -Assignee "pm" -Status "backlog"
-$docsDir = Join-Path $Workspace "docs"
-if (-not (Test-Path -LiteralPath $docsDir)) { [IO.Directory]::CreateDirectory($docsDir) | Out-Null }
+$docsDir = Join-Path $Workspace "docs"; if (-not (Test-Path -LiteralPath $docsDir)) { [IO.Directory]::CreateDirectory($docsDir) | Out-Null }
 $todoPath = Join-Path $docsDir "TODO.md"
-$existingText = if (Test-Path -LiteralPath $todoPath) { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $todoPath).Path, [Text.Encoding]::UTF8) } else { "# Project Backlog (TODO)`n`n" }
-if ($existingText -notmatch "(?<!\w)$([regex]::Escape($Id))(?!\w)") {
-$entryLine = "- [ ] **${Id} (${Priority}): ${Title}**" + $(if (-not [string]::IsNullOrWhiteSpace($Details)) { "`n  - " + $Details.Trim() } else { "" })
-[IO.File]::WriteAllText($todoPath, ($existingText.TrimEnd() + "`n`n" + $entryLine + "`n"), [Text.UTF8Encoding]::new($false))
+$txt = if (Test-Path -LiteralPath $todoPath) { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $todoPath).Path, [Text.Encoding]::UTF8) } else { "# Project Backlog (TODO)`n`n" }
+if ($txt -notmatch "(?<!\w)$([regex]::Escape($Id))(?!\w)") {
+$line = "- [ ] **${Id} (${Priority}): ${Title}**" + $(if (-not [string]::IsNullOrWhiteSpace($Details)) { "`n  - " + $Details.Trim() } else { "" })
+[IO.File]::WriteAllText($todoPath, ($txt.TrimEnd() + "`n`n" + $line + "`n"), [Text.UTF8Encoding]::new($false))
 }
 return [pscustomobject]@{ Id = $Id; Title = $Title; Priority = $Priority; TodoPath = $todoPath; Task = $task }
 }
 function New-SenRestorePoint {
 [CmdletBinding()]
 param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string[]]$Files = @(), [string]$Label = "pre-edit")
-$resolvedWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/')
-$restoreRoot = Join-Path $resolvedWs ".agents/.sen-restore"
-$ts = [DateTime]::UtcNow.ToString("yyyyMMddHHmmssfff")
-$id = "rp-$ts-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
-$rpDir = Join-Path $restoreRoot $id; $filesDir = Join-Path $rpDir "files"
-[IO.Directory]::CreateDirectory($filesDir) | Out-Null
-$skipHeavyRe = '(?i)(^|[\\/])(node_modules|\.git|\.agents|Code|Antigravity IDE|dist|build)([\\/]|$)'
+$rWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/'); $rRoot = Join-Path $rWs ".agents/.sen-restore"
+$id = "rp-" + [DateTime]::UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
+$rpDir = Join-Path $rRoot $id; $filesDir = Join-Path $rpDir "files"; [IO.Directory]::CreateDirectory($filesDir) | Out-Null
+$skipRe = '(?i)(^|[\\/])(node_modules|\.git|\.agents|Code|Antigravity IDE|dist|build)([\\/]|$)'
 $entries = [Collections.Generic.List[object]]::new(); $idx = 0
 foreach ($f in $Files) {
-if ([string]::IsNullOrWhiteSpace($f) -or ($f -match $skipHeavyRe)) { continue }
-$fullPath = if ([IO.Path]::IsPathRooted($f)) { [IO.Path]::GetFullPath($f) } else { [IO.Path]::GetFullPath((Join-Path $resolvedWs $f)) }
-$relPath = if ($fullPath.StartsWith($resolvedWs, [StringComparison]::OrdinalIgnoreCase)) { $fullPath.Substring($resolvedWs.Length).TrimStart('\', '/') } else { [IO.Path]::GetFileName($fullPath) }
-if ($relPath -match $skipHeavyRe) { continue }
-$existed = Test-Path -LiteralPath $fullPath -PathType Leaf; $storedName = "f_$idx.bak"
-if ($existed) { Copy-Item -LiteralPath $fullPath -Destination (Join-Path $filesDir $storedName) -Force }
-$entries.Add([ordered]@{ relPath = $relPath; fullPath = $fullPath; existed = [bool]$existed; storedName = $storedName }); $idx++
+if ([string]::IsNullOrWhiteSpace($f) -or ($f -match $skipRe)) { continue }
+$fp = if ([IO.Path]::IsPathRooted($f)) { [IO.Path]::GetFullPath($f) } else { [IO.Path]::GetFullPath((Join-Path $rWs $f)) }
+$rel = if ($fp.StartsWith($rWs, [StringComparison]::OrdinalIgnoreCase)) { $fp.Substring($rWs.Length).TrimStart('\', '/') } else { [IO.Path]::GetFileName($fp) }
+if ($rel -match $skipRe) { continue }
+$ex = Test-Path -LiteralPath $fp -PathType Leaf; $sn = "f_$idx.bak"
+if ($ex) { Copy-Item -LiteralPath $fp -Destination (Join-Path $filesDir $sn) -Force }
+$entries.Add([ordered]@{ relPath = $rel; fullPath = $fp; existed = [bool]$ex; storedName = $sn }); $idx++
 }
 $manifest = [ordered]@{ id = $id; label = $Label; createdAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); entries = @($entries.ToArray()) }
 Write-SenAtomicJson -Path (Join-Path $rpDir "manifest.json") -InputObject $manifest -Depth 6
-if (Get-Command Write-SenOfficeEvent -EA SilentlyContinue) { [void](Write-SenOfficeEvent -Workspace $resolvedWs -From "pm" -To "sys" -Lane "Safety" -EcoText "RestorePoint: $id" -FullText "Created restore point $id ($Label)") }
+if (Get-Command Write-SenOfficeEvent -EA SilentlyContinue) { [void](Write-SenOfficeEvent -Workspace $rWs -From "pm" -To "sys" -Lane "Safety" -EcoText "RestorePoint: $id" -FullText "Created restore point $id ($Label)") }
 return [pscustomobject]@{ Id = $id; Label = $Label; Directory = $rpDir; FileCount = $entries.Count }
 }
 function Restore-SenRestorePoint {
 [CmdletBinding()]
 param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$Id = "")
-$resolvedWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/')
-$restoreRoot = Join-Path $resolvedWs ".agents/.sen-restore"
-if (-not (Test-Path -LiteralPath $restoreRoot)) { return [pscustomobject]@{ Restored = $false; Id = $null; Error = "No restore points found" } }
-$targetDir = if (-not [string]::IsNullOrWhiteSpace($Id)) {
-$cand = Join-Path $restoreRoot $Id
-if (Test-Path -LiteralPath $cand) { Get-Item -LiteralPath $cand } else { $null }
-}
-else { Get-ChildItem -LiteralPath $restoreRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1 }
-if ($null -eq $targetDir) { return [pscustomobject]@{ Restored = $false; Id = $Id; Error = "Restore point not found" } }
-$manifest = Read-SenSafeJson -Path (Join-Path $targetDir.FullName "manifest.json")
-if ($null -eq $manifest) { return [pscustomobject]@{ Restored = $false; Id = $targetDir.Name; Error = "Manifest missing" } }
-$filesDir = Join-Path $targetDir.FullName "files"; $restoredCount = 0
+$rWs = (Resolve-Path -LiteralPath $Workspace).Path.TrimEnd('\', '/'); $rRoot = Join-Path $rWs ".agents/.sen-restore"
+if (-not (Test-Path -LiteralPath $rRoot)) { return [pscustomobject]@{ Restored = $false; Id = $null; Error = "No restore points found" } }
+$tDir = if (-not [string]::IsNullOrWhiteSpace($Id)) { $c = Join-Path $rRoot $Id; if (Test-Path -LiteralPath $c) { Get-Item -LiteralPath $c } else { $null } } else { Get-ChildItem -LiteralPath $rRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1 }
+if ($null -eq $tDir) { return [pscustomobject]@{ Restored = $false; Id = $Id; Error = "Restore point not found" } }
+$manifest = Read-SenSafeJson -Path (Join-Path $tDir.FullName "manifest.json")
+if ($null -eq $manifest) { return [pscustomobject]@{ Restored = $false; Id = $tDir.Name; Error = "Manifest missing" } }
+$filesDir = Join-Path $tDir.FullName "files"; $rCnt = 0
 foreach ($e in @($manifest.entries)) {
-$destPath = Join-Path $resolvedWs ([string]$e.relPath)
+$dp = Join-Path $rWs ([string]$e.relPath)
 if ([bool]$e.existed) {
-$srcBak = Join-Path $filesDir ([string]$e.storedName)
-if (Test-Path -LiteralPath $srcBak) {
-$parent = Split-Path -Parent $destPath
-if ($parent -and -not (Test-Path -LiteralPath $parent)) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
-Copy-Item -LiteralPath $srcBak -Destination $destPath -Force; $restoredCount++
+$sb = Join-Path $filesDir ([string]$e.storedName)
+if (Test-Path -LiteralPath $sb) {
+$p = Split-Path -Parent $dp; if ($p -and -not (Test-Path -LiteralPath $p)) { [IO.Directory]::CreateDirectory($p) | Out-Null }
+Copy-Item -LiteralPath $sb -Destination $dp -Force; $rCnt++
 }
 }
-elseif (Test-Path -LiteralPath $destPath) { Remove-Item -LiteralPath $destPath -Force -EA SilentlyContinue; $restoredCount++ }
+elseif (Test-Path -LiteralPath $dp) { Remove-Item -LiteralPath $dp -Force -EA SilentlyContinue; $rCnt++ }
 }
-return [pscustomobject]@{ Restored = $true; Id = [string]$manifest.id; RestoredCount = $restoredCount; Error = $null }
+return [pscustomobject]@{ Restored = $true; Id = [string]$manifest.id; RestoredCount = $rCnt; Error = $null }
 }
 $senGovPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Governance.psm1"
-if (Test-Path -LiteralPath $senGovPath) {
-  Import-Module -Name $senGovPath -Global -Force
-}
+if ((-not $global:SenCoreBootstrapActive) -and (Test-Path -LiteralPath $senGovPath)) { Import-Module -Name $senGovPath -Global -Force }
 Export-ModuleMember -Function Save-SenTasks, Get-SenTasks, Clear-SenTasks, New-SenTask, Get-SenReadyTasks, Start-SenTask, Unlock-SenTask, Submit-SenTaskForReview, Complete-SenTaskReview, Test-SenHungTasks, Clear-SenHungTasks, Test-SenDeliveryGate, Get-SenRecoveryState, Get-SenQualityMetrics, Add-SenBacklogItem, New-SenRestorePoint, Restore-SenRestorePoint

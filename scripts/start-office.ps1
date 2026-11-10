@@ -160,7 +160,7 @@ try {
                 continue
             }
 
-            if ($method -eq "POST" -and (-not [string]::IsNullOrEmpty($originHdr)) -and ($originHdr -notmatch '^(?i)https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$')) {
+            if ($method -eq "POST" -and (-not [string]::IsNullOrEmpty($originHdr)) -and ($originHdr -notmatch "^(?i)https?://(127\.0\.0\.1|localhost|\[::1\])(:$usePort)?$")) {
                 $errBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"forbidden origin"}')
                 Send-HttpResponse $stream 403 "Forbidden" "application/json; charset=utf-8" $errBytes $usePort
                 continue
@@ -245,10 +245,15 @@ try {
             }
             elseif ($method -eq "POST" -and $path -eq "/api/switch-workspace") {
                 $reqObj = ConvertFrom-Json -InputObject $bodyStr
-                if ($reqObj -and $reqObj.workspace -and (Test-Path -LiteralPath ([string]$reqObj.workspace))) {
-                    $resolvedWs = (Resolve-Path -LiteralPath ([string]$reqObj.workspace)).Path
+                $candWs = if ($reqObj -and $reqObj.workspace) { [string]$reqObj.workspace } else { "" }
+                if ($candWs -and (Test-Path -LiteralPath $candWs -PathType Container)) {
+                    $candFull = (Resolve-Path -LiteralPath $candWs).Path
+                    $hasMarker = (Test-Path -LiteralPath (Join-Path $candFull ".agents")) -or (Test-Path -LiteralPath (Join-Path $candFull ".git")) -or (Test-Path -LiteralPath (Join-Path $candFull "docs"))
+                    if ($hasMarker -and ($candFull -notmatch '(?i)[/\\](\.ssh|\.aws|\.gnupg|\.kube|Windows|System32)([/\\]|$)')) {
+                        $resolvedWs = $candFull
+                    }
                 }
-                $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject @{ switched = $true; workspace = $resolvedWs } -Compress))
+                $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject @{ switched = ($resolvedWs -eq $candFull); workspace = $resolvedWs } -Compress))
                 Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
             }
             else {

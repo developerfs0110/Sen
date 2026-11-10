@@ -28,12 +28,54 @@
 ## Sen hoạt động thế nào
 
 ```mermaid
-flowchart LR
-    A["Yêu cầu công việc"] --> B["Phân cấp tất định (Get-SenTaskRiskScore)"]
-    B --> C["Chứng minh - Phản biện & Chụp Restore Point"]
-    C --> D["Thực thi Song song & Đồng bộ 2 Chiều (DAG / File Lock / _rev)"]
-    D --> E["Cổng Kiểm duyệt (Clean Code 6D + STRIDE + Luật VN + 12 Bước)"]
-    E --> F["Bàn giao, Báo cáo Nghiệm thu & Tự chữa lành CI (Invoke-SenCiPushLoop)"]
+flowchart TB
+    subgraph S1["1. Tiếp nhận & Phân cấp Rủi ro Tất định"]
+        direction LR
+        A(["👤 Yêu cầu công việc"])
+        B{"🎯 Phân cấp (Get-SenTaskRiskScore)"}
+    end
+
+    subgraph S2["2. Thẩm định Biện chứng & Điểm Khôi phục"]
+        direction LR
+        C["🧠 Chứng minh Best-of-the-Best & Phản biện 7 Mũi nhọn"]
+        RP[("🛡️ Chụp Restore Point (New-SenRestorePoint)")]
+    end
+
+    subgraph S3["3. Thực thi Song song & Kiểm duyệt Chất lượng"]
+        direction LR
+        D["⚙️ Điều phối DAG / File Lock / _rev & Đồng bộ 2 Chiều"]
+        E{"✅ Cổng Kiểm duyệt (Clean Code 6D + STRIDE + Luật VN + 12 Bước)"}
+    end
+
+    subgraph S4["4. Nghiệm thu & Tự Chữa lành CI Từ xa"]
+        direction LR
+        F(["🚀 Bàn giao, Báo cáo Nghiệm thu & CI Auto-Heal (Invoke-SenCiPushLoop)"])
+    end
+
+    A -->|"① Phân tích"| B
+    B -->|"② Cấp 2-3"| C
+    C -->|"③ Khóa an toàn"| RP
+    RP -->|"④ Triển khai"| D
+    B -.->|"② Cấp 1 (Làm ngay)"| D
+    D -->|"⑤ Kiểm chứng"| E
+    E -->|"⑥ Đạt 100%"| F
+
+    classDef actor fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc
+    classDef gate fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed
+    classDef engine fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#eef2ff
+    classDef storage fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ecfdf5
+    classDef out fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#faf5ff
+
+    class A actor
+    class B,E gate
+    class C,D engine
+    class RP storage
+    class F out
+
+    style S1 fill:#0f172a,stroke:#334155,stroke-width:1px,color:#94a3b8
+    style S2 fill:#022c22,stroke:#059669,stroke-width:1.5px,color:#6ee7b7
+    style S3 fill:#1e1b4b,stroke:#4f46e5,stroke-width:1.5px,color:#a5b4fc
+    style S4 fill:#2e1065,stroke:#7e22ce,stroke-width:1.5px,color:#d8b4fe
 ```
 
 | Cấp độ | Nhãn hiển thị | Khi nào áp dụng | Cơ chế "Trình bày trước — Làm luôn — Báo kết quả" của Sen |

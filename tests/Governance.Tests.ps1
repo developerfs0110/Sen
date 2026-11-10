@@ -547,3 +547,180 @@ Test "ST-15: Wave 5 Claude Audit Closure - Guard False Negatives/Positives, Per-
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "ST-16: Deep Security Audit Remediation (F-01..F-10) - Variable-Free Hook Wrapper, Backtick Deobfuscation, .gemini Config Protection, Counterexample Isolation, and Comment-Aware Assertion Count" {
+    $ws = New-GovTestWorkspace
+    try {
+        $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+
+        # 1. F-01: hooks.json and Install-SenHarness generate variable-free Windows hook commands; Test-SenHarnessLiveProbe rejects $p=@(
+        $rawRepoHooks = [System.IO.File]::ReadAllText((Join-Path $repoRoot "hooks.json"))
+        Assert-True ($rawRepoHooks -notmatch '\$p=@\(') "F-01: Repository hooks.json must not contain double-shell interpolated `$p=@( pattern"
+        [void](Install-SenHarness -Workspace $ws -Harness @("antigravity", "claude"))
+        $wsHooks = [System.IO.File]::ReadAllText((Join-Path $ws ".agents/plugins/sen-method/hooks.json"))
+        Assert-True ($wsHooks -notmatch '\$p=@\(') "F-01: Generated hooks.json must be variable-free"
+        [System.IO.File]::WriteAllText((Join-Path $ws ".agents/plugins/sen-method/hooks.json"), '{"PreToolUse":[{"command":"powershell -Command \"$p=@()\""}]}')
+        Assert-True (-not (Test-SenHarnessLiveProbe -Workspace $ws)) "F-01: Test-SenHarnessLiveProbe must reject hooks.json containing `$p=@("
+        [void](Install-SenHarness -Workspace $ws -Harness @("antigravity"))
+
+        # 2. F-02: guard.sh escapes quotes and backslashes in out_decision
+        $guardShText = [System.IO.File]::ReadAllText((Join-Path $repoRoot "scripts/guard.sh"))
+        Assert-True ($guardShText -match 'safe_reason=') "F-02: guard.sh out_decision must sanitize quotes and backslashes via safe_reason"
+
+        # 3. F-03: Block .gemini/config/hooks.json tampering, SEN_TRUSTED_* env injection, and PowerShell backtick obfuscation
+        $geminiHookTarget = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE ".gemini/config/hooks.json" } else { "/home/user/.gemini/config/hooks.json" }
+        $safeCheck = Test-SenSafeWorkspacePath -TargetPath $geminiHookTarget -WorkspaceList @($ws) -ToolName "write_file"
+        Assert-True (-not $safeCheck.Allowed) "F-03: Test-SenSafeWorkspacePath must block write_file to .gemini/config/hooks.json"
+
+        $resGemWrite = Invoke-GovGuardJson @{
+            workspacePaths = @($ws)
+            toolCall = @{ name = "write_file"; args = @{ Path = $geminiHookTarget } }
+        }
+        Assert-Equal "deny" $resGemWrite.decision "F-03: guard.ps1 must block write_file to .gemini/config/hooks.json"
+
+        $bt = [char]96
+        foreach ($badCmd in @(
+            "r${bt}m -rf /tmp/x",
+            "Remove-I${bt}tem ./src -Recurse",
+            "`$env:SEN_TRUSTED_INSTALLER='1'; Set-Content scripts/guard.ps1 'x'",
+            "`$env:SEN_TRUSTED_HOOK='1'; Sync-SenOfficeState -Workspace . -UpdateSeal"
+        )) {
+            $resBad = Invoke-GovGuardJson @{
+                workspacePaths = @($ws)
+                toolCall = @{ name = "run_command"; args = @{ CommandLine = $badCmd } }
+            }
+            Assert-Equal "deny" $resBad.decision "F-03: guard.ps1 must block obfuscated or env-bypass command: $badCmd"
+        }
+
+        # 4. F-04: Register-SenCounterexample blocks governance state mutation commands (AV-06)
+        [void](New-SenFalsificationPlan -Workspace $ws -ClaimId "CLM-F04" -Proposer "prop-a" `
+            -CoreHypothesis "State isolation holds" -FailureConditions @("Tamper succeeds") `
+            -Counterexamples @("Direct Save-SenTasks call") -BoundaryConditions @("Empty tasks") `
+            -AlternativeSolutions @("Regex + pre/post hash check") -FalsificationTest "Invoke-Check" -AcceptanceCriteria @("Blocked"))
+        [void](Register-SenClaim -Workspace $ws -ClaimId "CLM-F04" -Claim "Counterexample is isolated" -Scope "Tier2" -Proposer "prop-a" -FalsificationPlanId "FP-CLM-F04")
+        $ceTamperBlocked = $false
+        try {
+            [void](Register-SenCounterexample -Workspace $ws -ClaimId "CLM-F04" -Adversary "adv-b" `
+                -Scenario "Attempt to wipe tasks.json inside counterexample command" `
+                -TestCommand "Save-SenTasks -Workspace '$ws' -Tasks @()" `
+                -ExpectedOutcome "Should be blocked by AV-06")
+        }
+        catch {
+            if ($_.Exception.Message -match "AV-06 Violation") { $ceTamperBlocked = $true }
+        }
+        Assert-True $ceTamperBlocked "F-04: Register-SenCounterexample must block governance state mutation commands with AV-06 Violation"
+
+        # 5. F-06: Install-SenGitHooks escapes single quotes in workspace path
+        $quoteWs = Join-Path $ws "O'Brien-Repo"
+        [System.IO.Directory]::CreateDirectory((Join-Path $quoteWs ".git")) | Out-Null
+        [void](Install-SenGitHooks -Workspace $quoteWs -Force)
+        $preCommitTxt = [System.IO.File]::ReadAllText((Join-Path $quoteWs ".git/hooks/pre-commit"))
+        Assert-True ($preCommitTxt.Contains("O''Brien-Repo")) "F-06: Install-SenGitHooks must escape single quotes in workspace path"
+
+        # 6. F-09: Commented-out assertions (# Assert-True) are not counted by Test-SenSuiteIntegrity or Test-SenAntiMetricGaming
+        $tDir = Join-Path $ws "tests"
+        [System.IO.Directory]::CreateDirectory($tDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $tDir "Comment.Tests.ps1"), "Assert-True `$true`nAssert-Equal 1 1`n")
+        [void](Lock-SenQualityBaseline -Workspace $ws)
+        [System.IO.File]::WriteAllText((Join-Path $tDir "Comment.Tests.ps1"), "# Assert-True `$true`n# Assert-Equal 1 1`n")
+        $suiteCommented = Test-SenSuiteIntegrity -TestsPath $tDir -MinFiles 1 -MinAssertions 1
+        Assert-True (-not $suiteCommented.Passed) "F-09: Test-SenSuiteIntegrity must ignore commented-out # Assert-* lines"
+        $amgCommented = Test-SenAntiMetricGaming -Workspace $ws
+        Assert-True (-not $amgCommented.Passed) "F-09: Test-SenAntiMetricGaming must detect test dilution when assertions are commented out"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "ST-17: Wave 2 Master Audit Remediation (M-01..M-10) - Clear-SenTasks Guard, Self-Review Gate, Seal-Safe Get-SenTasks, Evidence Auto-Sync, and Indentation-Agnostic CodeHealth" {
+    $ws = New-GovTestWorkspace
+    try {
+        $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+
+        # 1. M-01: office-post.sh initializes seal_intact = False and preserves plannedTaskIds
+        $postShTxt = [System.IO.File]::ReadAllText((Join-Path $repoRoot "scripts/office-post.sh"))
+        Assert-True ($postShTxt.Contains("seal_intact = False")) "M-01: office-post.sh must initialize seal_intact = False"
+        Assert-True ($postShTxt.Contains('"plannedTaskIds": pset')) "M-01: office-post.sh save_tasks must preserve plannedTaskIds"
+
+        # 2. M-02: guard.ps1 blocks untrusted Clear-SenTasks via run_command
+        $resClear = Invoke-GovGuardJson @{
+            workspacePaths = @($ws)
+            toolCall = @{ name = "run_command"; args = @{ CommandLine = "Clear-SenTasks -Workspace ." } }
+        }
+        Assert-Equal "deny" $resClear.decision "M-02: guard.ps1 must block untrusted Clear-SenTasks in run_command"
+
+        # 3. M-03: Complete-SenTaskReview -DisallowSelfReview blocks Reviewer == Assignee
+        [void](New-SenTask -Workspace $ws -Id "M03-T1" -Title "Self Review Test" -Assignee "qa" -Status "in_progress")
+        $srBlocked = Complete-SenTaskReview -Workspace $ws -Id "M03-T1" -Passed $true -Reviewer "qa" -EvidenceCommand "tests/run.ps1" -ExitCode 0 -DisallowSelfReview
+        Assert-True (-not $srBlocked.Completed) "M-03: Complete-SenTaskReview -DisallowSelfReview must reject when Reviewer == Assignee"
+
+        # 4. M-05 & M-06: Get-SenTasks auto-promotion preserves state-seal.json; Complete-SenTaskReview auto-refreshes linked evidence.json
+        [void](Register-SenEvidence -Workspace $ws -EvidenceId "EV-M06" -TaskId "M03-T1" -Command "tests/run.ps1" -ExitCode 0)
+        [void](New-SenTask -Workspace $ws -Id "M05-DOWN" -Title "Downstream Pending Task" -DependsOn @("M03-T1") -Status "pending")
+        [void](Sync-SenOfficeState -Workspace $ws -UpdateSeal)
+        $srOk = Complete-SenTaskReview -Workspace $ws -Id "M03-T1" -Passed $true -Reviewer "sec" -EvidenceCommand "tests/run.ps1" -ExitCode 0
+        Assert-True $srOk.Completed "M-03: Independent Reviewer ('sec' != 'qa') completes M03-T1"
+        [void](Sync-SenOfficeState -Workspace $ws -UpdateSeal)
+        $tAfter = @(Get-SenTasks -Workspace $ws)
+        $sealCheck = Sync-SenOfficeState -Workspace $ws -VerifySeal
+        Assert-True (-not $sealCheck.Tampered) "M-05: Get-SenTasks must preserve intact state-seal.json"
+
+        # 5. M-10: Measure-SenCodeHealth ignores leading indentation whitespace when computing byte budget
+        $indDir = Join-Path $ws "indent-check"
+        [System.IO.Directory]::CreateDirectory($indDir) | Out-Null
+        $paddedLines = 1..50 | ForEach-Object { (" " * 40) + "`$v$_ = $_" }
+        [System.IO.File]::WriteAllText((Join-Path $indDir "padded.ps1"), ($paddedLines -join "`r`n"))
+        $chInd = Measure-SenCodeHealth -Path $indDir -MaxLogicBytes 600
+        Assert-True $chInd.Healthy "M-10: Measure-SenCodeHealth must evaluate trimmed code bytes and ignore indentation/CRLF padding"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "ST-18: Wave 3 Master Audit Remediation (W3-01..W3-10) - BoundedLoop Mutex, Skill Runner Guard, C1 Triage Floor, Deterministic Finding IDs, and Raw Byte Budget" {
+    $ws = New-GovTestWorkspace
+    try {
+        $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+
+        # 1. W3-02: New-SenCapturedSkill blocks backtick-obfuscated commands and guard.ps1 blocks direct edits to .agents/skills/*/scripts/
+        $capBlocked = $false
+        try {
+            [void](New-SenCapturedSkill -Workspace $ws -SkillName "bad-runner" -Description "Test" -Steps @("Step 1") -Commands @("i`ex 'bad'"))
+        }
+        catch { $capBlocked = $true }
+        Assert-True $capBlocked "W3-02: New-SenCapturedSkill must block backtick-obfuscated dangerous commands"
+        $resSkillScr = Invoke-GovGuardJson @{
+            workspacePaths = @($ws)
+            toolCall = @{ name = "write_file"; args = @{ Path = (Join-Path $ws ".agents/skills/demo/scripts/run.ps1") } }
+        }
+        Assert-Equal "deny" $resSkillScr.decision "W3-02: guard.ps1 must block direct writes to .agents/skills/*/scripts/"
+
+        # 2. W3-03 & W3-04: Invoke-SenFindingTriage upgrades C2 XSS/CSRF/RaceCondition to C1, prevents out-of-scope deferral, and assigns deterministic IDs
+        [void](Set-SenVerificationPolicy -Workspace $ws -ClaimId "W3-CLM1" -ScopePaths @("README.md") -MaxReviewRounds 3 -MaxRepairAttempts 3)
+        $tr = Invoke-SenFindingTriage -Workspace $ws -ClaimId "W3-CLM1" -Findings @(
+            [pscustomobject]@{ title = "DOM XSS vulnerability in widget"; severity = "C2"; path = "src/widget.js"; testCommand = "test-xss" }
+        )
+        Assert-Equal "REPAIR" $tr.State "W3-03: Out-of-scope C2 XSS finding must be upgraded to C1 and block Gate 1 (not auto-accepted via narrow ScopePaths)"
+        Assert-Equal 1 $tr.Gate1Blockers.Count "W3-03: XSS finding must be in Gate1Blockers"
+        Assert-Equal "C1" $tr.Gate1Blockers[0].severity "W3-03: XSS finding severity must be upgraded to C1"
+        $prog = Measure-SenAdversarialProgress -PreviousFindings $tr.Gate1Blockers -CurrentFindings @() -HistoricalResolvedIds @()
+        $progReg = Measure-SenAdversarialProgress -PreviousFindings @() -CurrentFindings @(
+            [pscustomobject]@{ title = "DOM XSS vulnerability in widget"; severity = "C1"; path = "src/widget.js" }
+        ) -HistoricalResolvedIds $prog.UpdatedResolvedIds
+        Assert-Equal 1 $progReg.Regressions "W3-04: Deterministic finding ID must detect regression even when explicit id is omitted"
+
+        # 3. W3-05 & W3-06: Sen.Harness.psm1 uses git status -uall and removes hardcoded Code/sen-method/docs/TODO.md
+        $harnTxt = [System.IO.File]::ReadAllText((Join-Path $repoRoot "scripts/Sen.Harness.psm1"))
+        Assert-True ($harnTxt.Contains("git status --porcelain -uall")) "W3-05: Invoke-SenCiPushLoop must pass -uall to git status"
+        Assert-True (-not $harnTxt.Contains("Code/sen-method/docs/TODO.md")) "W3-06: Sync-SenTasksToMarkdown must not hardcode Code/sen-method/docs/TODO.md"
+
+        # 4. W3-09: All .psm1 modules in scripts/ must be <= 46,080 raw bytes on disk for single-call read_file
+        $overRaw = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "scripts") -Filter "*.psm1" -File | Where-Object { $_.Length -gt 46080 })
+        Assert-Equal 0 $overRaw.Count "W3-09: Every .psm1 module must be <= 46,080 raw bytes on disk"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

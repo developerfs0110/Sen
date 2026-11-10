@@ -325,7 +325,14 @@ function Install-SenSelf {
                 Copy-Item -Path $srcPath -Destination $targetItem -Recurse -Force
             }
         }
-        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", [System.Text.UTF8Encoding]::new($false))
+        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+        $fwdDir = Join-Path $dest ".agents/plugins/sen-method/scripts"
+        [System.IO.Directory]::CreateDirectory($fwdDir) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $fwdDir "guard.ps1"), "& (Join-Path `$PSScriptRoot '../../../../scripts/guard.ps1')`n", $utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $fwdDir "office-post.ps1"), "& (Join-Path `$PSScriptRoot '../../../../scripts/office-post.ps1')`n", $utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $fwdDir "guard.sh"), "#!/usr/bin/env sh`nexec sh `"`$(dirname `"`$0`")/../../../../scripts/guard.sh`"`n", $utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $fwdDir "office-post.sh"), "#!/usr/bin/env sh`nexec sh `"`$(dirname `"`$0`")/../../../../scripts/office-post.sh`"`n", $utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", $utf8NoBom)
         return [pscustomobject]@{ Status = "installed"; Commit = $commit; Error = $null }
     }
     catch {

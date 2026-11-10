@@ -184,24 +184,24 @@ function Register-SenClaim {
     )
     $rev = Get-SenCodeRevisionSnapshot -Workspace $Workspace -CodePaths $CodePaths
     $record = [pscustomobject][ordered]@{
-        claim_id             = $ClaimId
-        claim                = $Claim
-        scope                = $Scope
-        status               = "INCONCLUSIVE"
-        proposer             = $Proposer
-        falsification_plan   = $FalsificationPlanId
-        code_paths           = @($CodePaths)
-        evidence             = @()
-        counterexamples      = @()
-        tests                = @($Tests)
-        assumptions          = @($Assumptions)
-        limitations          = @($Limitations)
-        reviewer             = ""
-        code_revision        = $rev.revisionHash
-        git_commit           = $rev.gitCommit
-        file_hashes          = $rev.fileHashes
-        decision             = "INCONCLUSIVE"
-        audit_trail          = @(
+        claim_id           = $ClaimId
+        claim              = $Claim
+        scope              = $Scope
+        status             = "INCONCLUSIVE"
+        proposer           = $Proposer
+        falsification_plan = $FalsificationPlanId
+        code_paths         = @($CodePaths)
+        evidence           = @()
+        counterexamples    = @()
+        tests              = @($Tests)
+        assumptions        = @($Assumptions)
+        limitations        = @($Limitations)
+        reviewer           = ""
+        code_revision      = $rev.revisionHash
+        git_commit         = $rev.gitCommit
+        file_hashes        = $rev.fileHashes
+        decision           = "INCONCLUSIVE"
+        audit_trail        = @(
             [ordered]@{
                 step      = "CLAIM_CREATED"
                 actor     = $Proposer
@@ -209,7 +209,7 @@ function Register-SenClaim {
                 timestamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
             }
         )
-        updated_at           = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        updated_at         = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     }
     $claimsFile = Join-Path -Path $Workspace -ChildPath ".agents/office/claims.json"
     $existing = [System.Collections.Generic.List[object]]::new()
@@ -236,7 +236,7 @@ function Invoke-SenExecutableEvidence {
     if ([string]::IsNullOrWhiteSpace($Command) -or $Command -match $trivialCmd) {
         throw "AV-06 Violation: Evidence command must be a real executable verification command, not '$Command'."
     }
-    if ($null -eq $CommandRunner -and $Command -match '(?i)\b(Save-SenTasks|Write-SenAtomicJson|Sync-SenOfficeState\b[^|;&]*-UpdateSeal|Lock-SenQualityBaseline\b[^|;&]*-Force|Remove-Item\b[^|;&]*\.agents|\.agents[/\\]office)') {
+    if ($null -eq $CommandRunner -and $Command -match '(?i)\b(Save-SenTasks|Clear-SenTasks|Write-SenAtomicJson|Sync-SenOfficeState\b[^|;&]*-UpdateSeal|Lock-SenQualityBaseline\b[^|;&]*-Force|Remove-Item\b[^|;&]*\.agents|\.agents[/\\]office)') {
         throw "AV-06 Violation: Evidence command cannot mutate Sen governance state: '$Command'."
     }
     $claimsFile = Join-Path -Path $Workspace -ChildPath ".agents/office/claims.json"
@@ -304,12 +304,12 @@ function Invoke-SenExecutableEvidence {
     $trail = [System.Collections.Generic.List[object]]::new()
     foreach ($t in @($target.audit_trail)) { if ($null -ne $t) { $trail.Add($t) } }
     $trail.Add([ordered]@{
-        step        = "EVIDENCE_EXECUTED"
-        actor       = $Verifier
-        evidence_id = $evRecord.evidence_id
-        exit_code   = $evRecord.exit_code
-        timestamp   = $evRecord.timestamp
-    })
+            step        = "EVIDENCE_EXECUTED"
+            actor       = $Verifier
+            evidence_id = $evRecord.evidence_id
+            exit_code   = $evRecord.exit_code
+            timestamp   = $evRecord.timestamp
+        })
     $target | Add-Member -NotePropertyName "audit_trail" -NotePropertyValue @($trail.ToArray()) -Force
     $target | Add-Member -NotePropertyName "updated_at" -NotePropertyValue $evRecord.timestamp -Force
     Write-SenAtomicJson -Path $claimsFile -InputObject ($allClaims.ToArray()) -Depth 10
@@ -333,19 +333,19 @@ function Register-SenCounterexample {
     if ([string]::IsNullOrWhiteSpace($TestCommand) -or $TestCommand -match '^(?i)\s*(none|manual|verbal|n/a|ok)\s*$') {
         throw "AV-02 Violation: Adversary must provide an executable test command, not verbal critique '$TestCommand'."
     }
+    if ($null -eq $CommandRunner -and $TestCommand -match '(?i)\b(Save-SenTasks|Clear-SenTasks|Write-SenAtomicJson|Sync-SenOfficeState\b[^|;&]*-UpdateSeal|Lock-SenQualityBaseline\b[^|;&]*-Force|Remove-Item\b[^|;&]*\.agents|\.agents[/\\]office)') {
+        throw "AV-06 Violation: Counterexample command cannot mutate Sen governance state: '$TestCommand'."
+    }
     $claimsFile = Join-Path -Path $Workspace -ChildPath ".agents/office/claims.json"
+    $tasksFile = Join-Path -Path $Workspace -ChildPath ".agents/office/tasks.json"
+    $preClaimsRaw = if (Test-Path -LiteralPath $claimsFile) { [System.IO.File]::ReadAllText($claimsFile) } else { "" }
+    $preTasksRaw = if (Test-Path -LiteralPath $tasksFile) { [System.IO.File]::ReadAllText($tasksFile) } else { "" }
     $allClaims = [System.Collections.Generic.List[object]]::new()
     foreach ($c in (Read-SenJsonArray -Path $claimsFile)) { $allClaims.Add($c) }
     $target = $allClaims | Where-Object { [string]$_.claim_id -eq $ClaimId } | Select-Object -First 1
-    if ($null -eq $target) {
-        throw "Claim '$ClaimId' not found."
-    }
-    if ([string]$target.proposer -eq $Adversary) {
-        throw "AV-01/AV-02 Violation: Proposer '$Adversary' cannot act as their own Adversary for '$ClaimId'."
-    }
-
-    $exitCode = 1
-    $outputText = ""
+    if ($null -eq $target) { throw "Claim '$ClaimId' not found." }
+    if ([string]$target.proposer -eq $Adversary) { throw "AV-01/AV-02 Violation: Proposer '$Adversary' cannot act as their own Adversary for '$ClaimId'." }
+    $exitCode = 1; $outputText = ""
     try {
         if ($null -ne $CommandRunner) {
             $res = & $CommandRunner $TestCommand
@@ -353,15 +353,17 @@ function Register-SenCounterexample {
             $outputText = if ($null -ne $res -and $res.PSObject.Properties['Output']) { [string]$res.Output } else { [string]$res }
         }
         else {
-            $sb = [scriptblock]::Create($TestCommand)
-            $rawOut = & $sb 2>&1
+            $global:LASTEXITCODE = 0; $sb = [scriptblock]::Create($TestCommand); $rawOut = & $sb 2>&1
             $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
             $outputText = ($rawOut | ForEach-Object { [string]$_ }) -join "`n"
+            $postClaimsRaw = if (Test-Path -LiteralPath $claimsFile) { [System.IO.File]::ReadAllText($claimsFile) } else { "" }
+            $postTasksRaw = if (Test-Path -LiteralPath $tasksFile) { [System.IO.File]::ReadAllText($tasksFile) } else { "" }
+            if ($postClaimsRaw -ne $preClaimsRaw -or $postTasksRaw -ne $preTasksRaw) { throw "AV-06 Violation: Counterexample command covertly modified Sen governance state." }
         }
     }
     catch {
-        $exitCode = 1
-        $outputText = $_.Exception.Message
+        if ($_.Exception.Message -match "AV-06 Violation") { throw }
+        $exitCode = 1; $outputText = $_.Exception.Message
     }
 
     $survived = ([int]$exitCode -eq 0)
@@ -390,12 +392,12 @@ function Register-SenCounterexample {
     $trail = [System.Collections.Generic.List[object]]::new()
     foreach ($t in @($target.audit_trail)) { if ($null -ne $t) { $trail.Add($t) } }
     $trail.Add([ordered]@{
-        step              = "ADVERSARIAL_CHALLENGE"
-        actor             = $Adversary
-        counterexample_id = $ceRecord.counterexample_id
-        survived          = $survived
-        timestamp         = $ceRecord.timestamp
-    })
+            step              = "ADVERSARIAL_CHALLENGE"
+            actor             = $Adversary
+            counterexample_id = $ceRecord.counterexample_id
+            survived          = $survived
+            timestamp         = $ceRecord.timestamp
+        })
     $target | Add-Member -NotePropertyName "audit_trail" -NotePropertyValue @($trail.ToArray()) -Force
     $target | Add-Member -NotePropertyName "updated_at" -NotePropertyValue $ceRecord.timestamp -Force
     Write-SenAtomicJson -Path $claimsFile -InputObject ($allClaims.ToArray()) -Depth 10
@@ -439,7 +441,8 @@ function Get-SenBlindReviewPackage {
                 acceptanceCriteria = @($plan.acceptanceCriteria)
                 criteriaHash       = [string]$plan.criteriaHash
             }
-        } else { $null }
+        }
+        else { $null }
         codePaths              = $codePaths
         recordedRevision       = [string]$claim.code_revision
         liveRevision           = [string]$liveRev.revisionHash
@@ -513,12 +516,12 @@ function Invoke-SenIndependentVerdict {
         $trail = [System.Collections.Generic.List[object]]::new()
         foreach ($t in @($target.audit_trail)) { if ($null -ne $t) { $trail.Add($t) } }
         $trail.Add([ordered]@{
-            step      = "INDEPENDENT_DECISION"
-            actor     = $Reviewer
-            verdict   = $verdict
-            reasons   = @($reasons.ToArray())
-            timestamp = $nowIso
-        })
+                step      = "INDEPENDENT_DECISION"
+                actor     = $Reviewer
+                verdict   = $verdict
+                reasons   = @($reasons.ToArray())
+                timestamp = $nowIso
+            })
         $target | Add-Member -NotePropertyName "audit_trail" -NotePropertyValue @($trail.ToArray()) -Force
         $target | Add-Member -NotePropertyName "updated_at" -NotePropertyValue $nowIso -Force
         Write-SenAtomicJson -Path $claimsFile -InputObject ($allClaims.ToArray()) -Depth 10
@@ -546,7 +549,7 @@ function Lock-SenQualityBaseline {
     $totalAssertions = 0
     if (Test-Path -LiteralPath $testsDir) {
         foreach ($tf in @(Get-ChildItem -LiteralPath $testsDir -Filter "*.Tests.ps1" -File | Sort-Object Name)) {
-            $txt = [System.IO.File]::ReadAllText($tf.FullName, [System.Text.Encoding]::UTF8)
+            $txt = [regex]::Replace([System.IO.File]::ReadAllText($tf.FullName, [System.Text.Encoding]::UTF8), '(?m)^\s*#.*$', '')
             $cnt = @([regex]::Matches($txt, '\bAssert-[A-Za-z]+\b')).Count
             $perFileAssertions[$tf.Name] = $cnt
             $totalAssertions += $cnt
@@ -600,7 +603,7 @@ function Test-SenAntiMetricGaming {
                 $violations.Add("AV-08: Test file '$fileName' was deleted (expected >= $minCnt assertions)")
             }
             else {
-                $txt = [System.IO.File]::ReadAllText($filePath, [System.Text.Encoding]::UTF8)
+                $txt = [regex]::Replace([System.IO.File]::ReadAllText($filePath, [System.Text.Encoding]::UTF8), '(?m)^\s*#.*$', '')
                 $nowCnt = @([regex]::Matches($txt, '\bAssert-[A-Za-z]+\b')).Count
                 if ($nowCnt -lt $minCnt) {
                     $violations.Add("AV-08: Test dilution in '$fileName' (assertions dropped from $minCnt to $nowCnt)")
@@ -721,33 +724,35 @@ function Invoke-SenDialecticalAudit {
     $vnLaw = Invoke-SenVnLawScan -Path $targetDir
     $evidenceValidity = if (Get-Command Test-SenEvidenceValidity -ErrorAction SilentlyContinue) {
         Test-SenEvidenceValidity -Workspace $Workspace
-    } else {
+    }
+    else {
         [pscustomobject]@{ AllValid = $false; StaleCount = 1 }
     }
     $hungCheck = if (Get-Command Test-SenHungTasks -ErrorAction SilentlyContinue) {
         Test-SenHungTasks -Workspace $Workspace
-    } else {
+    }
+    else {
         [pscustomobject]@{ Healthy = $false; StaleTaskIds = @("MISSING_HUNG_CHECK"); HungProcessIds = @() }
     }
     $antiGaming = Test-SenAntiMetricGaming -Workspace $Workspace
 
     $activeTasks = @(Get-SenTasks -Workspace $Workspace | Where-Object { [string]$_.status -ne "backlog" })
     $invalidEvidenceTasks = @($activeTasks | Where-Object {
-        $isDone = ([string]$_.status -eq "done")
-        $cmdText = if ($_.evidence) { [string]$_.evidence.command } else { "" }
-        $exitVal = if ($_.evidence -and $null -ne $_.evidence.exitCode) { [int]$_.evidence.exitCode } else { -1 }
-        $isFakeCmd = ($cmdText -notmatch '[A-Za-z0-9]{3,}') -or ($cmdText -match '(?i)^(manual|none|ok|pass|fake|verbal|subagent-verified|verified-in-session|session-verified|hook-telemetry|subagent-report|subagent-closed)$')
-        $isPlaceholderCmd = ($RequireIndependentReviewer.IsPresent -and ($cmdText -match '(?i)^(todo-verified|subagent-verified)$'))
-        ((-not $isDone) -and $RequireIndependentReviewer.IsPresent) -or ($isDone -and ($null -eq $_.evidence -or $exitVal -ne 0 -or $isFakeCmd -or $isPlaceholderCmd))
-    })
+            $isDone = ([string]$_.status -eq "done")
+            $cmdText = if ($_.evidence) { [string]$_.evidence.command } else { "" }
+            $exitVal = if ($_.evidence -and $null -ne $_.evidence.exitCode) { [int]$_.evidence.exitCode } else { -1 }
+            $isFakeCmd = ($cmdText -notmatch '[A-Za-z0-9]{3,}') -or ($cmdText -match '(?i)^(manual|none|ok|pass|fake|verbal|subagent-verified|verified-in-session|session-verified|hook-telemetry|subagent-report|subagent-closed)$')
+            $isPlaceholderCmd = ($RequireIndependentReviewer.IsPresent -and ($cmdText -match '(?i)^(todo-verified|subagent-verified)$'))
+            ((-not $isDone) -and $RequireIndependentReviewer.IsPresent) -or ($isDone -and ($null -eq $_.evidence -or $exitVal -ne 0 -or $isFakeCmd -or $isPlaceholderCmd))
+        })
 
     $selfReviewedTasks = @($activeTasks | Where-Object {
-        $isDone = ([string]$_.status -eq "done")
-        $assignee = [string]$_.assignee
-        $reviewer = if ($_.evidence) { [string]$_.evidence.reviewer } else { "" }
-        $sameActor = ($assignee -and $reviewer -and ($assignee -eq $reviewer) -and ($assignee -ne "pm" -or $RequireIndependentReviewer.IsPresent))
-        ((-not $isDone) -and $RequireIndependentReviewer.IsPresent) -or ($isDone -and $sameActor)
-    })
+            $isDone = ([string]$_.status -eq "done")
+            $assignee = [string]$_.assignee
+            $reviewer = if ($_.evidence) { [string]$_.evidence.reviewer } else { "" }
+            $sameActor = ($assignee -and $reviewer -and ($assignee -eq $reviewer) -and ($assignee -ne "pm" -or $RequireIndependentReviewer.IsPresent))
+            ((-not $isDone) -and $RequireIndependentReviewer.IsPresent) -or ($isDone -and $sameActor)
+        })
 
     $probePassed = if ($null -ne $IndependentProbe) { [bool](& $IndependentProbe) } else { $true }
     $v1Passed = [bool]($hasDialecticalSpec -or -not (Test-Path -LiteralPath $specsDir))
@@ -781,5 +786,5 @@ function Invoke-SenDialecticalAudit {
     return $result
 }
 $senBoundedLoopPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.BoundedLoop.psm1"
-if (Test-Path -LiteralPath $senBoundedLoopPath) { Import-Module -Name $senBoundedLoopPath -Global -Force }
+if ((-not $global:SenCoreBootstrapActive) -and (Test-Path -LiteralPath $senBoundedLoopPath)) { Import-Module -Name $senBoundedLoopPath -Global -Force }
 Export-ModuleMember -Function Get-SenFileSha256, Get-SenTextSha256, Get-SenCodeRevisionSnapshot, New-SenFalsificationPlan, Test-SenFalsificationPlan, Register-SenClaim, Invoke-SenExecutableEvidence, Register-SenCounterexample, Get-SenBlindReviewPackage, Invoke-SenIndependentVerdict, Lock-SenQualityBaseline, Test-SenAntiMetricGaming, Invoke-SenGovernanceNegativeTest, Invoke-SenDialecticalAudit

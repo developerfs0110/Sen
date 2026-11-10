@@ -28,12 +28,54 @@
 ## How Sen Works
 
 ```mermaid
-flowchart LR
-    A["Work Request"] --> B["Deterministic Risk Triage (Get-SenTaskRiskScore)"]
-    B --> C["Dialectical Proof-Critique & Restore Point"]
-    C --> D["Optimistic Parallel Execution & 2-Way Sync (DAG / File Lock / _rev)"]
-    D --> E["Quality Gates (Clean Code 6D + STRIDE + VN Law + 12-Step Audit)"]
-    E --> F["Handover, Acceptance Report & Remote CI Auto-Heal (Invoke-SenCiPushLoop)"]
+flowchart TB
+    subgraph S1["1. Intake & Deterministic Risk Triage"]
+        direction LR
+        A(["👤 Work Request"])
+        B{"🎯 Risk Triage (Get-SenTaskRiskScore)"}
+    end
+
+    subgraph S2["2. Dialectical Proof & Safety Checkpoint"]
+        direction LR
+        C["🧠 Best-of-the-Best Proof & 7-Vector Critique"]
+        RP[("🛡️ Restore Point (New-SenRestorePoint)")]
+    end
+
+    subgraph S3["3. Parallel Execution & Quality Governance"]
+        direction LR
+        D["⚙️ DAG / File Lock / _rev & 2-Way Sync"]
+        E{"✅ Quality Gates (Clean Code 6D + STRIDE + VN Law + 12-Step Audit)"}
+    end
+
+    subgraph S4["4. Handover & Remote CI Auto-Heal"]
+        direction LR
+        F(["🚀 Delivery Report & Remote CI Auto-Heal (Invoke-SenCiPushLoop)"])
+    end
+
+    A -->|"① Analyze"| B
+    B -->|"② Tier 2-3"| C
+    C -->|"③ Safety Lock"| RP
+    RP -->|"④ Execute"| D
+    B -.->|"② Tier 1 (Fast-Track)"| D
+    D -->|"⑤ Verify"| E
+    E -->|"⑥ 100% Green"| F
+
+    classDef actor fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc
+    classDef gate fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed
+    classDef engine fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#eef2ff
+    classDef storage fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ecfdf5
+    classDef out fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#faf5ff
+
+    class A actor
+    class B,E gate
+    class C,D engine
+    class RP storage
+    class F out
+
+    style S1 fill:#0f172a,stroke:#334155,stroke-width:1px,color:#94a3b8
+    style S2 fill:#022c22,stroke:#059669,stroke-width:1.5px,color:#6ee7b7
+    style S3 fill:#1e1b4b,stroke:#4f46e5,stroke-width:1.5px,color:#a5b4fc
+    style S4 fill:#2e1065,stroke:#7e22ce,stroke-width:1.5px,color:#d8b4fe
 ```
 
 | Tier | Label | Criteria | How Sen's "Present First — Execute Immediately — Report Result" Works |
