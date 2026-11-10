@@ -295,8 +295,8 @@ try {
         }
     }
 
-    if (($env:SEN_TRUSTED_HOOK -ne "1") -and ($cmd -match '(?i)\bSync-SenOfficeState\b[^|;&]*\s-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*\s-Force\b|\bClear-SenTasks\b|\bSEN_TRUSTED_(INSTALLER|HOOK)\b')) {
-        Out-Decision "deny" "[SEN GUARD] Blocked: Untrusted self-resealing of state-seal.json, quality-baseline.json, Clear-SenTasks, or SEN_TRUSTED bypass via run_command is prohibited." $primaryWs $toolName $cmd $cmd
+    if (($env:SEN_TRUSTED_HOOK -ne "1") -and ($cmd -match '(?i)\bSync-SenOfficeState\b[^|;&]*\s-UpdateSeal\b|\bLock-SenQualityBaseline\b[^|;&]*\s-Force\b|\bClear-SenTasks\b|\bWrite-SenAtomicJson\b|\bSEN_TRUSTED_(INSTALLER|HOOK)\b')) {
+        Out-Decision "deny" "[SEN GUARD] Blocked: Untrusted self-resealing of state-seal.json, quality-baseline.json, Write-SenAtomicJson, Clear-SenTasks, or SEN_TRUSTED bypass via run_command is prohibited." $primaryWs $toolName $cmd $cmd
     }
 
     # 4. Non-destructive media safety rule: block ffmpeg in-place overwrite of the same input file path
@@ -343,8 +343,12 @@ try {
         Out-Decision "deny" "[SEN GUARD] Blocked: git branch -D (force-deletes unmerged branch). If you truly need this command, run it manually." $primaryWs $toolName $cmd $cmd
     }
 
-    # 5. Zero-Amnesia Pre-Commit / Pre-Push Auto-Seal, CodeHealth & DOM XSS Gate
+    # 5. Zero-Amnesia Pre-Commit / Pre-Push Auto-Seal, CodeHealth, Raw Byte Budget & Mandatory Invoke-SenCiPushLoop Gate
     if ($cmd -match '(?i)\bgit\b[^|;&]*\b(commit|push)\b') {
+        $isTestWs = $primaryWs -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test)|TestDrive)'
+        if ((-not $isTestWs) -and ($env:SEN_CI_PUSH_LOOP -ne "1") -and ($cmd -match '(?i)\bgit\b[^|;&\r\n]*\bpush\b') -and ($cmd -notmatch '(?i)\bInvoke-SenCiPushLoop\b')) {
+            Out-Decision "deny" "[SEN GUARD] Blocked: Direct 'git push' is prohibited by Rule 12 (Zero-Amnesia CI Gate). You MUST call Invoke-SenCiPushLoop -RepoPath '<path>' so pre-push verification and remote GitHub Actions CI status are checked automatically." $primaryWs $toolName $primaryWs $cmd
+        }
         $gitTargetDir = $primaryWs
         if ($cmd -match '(?i)\bgit\s+-C\s+(?:"([^"]+)"|''([^'']+)''|(\S+))') {
             $gitTargetDir = if ($matches[1]) { $matches[1] } elseif ($matches[2]) { $matches[2] } else { $matches[3] }
@@ -352,8 +356,10 @@ try {
         elseif ($cmd -match '(?i)\b(?:Set-Location|cd|Push-Location)\s+(?:-(?:Path|LiteralPath)\s+)?(?:"([^"]+)"|''([^'']+)''|([^|;&\s]+))') {
             $gitTargetDir = if ($matches[1]) { $matches[1] } elseif ($matches[2]) { $matches[2] } else { $matches[3] }
         }
-        if ($gitTargetDir -and (Test-Path -LiteralPath (Join-Path $gitTargetDir "src"))) {
-            $targetSrc = Join-Path $gitTargetDir "src"
+        $targetSrc = if ($gitTargetDir -and (Test-Path -LiteralPath (Join-Path $gitTargetDir "src"))) { Join-Path $gitTargetDir "src" } elseif ($gitTargetDir -and (Test-Path -LiteralPath (Join-Path $gitTargetDir "scripts"))) { $gitTargetDir } else { "" }
+        $overPsm1 = if ($targetSrc -and (Test-Path -LiteralPath (Join-Path $targetSrc "scripts"))) { @(Get-ChildItem -LiteralPath (Join-Path $targetSrc "scripts") -Filter "*.psm1" -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 46080 }) } else { @() }
+        if ($overPsm1.Count -gt 0) { Out-Decision "deny" "[SEN GUARD] Blocked: Module $($overPsm1[0].Name) exceeds 46,080 raw bytes on disk ($($overPsm1[0].Length) bytes, W3-09)." $primaryWs $toolName $targetSrc $cmd }
+        if ($targetSrc) {
             Import-SenRuntimeModule
             if (Get-Command Measure-SenCodeHealth -ErrorAction SilentlyContinue) {
                 $repoHealth = Measure-SenCodeHealth -Path $targetSrc
