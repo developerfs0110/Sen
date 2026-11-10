@@ -319,6 +319,88 @@ function Register-SenHookExecution {
     return $entry
 }
 
+function Suspend-SenStaleCrossProjectTasks {
+    [CmdletBinding()]
+    param([string]$Workspace = $PWD.Path, [string]$ProjectPath = "", [int]$StaleHours = 12)
+    if ([string]::IsNullOrWhiteSpace($Workspace)) { return 0 }
+    $tkFile = Join-Path $Workspace ".agents/office/tasks.json"
+    if (-not (Test-Path -LiteralPath $tkFile)) { return 0 }
+    $raw = Read-SenSafeJson -Path $tkFile
+    if ($null -eq $raw) { return 0 }
+    $items = if ($raw.PSObject.Properties['tasks']) { @($raw.tasks) } elseif ($raw -is [array]) { @($raw) } else { @($raw) }
+    $cutoff = [DateTime]::UtcNow.AddHours(-1 * [Math]::Max(1, $StaleHours)).ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $relProj = ""
+    if (-not [string]::IsNullOrWhiteSpace($ProjectPath) -and $ProjectPath.Length -gt $Workspace.Length -and $ProjectPath.StartsWith($Workspace, [StringComparison]::OrdinalIgnoreCase)) {
+        $relProj = ($ProjectPath.Substring($Workspace.Length) -replace '^[/\\]+', '' -replace '\\', '/').ToLowerInvariant()
+    }
+    $changed = 0
+    foreach ($t in $items) {
+        if ($null -eq $t -or [string]$t.status -in @("done", "backlog")) { continue }
+        $upTs = if ($t.PSObject.Properties['updatedAt'] -and $t.updatedAt) { [string]$t.updatedAt } elseif ($t.PSObject.Properties['createdAt'] -and $t.createdAt) { [string]$t.createdAt } else { "" }
+        $isOld = (-not [string]::IsNullOrWhiteSpace($upTs)) -and ($upTs -lt $cutoff)
+        $isCrossProj = $false
+        if ($relProj -and $t.PSObject.Properties['allowedPaths'] -and $t.allowedPaths) {
+            $ap = @($t.allowedPaths | Where-Object { $_ -and $_ -ne "*" })
+            if ($ap.Count -gt 0 -and (@($ap | Where-Object { ([string]$_ -replace '\\', '/').ToLowerInvariant().StartsWith($relProj) }).Count -eq 0)) { $isCrossProj = $true }
+        }
+        if ($isOld -or $isCrossProj) {
+            $t | Add-Member -NotePropertyName "status" -NotePropertyValue "backlog" -Force
+            $changed++
+        }
+    }
+    if ($changed -gt 0) {
+        if ($raw.PSObject.Properties['tasks']) { $raw.tasks = @($items); Write-SenAtomicJson -Path $tkFile -InputObject $raw -Depth 10 }
+        else { Write-SenAtomicJson -Path $tkFile -InputObject @($items) -Depth 10 }
+    }
+    return $changed
+}
+
+function Sync-SenGlobalUserConfig {
+    param([string]$PluginDir)
+    if ([string]::IsNullOrWhiteSpace($PluginDir) -or (-not (Test-Path -LiteralPath $PluginDir))) { return }
+    try {
+        $usrHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath("UserProfile") }
+        if (-not $usrHome) { return }
+        $gCfg = Join-Path $usrHome ".gemini/config"
+        if (Test-Path -LiteralPath (Join-Path $gCfg "hooks.json")) {
+            [IO.Directory]::CreateDirectory((Join-Path $gCfg "scripts")) | Out-Null
+            Copy-Item -Path (Join-Path $PluginDir "scripts/*") -Destination (Join-Path $gCfg "scripts") -Recurse -Force -EA SilentlyContinue
+            [IO.Directory]::CreateDirectory((Join-Path $gCfg "rules")) | Out-Null
+            Copy-Item -Path (Join-Path $PluginDir "rules/*") -Destination (Join-Path $gCfg "rules") -Recurse -Force -EA SilentlyContinue
+        }
+        $gMd = Join-Path $usrHome ".gemini/GEMINI.md"; $rMd = Join-Path $PluginDir "rules/AGENTS.md"
+        if ((Test-Path -LiteralPath (Join-Path $usrHome ".gemini")) -and (Test-Path -LiteralPath $rMd) -and (Get-Command Update-SenManagedBlock -EA SilentlyContinue)) {
+            [void](Update-SenManagedBlock -FilePath $gMd -InnerContent ([IO.File]::ReadAllText($rMd, [Text.Encoding]::UTF8).TrimEnd()))
+        }
+    }
+    catch { <# Optional global user-level sync #> }
+}
+
+function Invoke-SenWorkspaceSessionResume {
+    param($InputObject, [string]$Workspace, [string]$CanonicalTool = "", [string]$Target = "", [bool]$HasLegacyMarkers = $false)
+    $localRules = Join-Path $Workspace ".agents/rules/AGENTS.md"
+    if (-not (Test-Path -LiteralPath $localRules)) {
+        $srcRules = @((Join-Path $Workspace ".agents/plugins/sen-method/rules/AGENTS.md"), (Join-Path $PSScriptRoot "../rules/AGENTS.md")) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if ($srcRules) { [IO.Directory]::CreateDirectory((Split-Path -Parent $localRules)) | Out-Null; Copy-Item -LiteralPath $srcRules -Destination $localRules -Force -EA SilentlyContinue }
+    }
+    $inFile = Join-Path $Workspace ".agents/office/current-intake.json"
+    $inStale = (-not (Test-Path -LiteralPath $inFile)) -or (((Get-Date).ToUniversalTime() - (Get-Item -LiteralPath $inFile -EA SilentlyContinue).LastWriteTimeUtc).TotalHours -ge 2)
+    if ((-not $inStale) -or (-not (Get-Command Initialize-SenIntake -EA SilentlyContinue))) { return }
+    $sealP = Join-Path $Workspace ".agents/office/state-seal.json"
+    $sealOk = (Test-Path -LiteralPath $sealP) -and (Get-Command Sync-SenOfficeState -EA SilentlyContinue) -and (-not (Sync-SenOfficeState -Workspace $Workspace -VerifySeal).Tampered)
+    if (-not (Test-Path -LiteralPath $inFile)) {
+        $sid = if ($InputObject.PSObject.Properties['sessionId']) { [string]$InputObject.sessionId } else { "" }
+        $rid = if ($InputObject.PSObject.Properties['requestId']) { [string]$InputObject.requestId } else { "" }
+        [void](Initialize-SenIntake -Workspace $Workspace -TaskId "AUTO-INTAKE" -Request ("PreToolUse: " + $CanonicalTool) -FileCount 1 -SessionId $sid -RequestId $rid -SkipOfficeLaunch)
+    }
+    else { (Get-Item -LiteralPath $inFile -EA SilentlyContinue).LastWriteTimeUtc = [DateTime]::UtcNow }
+    if (Get-Command Repair-SenOfficeMojibake -EA SilentlyContinue) { [void](Repair-SenOfficeMojibake -Workspace $Workspace) }
+    if ($HasLegacyMarkers -and (Get-Command Sync-SenPlanToTasks -EA SilentlyContinue)) { [void](Sync-SenPlanToTasks -Workspace $Workspace) }
+    if ((Test-Path -LiteralPath (Join-Path $Workspace ".agents/office/tasks.json")) -and (Get-Command Invoke-SenCheckpointResume -EA SilentlyContinue)) { [void](Invoke-SenCheckpointResume -Workspace $Workspace) }
+    [void](Suspend-SenStaleCrossProjectTasks -Workspace $Workspace -ProjectPath $Target)
+    if ($sealOk) { [void](Sync-SenOfficeState -Workspace $Workspace -UpdateSeal) }
+}
+
 function Invoke-SenPreToolHookBootstrap {
     param($InputObject, [string]$Workspace, [string]$CanonicalTool = "", [string]$Target = "")
     if ([string]::IsNullOrWhiteSpace($Workspace) -or $null -eq $InputObject) { return }
@@ -330,15 +412,9 @@ function Invoke-SenPreToolHookBootstrap {
             [Console]::Out.Write(($denyObj | ConvertTo-Json -Compress))
             exit 0
         }
-        $hasOffice = (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) -or (Test-Path -LiteralPath (Join-Path $Workspace ".agents/rules")) -or ($InputObject.PSObject.Properties['bootstrapIntake'] -and [bool]$InputObject.bootstrapIntake) -or ($env:SEN_ENFORCE_PRETOOL_INTAKE -eq "1")
-        if ($hasOffice -and (-not (Test-Path -LiteralPath $inFile)) -and (Get-Command Initialize-SenIntake -EA SilentlyContinue)) {
-            $sealP = Join-Path $Workspace ".agents/office/state-seal.json"
-            $sealOk = (Test-Path -LiteralPath $sealP) -and (Get-Command Sync-SenOfficeState -EA SilentlyContinue) -and (-not (Sync-SenOfficeState -Workspace $Workspace -VerifySeal).Tampered)
-            $sid = if ($InputObject.PSObject.Properties['sessionId']) { [string]$InputObject.sessionId } else { "" }
-            $rid = if ($InputObject.PSObject.Properties['requestId']) { [string]$InputObject.requestId } else { "" }
-            [void](Initialize-SenIntake -Workspace $Workspace -TaskId "AUTO-INTAKE" -Request ("PreToolUse: " + $CanonicalTool) -FileCount 1 -SessionId $sid -RequestId $rid -SkipOfficeLaunch)
-            if ($sealOk) { [void](Sync-SenOfficeState -Workspace $Workspace -UpdateSeal) }
-        }
+        $hasLegacyMarkers = (Test-Path -LiteralPath (Join-Path $Workspace "docs/TODO.md")) -or (Test-Path -LiteralPath (Join-Path $Workspace "docs/superpowers/plans")) -or (Test-Path -LiteralPath (Join-Path $Workspace "docs/CONTEXT.md"))
+        $hasOffice = (Test-Path -LiteralPath (Join-Path $Workspace ".agents/office")) -or (Test-Path -LiteralPath (Join-Path $Workspace ".agents/rules")) -or $hasLegacyMarkers -or ($InputObject.PSObject.Properties['bootstrapIntake'] -and [bool]$InputObject.bootstrapIntake) -or ($env:SEN_ENFORCE_PRETOOL_INTAKE -eq "1")
+        if ($hasOffice) { Invoke-SenWorkspaceSessionResume -InputObject $InputObject -Workspace $Workspace -CanonicalTool $CanonicalTool -Target $Target -HasLegacyMarkers $hasLegacyMarkers }
         $hasExecId = ($InputObject.PSObject.Properties['executionId'] -and -not [string]::IsNullOrWhiteSpace([string]$InputObject.executionId)) -or ($InputObject.PSObject.Properties['trackExecution'] -and [bool]$InputObject.trackExecution) -or ($env:SEN_TRACK_EXECUTION_LEDGER -eq "1")
         if ($hasExecId) {
             $exId = if ($InputObject.PSObject.Properties['executionId']) { [string]$InputObject.executionId } else { "" }
@@ -514,7 +590,7 @@ $senCoreInternalExports = @(
     "Get-SenTextDigest", "Repair-SenUtf8Mojibake", "Repair-SenOfficeMojibake", "Get-SenRepoCodeRevision", "Invoke-SenLiveEvidenceRunner", "Test-SenTaskAcceptanceCriteria",
     "Get-SenHungProcessIds", "Test-SenSymlinkEscape", "Build-SenHarnessBridgeText", "Install-SenHarnessHookFile",
     "Resolve-SenRequestedHarnesses", "Test-SenHarnessLiveProbe", "Sync-SenTodoMarkdownItems", "Get-SenStepArtifactHash",
-    "Register-SenHookExecution", "Invoke-SenPreToolHookBootstrap", "Complete-SenHookExecution", "Test-SenDeliveryReconciliation",
+    "Register-SenHookExecution", "Suspend-SenStaleCrossProjectTasks", "Sync-SenGlobalUserConfig", "Invoke-SenWorkspaceSessionResume", "Invoke-SenPreToolHookBootstrap", "Complete-SenHookExecution", "Test-SenDeliveryReconciliation",
     "Resolve-SenBrowserIdentity", "Update-SenOfficeTabHeartbeat", "Get-SenOfficeTabStatus"
 )
 if ($senCoreInternalExports) { Export-ModuleMember -Function $senCoreInternalExports }

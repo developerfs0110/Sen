@@ -333,6 +333,7 @@ function Install-SenSelf {
         [System.IO.File]::WriteAllText((Join-Path $fwdDir "guard.sh"), "#!/usr/bin/env sh`nexec sh `"`$(dirname `"`$0`")/../../../../scripts/guard.sh`"`n", $utf8NoBom)
         [System.IO.File]::WriteAllText((Join-Path $fwdDir "office-post.sh"), "#!/usr/bin/env sh`nexec sh `"`$(dirname `"`$0`")/../../../../scripts/office-post.sh`"`n", $utf8NoBom)
         [System.IO.File]::WriteAllText((Join-Path $dest ".sen-commit"), $commit + "`n", $utf8NoBom)
+        if (Get-Command Sync-SenGlobalUserConfig -ErrorAction SilentlyContinue) { Sync-SenGlobalUserConfig -PluginDir $dest }
         return [pscustomobject]@{ Status = "installed"; Commit = $commit; Error = $null }
     }
     catch {
