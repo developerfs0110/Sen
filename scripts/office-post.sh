@@ -106,6 +106,35 @@ try:
     path_arg = args.get("Path") or args.get("file_path") or args.get("target_file") or args.get("path") or args.get("SearchPath") or ""
     cmd_arg = args.get("CommandLine") or args.get("command") or args.get("cmd") or ""
     short_file = os.path.basename(path_arg) if path_arg else ""
+    raw_user = str(d.get("lastUserInput") or d.get("prompt") or "")
+    m_ur = re.search(r"(?s)<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", raw_user)
+    if m_ur: raw_user = m_ur.group(1)
+    raw_user = re.sub(r"[\r\n\t]+", " ", re.sub(r"(?s)<ADDITIONAL_METADATA>.*$", "", raw_user)).strip()
+    is_triv = len(raw_user) < 4 or bool(re.match(r"^(?i)(ok|okay|yes|y|no|duyet|tiep|push|test|done|xong|lam luon|just do it)[.!?]*$", raw_user))
+    clean_user = (raw_user[:93] + "..." if len(raw_user) > 96 else raw_user) if not is_triv else ""
+    tool_sum = re.sub(r"[\r\n\t]+", " ", str(args.get("toolSummary") or args.get("description") or "")).strip()
+    in_p = os.path.join(off_dir, "current-intake.json")
+    in_obj = {}
+    if os.path.isfile(in_p):
+        try: in_obj = json.load(open(in_p, "r", encoding="utf-8"))
+        except Exception: in_obj = {}
+    prev_req = str(in_obj.get("request") or "")
+    if clean_user and clean_user != prev_req:
+        in_obj["taskId"] = in_obj.get("taskId") or "AUTO-WORK"
+        in_obj["userName"] = in_obj.get("userName") or "User"
+        in_obj["request"] = clean_user
+        in_obj["tier"] = in_obj.get("tier") or 1
+        in_obj["updatedAt"] = now_iso
+        if "createdAt" not in in_obj: in_obj["createdAt"] = now_iso
+        write_atomic(in_p, in_obj); mutated = True
+        prev_req = clean_user
+    base_req = prev_req if (prev_req and not re.match(r"^(?i)(Edit\s+|Modifying\s+|PreToolUse:\s+)", prev_req)) else ""
+    if base_req and tool_sum and tool_sum.lower() not in base_req.lower(): active_title = f"{base_req} - [{tool_sum}]"
+    elif base_req and short_file and tname in ("write_file", "edit_file", "Write", "Edit", "MultiEdit"): active_title = f"{base_req} - [{short_file}]"
+    elif base_req: active_title = base_req
+    elif tool_sum: active_title = tool_sum
+    elif short_file and tname in ("write_file", "edit_file", "Write", "Edit", "MultiEdit"): active_title = f"Modifying {short_file}"
+    else: active_title = ""
     resp = d.get("tool_response") or d.get("toolResult") or d
     ec_raw = resp.get("exit_code") if "exit_code" in resp else resp.get("exitCode")
     has_ec = isinstance(ec_raw, int) or (isinstance(ec_raw, str) and re.match(r"^-?\d+$", ec_raw))
@@ -164,10 +193,24 @@ try:
             try: os.remove(loops_p); mutated = True
             except Exception: pass
         if path_arg and not re.search(r"(?i)/(\.agents|docs)/", path_arg.replace("\\", "/")):
+            task_title = active_title or f"Edit {short_file}"
             tlist = load_tasks()
             if not any(t.get("status") in ("in_progress", "reviewing") for t in tlist):
-                tlist.append({"id": "AUTO-WORK", "title": f"Edit {short_file}", "tier": 1, "status": "in_progress", "assignee": "be", "isTelemetryOnly": True, "updatedAt": now_iso, "_rev": 1})
+                tlist.append({"id": "AUTO-WORK", "title": task_title, "tier": 1, "status": "in_progress", "assignee": "be", "isTelemetryOnly": True, "updatedAt": now_iso, "_rev": 1})
                 save_tasks(tlist); mutated = True
+            else:
+                for t in tlist:
+                    if t.get("id") == "AUTO-WORK" and t.get("status") == "in_progress" and t.get("title") != task_title:
+                        t["title"] = task_title; t["updatedAt"] = now_iso; save_tasks(tlist); mutated = True; break
+            sc_p = os.path.join(off_dir, "showcase.json")
+            sc_obj = {"projectTitle": task_title, "domain": "backend", "tier": 1, "updatedAt": now_iso}
+            if os.path.isfile(sc_p):
+                try: sc_obj = json.load(open(sc_p, "r", encoding="utf-8"))
+                except Exception: pass
+            sc_obj["projectTitle"] = task_title
+            sc_obj["phase1"] = {"summary": f"{task_title} ({short_file})", "specPath": path_arg, "expectedOutputs": [short_file], "updatedAt": now_iso}
+            sc_obj["updatedAt"] = now_iso
+            write_atomic(sc_p, sc_obj); mutated = True
         if re.search(r"(?i)\.(html|css|tsx|jsx|vue|svg)$", path_arg):
             role, lane, eco = "fe", "FE Track", "Edit UI: " + short_file
         else:

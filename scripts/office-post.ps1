@@ -109,6 +109,31 @@ try {
     $fullText = ""
     $model = "inherit"
     $argsObj = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } elseif ($payload.toolArgs) { $payload.toolArgs } else { $payload }
+    $rawUserReq = if ($payload.PSObject.Properties['lastUserInput'] -and $payload.lastUserInput) { [string]$payload.lastUserInput } elseif ($payload.PSObject.Properties['prompt'] -and $payload.prompt) { [string]$payload.prompt } else { "" }
+    if ($rawUserReq -match '(?s)<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>') { $rawUserReq = $matches[1] }
+    $rawUserReq = ($rawUserReq -replace '(?s)<ADDITIONAL_METADATA>.*$', '' -replace '[\r\n\t]+', ' ').Trim()
+    $isTrivialReply = ($rawUserReq.Length -lt 4) -or ($rawUserReq -match '^(?i)(ok|okay|yes|y|no|duyet|tiep|push|test|done|xong|lam luon|just do it)[.!?]*$')
+    $cleanUserReq = if (-not $isTrivialReply) { $(if ($rawUserReq.Length -gt 96) { $rawUserReq.Substring(0, 93) + "..." } else { $rawUserReq }) } else { "" }
+    $toolSumArg = if ($argsObj -and $argsObj.PSObject.Properties['toolSummary'] -and $argsObj.toolSummary) { ([string]$argsObj.toolSummary -replace '[\r\n\t]+', ' ').Trim() } elseif ($argsObj -and $argsObj.PSObject.Properties['description'] -and $argsObj.description) { ([string]$argsObj.description -replace '[\r\n\t]+', ' ').Trim() } else { "" }
+    $inFile = Join-Path $ws ".agents/office/current-intake.json"
+    $inObjCur = if (Test-Path -LiteralPath $inFile) { Read-SenSafeJson -Path $inFile } else { $null }
+    $prevReq = if ($inObjCur -and $inObjCur.request) { [string]$inObjCur.request } else { "" }
+    if ($cleanUserReq -and ($cleanUserReq -ne $prevReq)) {
+        if ($null -ne $inObjCur) {
+            $inObjCur | Add-Member -NotePropertyName "request" -NotePropertyValue $cleanUserReq -Force
+            $inObjCur | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")) -Force
+            Write-SenAtomicJson -Path $inFile -InputObject $inObjCur -Depth 6
+            $hookMutatedOfficeJson = $true
+        }
+        elseif (Get-Command Initialize-SenIntake -ErrorAction SilentlyContinue) {
+            [void](Initialize-SenIntake -Workspace $ws -TaskId "AUTO-WORK" -Request $cleanUserReq -FileCount 1 -SkipOfficeLaunch)
+            $inObjCur = Read-SenSafeJson -Path $inFile
+            $hookMutatedOfficeJson = $true
+        }
+        $prevReq = $cleanUserReq
+    }
+    $baseReq = if ($prevReq -and ($prevReq -notmatch '^(?i)(Edit\s+|Modifying\s+|PreToolUse:\s+)')) { $prevReq } else { "" }
+    $activeMissionTitle = if ($baseReq -and $toolSumArg -and ($baseReq -notlike "*$toolSumArg*")) { "$baseReq - [$toolSumArg]" } elseif ($baseReq -and $shortFile -and ($toolName -in @("write_file", "edit_file"))) { "$baseReq - [$shortFile]" } elseif ($baseReq) { $baseReq } elseif ($toolSumArg) { $toolSumArg } elseif ($shortFile -and ($toolName -in @("write_file", "edit_file"))) { "Modifying $shortFile" } else { "" }
 
     if ($toolName -eq "invoke_subagent") {
         $latchStage = 2
@@ -197,23 +222,32 @@ try {
         $latchStage = 3
         Test-SenStuckLoop -Workspace $ws -ToolName $toolName -Target $pathArg -Reset | Out-Null
         if ($pathArg -and ($pathArg.Replace('\', '/') -notmatch '(?i)/(\.agents|docs)/')) {
-            $inFile = Join-Path $ws ".agents/office/current-intake.json"
             if (((-not (Test-Path -LiteralPath $inFile)) -or ((([DateTime]::UtcNow - (Get-Item -LiteralPath $inFile).LastWriteTimeUtc).TotalHours) -ge 2)) -and (Get-Command Initialize-SenIntake -ErrorAction SilentlyContinue)) {
-                [void](Initialize-SenIntake -Workspace $ws -TaskId "AUTO-WORK" -Request "Edit $shortFile" -FileCount 1 -Files @($pathArg) -SkipOfficeLaunch)
+                [void](Initialize-SenIntake -Workspace $ws -TaskId "AUTO-WORK" -Request $(if ($activeMissionTitle) { $activeMissionTitle } else { "Edit $shortFile" }) -FileCount 1 -Files @($pathArg) -SkipOfficeLaunch)
                 $hookMutatedOfficeJson = $true
             }
-            $inObjCur = if (Test-Path -LiteralPath $inFile) { Read-SenSafeJson -Path $inFile } else { $null }
-            $missionTitle = if ($inObjCur -and $inObjCur.request -and [string]$inObjCur.request -notmatch '^Edit\s+') { [string]$inObjCur.request } else { "Modifying $shortFile" }
+            $missionTitle = if ($activeMissionTitle) { $activeMissionTitle } else { "Modifying $shortFile" }
             if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
-                $curTasks = @(Get-SenTasks -Workspace $ws | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
+                $allT = @(Get-SenTasks -Workspace $ws)
+                $curTasks = @($allT | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
                 if ($curTasks.Count -eq 0 -and (Get-Command New-SenTask -ErrorAction SilentlyContinue)) {
                     [void](New-SenTask -Workspace $ws -Id "AUTO-WORK" -Title $missionTitle -Tier 1 -RiskLevel "low" -Module "AutoTrack" -Assignee "be" -Status "in_progress")
                     $allT = @(Get-SenTasks -Workspace $ws); foreach ($item in $allT) { if ($item -and [string]$item.id -eq "AUTO-WORK") { $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force } }
                     [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true
                 }
+                else {
+                    $updatedAuto = $false
+                    foreach ($item in $allT) {
+                        if ($item -and [string]$item.id -eq "AUTO-WORK" -and [string]$item.status -in @("in_progress", "reviewing") -and [string]$item.title -ne $missionTitle -and [string]$item.title -ne "Auto work test") {
+                            $item.title = $missionTitle; $item.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $updatedAuto = $true
+                        }
+                    }
+                    if ($updatedAuto) { [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true }
+                }
             }
             $shFile = Join-Path $ws ".agents/office/showcase.json"
-            if ((-not (Test-Path -LiteralPath $shFile)) -and (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue)) {
+            $shCur = if (Test-Path -LiteralPath $shFile) { Read-SenSafeJson -Path $shFile } else { $null }
+            if (((-not $shCur) -or ([string]$shCur.projectTitle -ne $missionTitle)) -and (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue)) {
                 [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title $missionTitle -Phase 1 -Summary "Editing $pathArg" -Domain "code")
                 $hookMutatedOfficeJson = $true
             }
@@ -280,7 +314,25 @@ try {
             $from = "be"
             $lane = "System Cmd"
             $shortCmd = if ($cleanCmd.Length -gt 48) { $cleanCmd.Substring(0, 45) + "..." } else { $cleanCmd }
-            $ecoText = "Run: $shortCmd"
+            $ecoText = if ($toolSumArg) { "Run [$toolSumArg]: $shortCmd" } else { "Run: $shortCmd" }
+        }
+        if ($activeMissionTitle -and ($ws -notmatch '(?i)([\\/](temp|tmp|T)[\\/]|sen-(orch|harness|gov|adv|.*-test)|TestDrive)')) {
+            if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
+                $allT = @(Get-SenTasks -Workspace $ws)
+                $updatedAuto = $false
+                foreach ($item in $allT) {
+                    if ($item -and [string]$item.id -eq "AUTO-WORK" -and [string]$item.status -in @("in_progress", "reviewing") -and [string]$item.title -ne $activeMissionTitle -and [string]$item.title -ne "Auto work test") {
+                        $item.title = $activeMissionTitle; $item.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); $updatedAuto = $true
+                    }
+                }
+                if ($updatedAuto) { [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true }
+            }
+            $shFile = Join-Path $ws ".agents/office/showcase.json"
+            $shCur = if (Test-Path -LiteralPath $shFile) { Read-SenSafeJson -Path $shFile } else { $null }
+            if (((-not $shCur) -or ([string]$shCur.projectTitle -ne $activeMissionTitle)) -and (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue)) {
+                [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title $activeMissionTitle -Phase 1 -Summary $ecoText -Domain "code")
+                $hookMutatedOfficeJson = $true
+            }
         }
         $fullText = "Cmd: " + $(if ($cleanCmd.Length -gt 160) { $cleanCmd.Substring(0, 157) + "..." } else { $cleanCmd })
     }

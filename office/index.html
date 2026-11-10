@@ -83,14 +83,14 @@ body.streamer-redact .redactable{filter:blur(4px);user-select:none}
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute"><defs>
-  <radialGradient id="skin3d" cx="38%" cy="32%" r="65%"><stop offset="0%" stop-color="#ffe4cc"/><stop offset="55%" stop-color="#f4c29f"/><stop offset="100%" stop-color="#d3926a"/></radialGradient>
-  <radialGradient id="skinBoss" cx="35%" cy="30%" r="65%"><stop offset="0%" stop-color="#f9d5b8"/><stop offset="60%" stop-color="#e5ae86"/><stop offset="100%" stop-color="#bd7e56"/></radialGradient>
-  <radialGradient id="hairDark" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#4b5563"/><stop offset="35%" stop-color="#1f2937"/><stop offset="100%" stop-color="#090d14"/></radialGradient>
-  <radialGradient id="hairBrown" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#7c4a2d"/><stop offset="45%" stop-color="#4a2a18"/><stop offset="100%" stop-color="#231209"/></radialGradient>
-  <radialGradient id="hairSilver" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#9ca3af"/><stop offset="50%" stop-color="#4b5563"/><stop offset="100%" stop-color="#1f2937"/></radialGradient>
-  <linearGradient id="velvetBack" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#b91c1c"/><stop offset="55%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#450a0a"/></linearGradient>
-  <linearGradient id="velvetSeat" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#dc2626"/><stop offset="60%" stop-color="#991b1b"/><stop offset="100%" stop-color="#5f1414"/></linearGradient>
-  <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fef08a"/><stop offset="50%" stop-color="#eab308"/><stop offset="100%" stop-color="#a16207"/></linearGradient>
+<radialGradient id="skin3d" cx="38%" cy="32%" r="65%"><stop offset="0%" stop-color="#ffe4cc"/><stop offset="55%" stop-color="#f4c29f"/><stop offset="100%" stop-color="#d3926a"/></radialGradient>
+<radialGradient id="skinBoss" cx="35%" cy="30%" r="65%"><stop offset="0%" stop-color="#f9d5b8"/><stop offset="60%" stop-color="#e5ae86"/><stop offset="100%" stop-color="#bd7e56"/></radialGradient>
+<radialGradient id="hairDark" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#4b5563"/><stop offset="35%" stop-color="#1f2937"/><stop offset="100%" stop-color="#090d14"/></radialGradient>
+<radialGradient id="hairBrown" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#7c4a2d"/><stop offset="45%" stop-color="#4a2a18"/><stop offset="100%" stop-color="#231209"/></radialGradient>
+<radialGradient id="hairSilver" cx="35%" cy="25%" r="70%"><stop offset="0%" stop-color="#9ca3af"/><stop offset="50%" stop-color="#4b5563"/><stop offset="100%" stop-color="#1f2937"/></radialGradient>
+<linearGradient id="velvetBack" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#b91c1c"/><stop offset="55%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#450a0a"/></linearGradient>
+<linearGradient id="velvetSeat" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#dc2626"/><stop offset="60%" stop-color="#991b1b"/><stop offset="100%" stop-color="#5f1414"/></linearGradient>
+<linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fef08a"/><stop offset="50%" stop-color="#eab308"/><stop offset="100%" stop-color="#a16207"/></linearGradient>
 </defs></svg>
 <div class="o-top">
   <div class="top-left"><span class="rec">CAM 01 · SEN OFFICE 3D (v0.3.0)</span><span class="conn-pill demo" id="connPill">🔵 DEMO MODE</span><span id="status">Sẵn sàng</span></div>
@@ -185,36 +185,15 @@ const R = {
   law: { n: 'Pháp lý', role: 'Legal Gate · Suit Cổ điển & Sổ Luật', c: '#d1782a', x: 700, y: 620, hair: 'parted', hairMat: 'hairSilver', outfit: 'suit', glasses: 'round', prop: 'lawbook', screen: 'doc', model: 'inherit', read: 8, edit: 1, cmd: 1, time: '00m52s', task: 'Soát giấy phép MIT License & tuân thủ pháp lý', files: ['Xác nhận: LICENSE (MIT)', 'Xác nhận: Ghi công tác giả đầy đủ'] },
   sys: { n: 'Hệ thống', role: 'Phòng máy Server Racks & Bằng chứng', c: '#6e7681', x: 640, y: 400, model: 'System', read: 0, edit: 0, cmd: 160, time: '00m18s', task: 'Lưu trữ luồng sự kiện .agents/office/events.jsonl', files: ['Validate-Repo.ps1: 0 errors', 'All automated tests passing'] }
 };
-const ZONES = [
-  [20,20,280,200,'KHU TRINH SÁT','r1'],
-  [20,270,200,200,'BÀN BA','ba'],
-  [290,290,180,180,'BÀN PM','pm'],
-  [20,500,330,240,'KHU DEV','fe'],
-  [390,500,350,240,'KHU KIỂM ĐỊNH','qa'],
-  [540,290,200,190,'PHÒNG MÁY','sys']
-];
-document.getElementById('legend').innerHTML = [
-  ['#d4a017','Boss (Bạn)'],['#8957e5','PM'],['#db61a2','BA'],['#1f9bb8','Trinh sát'],
-  ['#2f81f7','Dev'],['#0fbf9f','Tester'],['#e5534b','Bảo mật'],['#d1782a','Pháp lý'],['#6e7681','Hệ thống']
-].map(([c,t]) => `<span style="--c:${c}"><i></i>${t}</span>`).join('');
+const ZONES = [[20,20,280,200,'KHU TRINH SÁT','r1'],[20,270,200,200,'BÀN BA','ba'],[290,290,180,180,'BÀN PM','pm'],[20,500,330,240,'KHU DEV','fe'],[390,500,350,240,'KHU KIỂM ĐỊNH','qa'],[540,290,200,190,'PHÒNG MÁY','sys']];
+document.getElementById('legend').innerHTML = [['#d4a017','Boss (Bạn)'],['#8957e5','PM'],['#db61a2','BA'],['#1f9bb8','Trinh sát'],['#2f81f7','Dev'],['#0fbf9f','Tester'],['#e5534b','Bảo mật'],['#d1782a','Pháp lý'],['#6e7681','Hệ thống']].map(([c,t]) => `<span style="--c:${c}"><i></i>${t}</span>`).join('');
 let ang = 0, selectedKey = 'pm', isNight = false, isStreamer = false, currentView = '3d';
 const W = 760;
-function P(x, y, z = 0) {
-  const a = ang * Math.PI / 180, dx = x - W / 2, dy = y - W / 2;
-  const rx = dx * Math.cos(a) - dy * Math.sin(a), ry = dx * Math.sin(a) + dy * Math.cos(a), k = 0.72;
-  return [500 + (rx - ry) * 0.866 * k, 348 + (rx + ry) * 0.5 * k - z];
-}
+function P(x, y, z = 0) { const a = ang * Math.PI / 180, dx = x - W / 2, dy = y - W / 2, rx = dx * Math.cos(a) - dy * Math.sin(a), ry = dx * Math.sin(a) + dy * Math.cos(a); return [500 + (rx - ry) * 0.6235, 348 + (rx + ry) * 0.36 - z]; }
 const poly = (p, f, s, e = '') => `<polygon points="${p.map(q => q.join(',')).join(' ')}" fill="${f}" stroke="${s}" ${e}/>`;
-function box(x, y, w, d, h, top, front, side, stroke = '#00000060', z0 = 0) {
-  return poly([P(x,y+d,z0+h),P(x+w,y+d,z0+h),P(x+w,y+d,z0),P(x,y+d,z0)], front, stroke)
-       + poly([P(x+w,y,z0+h),P(x+w,y+d,z0+h),P(x+w,y+d,z0),P(x+w,y,z0)], side, stroke)
-       + poly([P(x,y,z0+h),P(x+w,y,z0+h),P(x+w,y+d,z0+h),P(x,y+d,z0+h)], top, stroke);
-}
+function box(x, y, w, d, h, top, front, side, stroke = '#00000060', z0 = 0) { return poly([P(x,y+d,z0+h),P(x+w,y+d,z0+h),P(x+w,y+d,z0),P(x,y+d,z0)], front, stroke) + poly([P(x+w,y,z0+h),P(x+w,y+d,z0+h),P(x+w,y+d,z0),P(x+w,y,z0)], side, stroke) + poly([P(x,y,z0+h),P(x+w,y,z0+h),P(x+w,y+d,z0+h),P(x,y+d,z0+h)], top, stroke); }
 function ringOf(s) { return s === 'alert' ? '#ff7b72' : s === 'done' ? '#3fb950' : s === 'busy' ? '#58a6ff' : 'none'; }
-function tag(r, y) {
-  const w = r.n.length * 6.8 + 20;
-  return `<g transform="translate(0,${y})"><rect x="${-w/2}" y="0" width="${w}" height="18" rx="6" fill="#0d1117" stroke="${r.c}" stroke-width="1.5"/><circle cx="${-w/2+8}" cy="9" r="3" fill="${r.c}"/><text x="4" y="13" text-anchor="middle" fill="#f0f6fc" style="font:${r.strong?700:600} 11.5px system-ui">${r.n}</text></g>`;
-}
+function tag(r, y) { const w = r.n.length * 6.8 + 20; return `<g transform="translate(0,${y})"><rect x="${-w/2}" y="0" width="${w}" height="18" rx="6" fill="#0d1117" stroke="${r.c}" stroke-width="1.5"/><circle cx="${-w/2+8}" cy="9" r="3" fill="${r.c}"/><text x="4" y="13" text-anchor="middle" fill="#f0f6fc" style="font:${r.strong?700:600} 11.5px system-ui">${r.n}</text></g>`; }
 function person(k, s) {
   const r = R[k], [sx, sy] = P(r.x, r.y), ring = ringOf(s), c = r.c, anim = (s === 'busy' || s === 'alert') ? 'bob' : 'breathe';
   const armL = s === 'busy' ? -22 : s === 'alert' ? -45 : -10, armR = s === 'busy' ? 18 : s === 'alert' ? 42 : 10, hUrl = `url(#${r.hairMat || 'hairDark'})`;
@@ -373,23 +352,9 @@ const DEMO_TASKS = [
   { id: 'TASK-03', title: 'Chấm điểm Rủi ro (Get-SenTaskRiskScore) & 32 Kịch bản', module: 'Risk Engine', tier: 3, riskLevel: 'high', assignee: 'ba', dependsOn: ['TASK-01'], allowedPaths: ['tests/TierScenarios.Tests.ps1'], status: 'done', evidence: { command: 'tests/run.ps1', exitCode: 0, reviewer: 'tester' } },
   { id: 'TASK-08', title: 'Bảng điều khiển AI Control Center & Metrics', module: 'Sen Office', tier: 2, riskLevel: 'medium', assignee: 'fe', dependsOn: ['TASK-01'], allowedPaths: ['office/index.html'], status: 'done', evidence: { command: 'Validate-Repo.ps1', exitCode: 0, reviewer: 'sec' } }
 ];
-function shortRelPath(p, ws) {
-  if (!p) return '';
-  let s = String(p).replace(/\\/g, '/'), w = String(ws || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  if (w && s.toLowerCase().startsWith(w.toLowerCase() + '/')) s = s.slice(w.length + 1);
-  return s.length > 68 ? '…' + s.slice(-65) : s;
-}
-function detectAppLocalhostUrls(data) {
-  const urls = new Set(), officePort = String(location.port || (data?.config?.port || '47890')), re = /https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})(?:\/[^\s"'<>`,)\\]*)?/gi;
-  [JSON.stringify(data?.showcase || {}), JSON.stringify((data?.tasks || []).slice(-10)), JSON.stringify((data?.events || []).slice(-60))].forEach(txt => { let m; while ((m = re.exec(txt)) !== null) { const port = m[1], num = Number(port); if (port !== officePort && (num < 47890 || num > 47910)) { const clean = m[0].replace(/\\+$/, ''); urls.add(clean.endsWith('/') ? clean : clean + '/'); } } });
-  return [...urls];
-}
-function getSessionEventCluster(evs) {
-  if (!Array.isArray(evs) || !evs.length) return [];
-  let startIdx = Math.max(0, evs.length - 50);
-  for (let i = evs.length - 1; i > 0; i--) { if (Number(evs[i].ts || 0) - Number(evs[i - 1].ts || 0) > 900000) { startIdx = i; break; } }
-  return evs.slice(startIdx);
-}
+function shortRelPath(p, ws) { if (!p) return ''; let s = String(p).replace(/\\/g, '/'), w = String(ws || '').replace(/\\/g, '/').replace(/\/+$/, ''); if (w && s.toLowerCase().startsWith(w.toLowerCase() + '/')) s = s.slice(w.length + 1); return s.length > 68 ? '…' + s.slice(-65) : s; }
+function detectAppLocalhostUrls(data) { const urls = new Set(), officePort = String(location.port || (data?.config?.port || '47890')), re = /https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})(?:\/[^\s"'<>`,)\\]*)?/gi; [JSON.stringify(data?.showcase || {}), JSON.stringify((data?.tasks || []).slice(-10)), JSON.stringify((data?.events || []).slice(-60))].forEach(txt => { let m; while ((m = re.exec(txt)) !== null) { const port = m[1], num = Number(port); if (port !== officePort && (num < 47890 || num > 47910)) { const clean = m[0].replace(/\\+$/, ''); urls.add(clean.endsWith('/') ? clean : clean + '/'); } } }); return [...urls]; }
+function getSessionEventCluster(evs) { if (!Array.isArray(evs) || !evs.length) return []; let startIdx = Math.max(0, evs.length - 50); for (let i = evs.length - 1; i > 0; i--) { if (Number(evs[i].ts || 0) - Number(evs[i - 1].ts || 0) > 900000) { startIdx = i; break; } } return evs.slice(startIdx); }
 function renderTaskManager(tasks, metrics, lessons, scale, sessionEvs, ws) {
   const useLive = hasLiveHistory && !manualDemoActive; let list = [];
   if (!useLive) list = (Array.isArray(tasks) && tasks.length > 0) ? tasks : DEMO_TASKS;
@@ -421,12 +386,19 @@ function renderTaskManager(tasks, metrics, lessons, scale, sessionEvs, ws) {
   }).join('');
   if (Array.isArray(lessons) && lessons.length > 0) { const lb = document.getElementById('lessonsBox'); if (lb) lb.innerHTML = lessons.map(l => `• <b>[${escapeHtml(l.category)}]</b> ${escapeHtml(l.problem)} ➔ <span style="color:#7ee787">${escapeHtml(l.solution)}</span>`).join('<br>'); }
 }
+function getLiveMissionTitle(data, editedFiles, lastEv) {
+  const tks = Array.isArray(data?.tasks) ? data.tasks : [], act = tks.find(t => t && (t.status === 'in_progress' || t.status === 'reviewing')) || tks[tks.length - 1] || null;
+  const inReq = (data?.intake?.request && !/^(Edit\s+|Modifying\s+|PreToolUse:\s+)/i.test(String(data.intake.request))) ? String(data.intake.request).trim() : '';
+  const shTit = (data?.showcase?.projectTitle && !/^Modifying\s+/i.test(String(data.showcase.projectTitle))) ? String(data.showcase.projectTitle).trim() : '';
+  const rawTit = act ? String(act.title || '').trim() : '', best = (rawTit && !/^Modifying\s+/i.test(rawTit)) ? rawTit : (inReq || shTit || rawTit || (editedFiles?.length ? `Cập nhật: ${editedFiles.slice(0, 2).join(', ')}` : (lastEv?.ecoText || 'Phiên làm việc trực tiếp')));
+  return { act, best, full: act?.id ? `[${act.id}] ${best}` : best };
+}
 function renderDualPhaseReal(data, sessionEvs, appUrls) {
-  const ws = data?.workspace || '', tks = Array.isArray(data?.tasks) ? data.tasks : [], activeTask = tks.find(t => t && (t.status === 'in_progress' || t.status === 'reviewing')) || tks[tks.length - 1];
-  const edited = [...new Set(sessionEvs.filter(e => e.tool === 'write_file' || e.tool === 'edit_file').map(e => shortRelPath(e.target, ws)).filter(Boolean))], reads = [...new Set(sessionEvs.filter(e => e.tool === 'read_file' || e.tool === 'grep_search').map(e => shortRelPath(e.target || e.ecoText, ws)).filter(Boolean))];
+  const ws = data?.workspace || '', edited = [...new Set(sessionEvs.filter(e => e.tool === 'write_file' || e.tool === 'edit_file').map(e => shortRelPath(e.target, ws)).filter(Boolean))], reads = [...new Set(sessionEvs.filter(e => e.tool === 'read_file' || e.tool === 'grep_search').map(e => shortRelPath(e.target || e.ecoText, ws)).filter(Boolean))];
+  const { act: activeTask, full: bestPhaseTitle } = getLiveMissionTitle(data, edited, sessionEvs[sessionEvs.length - 1]);
   const cmds = [...new Set(sessionEvs.filter(e => e.tool === 'run_command').map(e => e.ecoText).filter(Boolean))], rolesUsed = [...new Set(sessionEvs.map(e => R[e.from]?.n || e.from))];
   const p1TierEl = document.getElementById('p1Tier'); p1TierEl.textContent = officePhase === 'LIVE_STREAMING' ? '🟢 ĐANG THỰC THI' : `🟡 NGỦ ĐÔNG (Cấp ${activeTask?.tier || data?.showcase?.tier || 2})`; p1TierEl.className = officePhase === 'LIVE_STREAMING' ? 'conn-pill live' : 'conn-pill hib';
-  document.getElementById('p1Summary').textContent = activeTask ? `[${activeTask.id}] ${activeTask.title}` : (data?.showcase?.phase1?.summary || 'Phiên thực thi trực tiếp trên Workspace');
+  document.getElementById('p1Summary').textContent = bestPhaseTitle;
   const p1Items = [];
   if (activeTask && Array.isArray(activeTask.allowedPaths) && activeTask.allowedPaths.length) p1Items.push(`Phạm vi file mục tiêu: ${activeTask.allowedPaths.join(', ')}`);
   if (rolesUsed.length) p1Items.push(`Nhân sự tham gia phiên: ${rolesUsed.join(', ')}`);
@@ -485,16 +457,22 @@ function syncRealTelemetry(data, forceFullRebuild) {
   const mbState = document.getElementById('mbStateText'), mbTask = document.getElementById('mbTaskText'), mbLatest = document.getElementById('mbLatestAction'), mbUrlWrap = document.getElementById('mbLocalhostWrap'), btnResume = document.getElementById('btnResumeLive');
   if (btnResume) btnResume.style.display = manualDemoActive ? 'inline-block' : 'none';
   const editedFiles = [...new Set(liveSessionEvs.filter(e => e.tool === 'write_file' || e.tool === 'edit_file').map(e => shortRelPath(e.target, data?.workspace)).filter(Boolean))];
-  const curTaskTitle = activeTasks.length ? `[${activeTasks[0].id}] ${activeTasks[0].title}` : (tks.length ? `[${tks[tks.length - 1].id}] ${tks[tks.length - 1].title}` : (editedFiles.length ? `Cập nhật: ${editedFiles.slice(0, 2).join(', ')}` : (lastEv?.ecoText || 'Phiên làm việc trực tiếp')));
+  const { best: bestTitle, full: curTaskTitle } = getLiveMissionTitle(data, editedFiles, lastEv);
+  const latestActStr = lastEv ? `[${hms(lastEv.ts || Date.now())}] ${R[lastEv.from]?.n || lastEv.from || 'Agent'}: ${camMode === 'full' ? (lastEv.fullText || lastEv.ecoText) : lastEv.ecoText}` : 'Đang chờ thao tác...';
+  const ptMissionEl = document.getElementById('ptMission'), ptStageEl = document.getElementById('ptStage'), ptActionEl = document.getElementById('ptAction'), stgNum = Number(data?.audit?.currentStage || 0);
+  if (ptMissionEl) ptMissionEl.textContent = curTaskTitle;
+  if (ptStageEl) ptStageEl.textContent = (stgNum === 1 || (lastEv && /^(read_file|grep_search|find_by_name)$/.test(lastEv.tool))) ? 'Bước 1/4: Khảo sát Mã nguồn & Phân tích Yêu cầu (Scout / BA)' : (stgNum === 2 || (lastEv && (lastEv.tool === 'invoke_subagent' || lastEv.from === 'ba'))) ? 'Bước 2/4: Thiết kế Kiến trúc & Điều phối Subagent (BA / Architect)' : (stgNum === 4 || (lastEv && (lastEv.from === 'qa' || lastEv.from === 'sec' || /Validate-Repo|Test-SenDeliveryGate|Invoke-SenPostCodePipeline|tests/i.test(String(lastEv.command || lastEv.ecoText || ''))))) ? 'Bước 4/4: Kiểm thử Chất lượng & Nghiệm thu (QA / Security Gate)' : 'Bước 3/4: Thực thi Mã nguồn & Bảo toàn Trạng thái (Dev Track)';
+  if (ptActionEl) ptActionEl.textContent = `${latestActStr} · Hàng đợi: ${Array.isArray(data?.queue) ? data.queue.length : 0} việc chờ`;
+  document.title = `${officePhase === 'LIVE_STREAMING' ? '🟢' : '🟡'} ${bestTitle.slice(0, 56)} — Sen Office 3D`;
   if (officePhase === 'LIVE_STREAMING') {
     pill.textContent = '🟢 LIVE STREAMING (ĐANG THỰC THI)'; pill.className = 'conn-pill live'; v2dPill.textContent = '🟢 ĐANG THỰC THI (LIVE STREAMING)'; v2dPill.className = 'conn-pill live';
     mbState.textContent = '🟢 LIVE STREAMING (ĐANG THỰC THI)'; mbState.style.color = 'var(--green)'; document.getElementById('status').textContent = `Đang chạy: ${curTaskTitle.slice(0, 58)} · ${allEvs.length} sự kiện thật`;
   } else {
     pill.textContent = '🟡 NGỦ ĐÔNG (LƯU TRẠNG THÁI MỚI NHẤT)'; pill.className = 'conn-pill hib'; v2dPill.textContent = '🟡 NGỦ ĐÔNG (SNAPSHOT MỚI NHẤT)'; v2dPill.className = 'conn-pill hib';
-    mbState.textContent = '🟡 NGỦ ĐÔNG (LƯU TRẠNG THÁI MỚI NHẤT)'; mbState.style.color = '#f2cc60'; document.getElementById('status').textContent = `Ngủ đông · Giữ nguyên trạng thái mới nhất (${allEvs.length} sự kiện thật)`;
+    mbState.textContent = '🟡 NGỦ ĐÔNG (LƯU TRẠNG THÁI MỚI NHẤT)'; mbState.style.color = '#f2cc60'; document.getElementById('status').textContent = `Ngủ đông · ${curTaskTitle.slice(0, 52)} (${allEvs.length} sự kiện thật)`;
   }
   mbTask.textContent = curTaskTitle;
-  mbLatest.textContent = lastEv ? `[${hms(lastEv.ts || Date.now())}] ${R[lastEv.from]?.n || lastEv.from || 'Agent'}: ${camMode === 'full' ? (lastEv.fullText || lastEv.ecoText) : lastEv.ecoText}` : 'Đang chờ thao tác...';
+  mbLatest.textContent = latestActStr;
   mbUrlWrap.innerHTML = appUrls.length > 0 ? appUrls.map(u => `<a class="localhost-btn" href="${escapeHtml(u)}" target="_blank" rel="noopener">🌐 Mở ${escapeHtml(u)} ↗</a>`).join(' ') : `<a class="localhost-btn" href="${escapeHtml(location.origin + '/')}" target="_blank" rel="noopener">🏢 Office ${escapeHtml(location.host)}</a>`;
   if (forceFullRebuild) {
     log.innerHTML = ''; seq = 0;
