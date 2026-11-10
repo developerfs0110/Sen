@@ -207,7 +207,7 @@ function Sync-SenTodoMarkdownItems {
             foreach ($ct in $curTasks) {
                 if ([string]$ct.id -ne $tid) { continue }
                 if ($isArchived -and [string]$ct.status -notin @("done", "backlog")) { $ct.status = "backlog"; $changed = $true }
-                elseif ((-not $isArchived) -and [string]$ct.status -notin @("done", "needs_verification")) {
+                elseif ((-not $isArchived) -and [string]$ct.status -ne "done" -and ([string]$ct.status -ne "needs_verification" -or (-not $ct.PSObject.Properties['documentationComplete']))) {
                     $ct.status = "needs_verification"; $ct | Add-Member -NotePropertyName "documentationComplete" -NotePropertyValue $true -Force; $ct | Add-Member -NotePropertyName "executionVerified" -NotePropertyValue $false -Force; $changed = $true
                 }
             }
