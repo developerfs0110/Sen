@@ -20,15 +20,15 @@ try {
     Import-Module $senModule -Force -ErrorAction SilentlyContinue
 
     if (Get-Command ConvertFrom-SenHookPayload -ErrorAction SilentlyContinue) {
-        $norm     = ConvertFrom-SenHookPayload -InputObject $payload
-        $ws       = $norm.WorkspacePath
+        $norm = ConvertFrom-SenHookPayload -InputObject $payload
+        $ws = $norm.WorkspacePath
         $toolName = $norm.CanonicalTool
-        $pathArg  = $norm.TargetPath
-        $cmdArg   = $norm.CommandLine
+        $pathArg = $norm.TargetPath
+        $cmdArg = $norm.CommandLine
         $queryArg = $norm.Query
-        $hasEc    = [bool]$norm.HasExplicitExitCode
-        $ecVal    = [int]$norm.ExitCode
-        $isErr    = [bool]$norm.IsError
+        $hasEc = [bool]$norm.HasExplicitExitCode
+        $ecVal = [int]$norm.ExitCode
+        $isErr = [bool]$norm.IsError
     }
     else {
         $wsCandidates = [System.Collections.Generic.List[string]]::new()
@@ -89,7 +89,8 @@ try {
             [IO.File]::WriteAllText($reapStamp, "1")
             $reapRes = Clear-SenHungTasks -Workspace $ws -MaxProcessSeconds 180
             if ($reapRes -and ($reapRes.ClearedTaskIds.Count -gt 0 -or $reapRes.ClearedSubagents.Count -gt 0 -or $reapRes.ClosedIdleSubagents.Count -gt 0)) { $hookMutatedOfficeJson = $true }
-        } catch { <# Non-fatal #> }
+        }
+        catch { <# Non-fatal #> }
     }
     $latchStage = 0
 
@@ -194,16 +195,19 @@ try {
                 [void](Initialize-SenIntake -Workspace $ws -TaskId "AUTO-WORK" -Request "Edit $shortFile" -FileCount 1 -Files @($pathArg) -SkipOfficeLaunch)
                 $hookMutatedOfficeJson = $true
             }
+            $inObjCur = if (Test-Path -LiteralPath $inFile) { Read-SenSafeJson -Path $inFile } else { $null }
+            $missionTitle = if ($inObjCur -and $inObjCur.request -and [string]$inObjCur.request -notmatch '^Edit\s+') { [string]$inObjCur.request } else { "Modifying $shortFile" }
             if (Get-Command Get-SenTasks -ErrorAction SilentlyContinue) {
                 $curTasks = @(Get-SenTasks -Workspace $ws | Where-Object { [string]$_.status -in @("in_progress", "reviewing") })
                 if ($curTasks.Count -eq 0 -and (Get-Command New-SenTask -ErrorAction SilentlyContinue)) {
-                    [void](New-SenTask -Workspace $ws -Id "AUTO-WORK" -Title "Edit $shortFile" -Tier 1 -RiskLevel "low" -Module "AutoTrack" -Assignee "be" -Status "in_progress")
+                    [void](New-SenTask -Workspace $ws -Id "AUTO-WORK" -Title $missionTitle -Tier 1 -RiskLevel "low" -Module "AutoTrack" -Assignee "be" -Status "in_progress")
                     $allT = @(Get-SenTasks -Workspace $ws); foreach ($item in $allT) { if ($item -and [string]$item.id -eq "AUTO-WORK") { $item | Add-Member -NotePropertyName "isTelemetryOnly" -NotePropertyValue $true -Force } }
                     [void](Save-SenTasks -Workspace $ws -Tasks $allT -Internal); $hookMutatedOfficeJson = $true
                 }
             }
-            if (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue) {
-                [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title "Modifying $shortFile" -Phase 1 -Summary "Editing $pathArg" -Domain "code")
+            $shFile = Join-Path $ws ".agents/office/showcase.json"
+            if ((-not (Test-Path -LiteralPath $shFile)) -and (Get-Command Write-SenOfficeShowcase -ErrorAction SilentlyContinue)) {
+                [void](Write-SenOfficeShowcase -Workspace $ws -TaskId "AUTO-WORK" -Title $missionTitle -Phase 1 -Summary "Editing $pathArg" -Domain "code")
                 $hookMutatedOfficeJson = $true
             }
             if (Get-Command Test-SenMidTaskEscalation -ErrorAction SilentlyContinue) {

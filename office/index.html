@@ -101,6 +101,11 @@ body.streamer-redact .redactable{filter:blur(4px);user-select:none}
     <span class="clock" id="clock">--:--:--</span>
   </div>
 </div>
+<div class="mission-bar" id="processTitleBanner" style="margin-bottom:10px;border-color:#1f6feb;background:linear-gradient(90deg,#0d1117 0%,#121d2f 100%)">
+<div class="mission-item"><small>🎯 Quá trình / Công việc đang chạy (Mission)</small><b id="ptMission" class="redactable" style="color:#79c0ff">Khởi tạo & Điều phối Quy trình Phát triển Phần mềm Chuẩn (SDLC)</b></div>
+<div class="mission-item"><small>🧭 Giai đoạn Quy trình (SDLC Stage)</small><b id="ptStage" style="color:#7ee787">Bước 1/4: Phân tích Yêu cầu & Tech Stack</b></div>
+<div class="mission-item"><small>⚡ Thao tác Kỹ thuật & Hàng đợi (Live Action)</small><b id="ptAction" class="redactable" style="color:#e6edf3">Chờ sự kiện thật · Hàng đợi: 0 việc chờ</b></div>
+</div>
 <div class="o-ctrl">
   <div class="ctrl-group">
     <button class="live-btn" id="btnResumeLive" onclick="resumeLiveSnapshot()" style="display:none">📡 Dữ liệu Thật (Live / Ngủ đông)</button>
@@ -166,7 +171,6 @@ body.streamer-redact .redactable{filter:blur(4px);user-select:none}
 </section>
 <div class="legend" id="legend"></div>
 <div class="mdl" id="mdl"><div class="bx"><h4>⚠️ Chế độ Chi tiết tốn thêm nhiều token</h4>Ở chế độ này, AI tự ghi thêm lời giải thích cho từng bước trao đổi. Ước tính tốn thêm khoảng <b>3.000–12.000 token cho mỗi việc Cấp 3</b>.<br><br>Chế độ Tiết kiệm (mặc định) chỉ hiện thao tác thật từ Hook và <b>tốn 0 token LLM</b>.<br><br>Thay đổi áp dụng từ việc tiếp theo.<div class="act"><button onclick="closeMdl()">Giữ Tiết kiệm</button><button class="warn" onclick="applyMode('full');closeMdl()">Vẫn bật Chi tiết</button></div></div></div>
-
 <script>
 const R = {
   user: { n: 'BOSS', role: 'Chủ dự án · Sofa Nhung Đỏ & Xì gà', c: '#d4a017', x: 640, y: 120, boss: true, strong: true, model: 'Human', read: 0, edit: 0, cmd: 3, time: '05m10s', task: 'Giao việc, duyệt phương án & nghiệm thu sản phẩm', files: ['Chỉ thị: "Triển khai Sen Office v0.2.0"', 'Duyệt: Thiết kế Chibi 3D + 10 tinh hoa'] },
@@ -181,7 +185,6 @@ const R = {
   law: { n: 'Pháp lý', role: 'Legal Gate · Suit Cổ điển & Sổ Luật', c: '#d1782a', x: 700, y: 620, hair: 'parted', hairMat: 'hairSilver', outfit: 'suit', glasses: 'round', prop: 'lawbook', screen: 'doc', model: 'inherit', read: 8, edit: 1, cmd: 1, time: '00m52s', task: 'Soát giấy phép MIT License & tuân thủ pháp lý', files: ['Xác nhận: LICENSE (MIT)', 'Xác nhận: Ghi công tác giả đầy đủ'] },
   sys: { n: 'Hệ thống', role: 'Phòng máy Server Racks & Bằng chứng', c: '#6e7681', x: 640, y: 400, model: 'System', read: 0, edit: 0, cmd: 160, time: '00m18s', task: 'Lưu trữ luồng sự kiện .agents/office/events.jsonl', files: ['Validate-Repo.ps1: 0 errors', 'All automated tests passing'] }
 };
-
 const ZONES = [
   [20,20,280,200,'KHU TRINH SÁT','r1'],
   [20,270,200,200,'BÀN BA','ba'],
@@ -190,12 +193,10 @@ const ZONES = [
   [390,500,350,240,'KHU KIỂM ĐỊNH','qa'],
   [540,290,200,190,'PHÒNG MÁY','sys']
 ];
-
 document.getElementById('legend').innerHTML = [
   ['#d4a017','Boss (Bạn)'],['#8957e5','PM'],['#db61a2','BA'],['#1f9bb8','Trinh sát'],
   ['#2f81f7','Dev'],['#0fbf9f','Tester'],['#e5534b','Bảo mật'],['#d1782a','Pháp lý'],['#6e7681','Hệ thống']
 ].map(([c,t]) => `<span style="--c:${c}"><i></i>${t}</span>`).join('');
-
 let ang = 0, selectedKey = 'pm', isNight = false, isStreamer = false, currentView = '3d';
 const W = 760;
 function P(x, y, z = 0) {
@@ -209,7 +210,6 @@ function box(x, y, w, d, h, top, front, side, stroke = '#00000060', z0 = 0) {
        + poly([P(x+w,y,z0+h),P(x+w,y+d,z0+h),P(x+w,y+d,z0),P(x+w,y,z0)], side, stroke)
        + poly([P(x,y,z0+h),P(x+w,y,z0+h),P(x+w,y+d,z0+h),P(x,y+d,z0+h)], top, stroke);
 }
-
 function ringOf(s) { return s === 'alert' ? '#ff7b72' : s === 'done' ? '#3fb950' : s === 'busy' ? '#58a6ff' : 'none'; }
 function tag(r, y) {
   const w = r.n.length * 6.8 + 20;
@@ -251,12 +251,10 @@ function desk(k) {
   return box(x, y, 64, 28, 16, '#6b5239', '#4a3828', '#3e2f22', '#2a1f15')
     + `<g transform="translate(${m[0]},${m[1]})"><rect x="-14" y="-11" width="28" height="17" rx="2.5" fill="#0d1117" stroke="${scrCol}" stroke-width="1.4"/><text x="0" y="1" text-anchor="middle" fill="${scrCol}" style="font:700 8.5px ui-monospace,monospace">${scrTxt}</text></g><g transform="translate(${cup[0]},${cup[1]})"><rect x="-3" y="-5" width="6" height="6.5" rx="1.2" fill="#f8fafc" stroke="#94a3b8" stroke-width="0.7"/><path class="steam" d="M-1,-7 q2,-3 0,-6 M2,-7 q2,-3 0,-6" stroke="#e2e8f0" stroke-width="1" fill="none"/></g>`;
 }
-
 const links = new Map(), bubbles = {};
 let state = {};
 function anchor(k) { const r = R[k]; return r.boss ? P(645, 150, 160) : P(r.x, r.y, 70); }
 function curve(f, t) { const [a, b] = anchor(f), [c, d] = anchor(t), mx = (a + c) / 2, my = Math.min(b, d) - 60 - Math.hypot(c - a, d - b) * .12; return `M${a},${b} Q${mx},${my} ${c},${d}`; }
-
 function draw() {
   let s = '';
   const floorFill = isNight ? '#111726' : '#1a2130', gridCol = isNight ? '#1e2738' : '#2a3346';
@@ -282,14 +280,12 @@ function draw() {
   document.getElementById('svg').innerHTML = s;
   render2dTable();
 }
-
 const STATE_META = { alert: ['Cảnh báo', '🚨 Cảnh báo', '#ff7b72'], done: ['Hoàn tất', '✅ Hoàn tất', '#3fb950'], busy: ['Đang làm', '⚡ Đang làm', '#58a6ff'], idle: ['Sẵn sàng', '☕ Sẵn sàng', '#58a6ff'] };
 const DEMO_R = {}; Object.keys(R).forEach(k => { DEMO_R[k] = { read: R[k].read, edit: R[k].edit, cmd: R[k].cmd, time: R[k].time, model: R[k].model, task: R[k].task, files: [...(R[k].files || [])] }; });
 const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const pad = n => String(n).padStart(2, '0');
 const hms = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 const dur = ms => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${pad(s % 60)}s`; };
-
 function selectActor(k) {
   selectedKey = k; const r = R[k] || R.pm, [stLabel, , stColor] = STATE_META[state[k]] || STATE_META.idle;
   document.getElementById('insDot').style.background = r.c;
@@ -526,11 +522,15 @@ function run(m, isManualClick) {
   restoreDemoDefaults(); resetSimulationState(); mode = m; draw(); step(); timer = setInterval(step, 2600);
 }
 function resumeLiveSnapshot() { manualDemoActive = false; clearInterval(timer); timer = null; if (cachedLiveState) syncRealTelemetry(cachedLiveState, true); }
+window._senTabId = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('senTabId')) || ('tab-' + Math.random().toString(36).slice(2, 8));
+try { sessionStorage.setItem('senTabId', window._senTabId); } catch (e) {}
+window.addEventListener('pagehide', () => { try { navigator.sendBeacon?.('/api/client-bye', JSON.stringify({ tabId: window._senTabId })); } catch (e) {} });
 async function pollLiveServer(isInitialLoad) {
   if (location.protocol === 'file:') return;
   try {
     const hdrs = (!isInitialLoad && window._lastStateEtag) ? { 'If-None-Match': window._lastStateEtag } : {};
-    const res = await fetch('/api/state', { cache: 'no-store', headers: hdrs });
+    const q = `?tabId=${encodeURIComponent(window._senTabId)}&vis=${encodeURIComponent(document.visibilityState || 'visible')}&title=${encodeURIComponent(document.title || 'Sen Office 3D')}`;
+    const res = await fetch('/api/state' + q, { cache: 'no-store', headers: hdrs });
     if (res.status === 304) return;
     if (!res.ok) return;
     const etag = res.headers.get('ETag'); if (etag) window._lastStateEtag = etag;

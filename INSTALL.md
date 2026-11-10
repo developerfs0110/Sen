@@ -1,7 +1,7 @@
 # Sen — Agent Installation Instructions (`INSTALL.md`)
 
 > **Audience:** AI coding agents running inside Antigravity IDE, Claude Code, Cursor, GitHub Copilot, Windsurf, or Codex CLI / OpenCode.
-> **Version:** `sen-method` `v0.5.1` (`117` exported cmdlets, `9` `sen-*` skills + `vn-law-check`, `258+` automated tests across `14` test suites, `26/26` completed tasks `TASK-01` -> `TASK-26`).
+> **Version:** `sen-method` `v0.5.1` (`121` exported cmdlets, `9` `sen-*` skills + `vn-law-check`, `260+` automated tests across `14` test suites, `27/27` completed tasks `TASK-01` -> `TASK-27`).
 > **Language rule:** Converse with the user in the language they used to prompt you (Vietnamese if they wrote in Vietnamese, English otherwise).
 
 When a user asks you to install **Sen** from `https://github.com/developerfs0110/Sen` (or a fork/mirror URL they provided), follow these exact bootstrap steps:
@@ -52,5 +52,5 @@ Download and extract the pinned release archive so you can read `skills/sen-setu
 Immediately read and follow [skills/sen-setup/SKILL.md](skills/sen-setup/SKILL.md) inside the downloaded directory (`$senTemp/skills/sen-setup/SKILL.md` or `$SEN_TEMP/skills/sen-setup/SKILL.md`).
 
 - Pass `-SenSource "$senTemp"` (or `--sen-source "$SEN_TEMP"`) when running `scripts/install.ps1` / `scripts/install.sh` so Sen installs directly from the downloaded copy and projects multi-harness rules and security hooks via `Install-SenHarness`.
-- Verify installation integrity with `Validate-Repo.ps1` and `Test-SenCapabilityParity` (`6/6` parity layers, `117/117` exported functions).
+- Verify installation integrity with `Validate-Repo.ps1` and `Test-SenCapabilityParity` (`6/6` parity layers, `121/121` exported functions).
 - Once setup completes, clean up the temporary folder by deleting the individual files or letting the OS temp cleaner remove it (never run destructive wildcard deletes on user directories).

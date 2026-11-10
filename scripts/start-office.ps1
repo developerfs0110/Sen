@@ -43,6 +43,22 @@ if ($DryRun) {
     exit 0
 }
 
+$tabSt = Get-SenOfficeTabStatus -Workspace $resolvedWs -Port $usePort
+if ($tabSt.ServerAlive) {
+    [void](Sync-SenOfficeActiveWorkspace -Port $usePort -Workspace $resolvedWs)
+    Write-Host ("SEN_OFFICE_URL=" + $tabSt.Url)
+    if ($tabSt.TabAlive -or $NoBrowser) {
+        Write-Host "SEN_OFFICE_STATUS=ALREADY_OPEN"
+        Write-Host ("SEN_OFFICE_HINT=" + $tabSt.UserHint)
+        exit 0
+    }
+    [void](Update-SenOfficeTabHeartbeat -Workspace $resolvedWs -Port $usePort -Launched)
+    try { Start-Process $tabSt.Url } catch { <# Ignore headless environments without browser #> }
+    Write-Host "SEN_OFFICE_STATUS=REOPENED_CLOSED_TAB"
+    Write-Host ("SEN_OFFICE_HINT=" + $tabSt.UserHint)
+    exit 0
+}
+
 # Find an available loopback port starting at $usePort
 $listener = $null
 for ($try = 0; $try -lt 20; $try++) {
@@ -62,7 +78,9 @@ if ($null -eq $listener) {
 
 Set-SenOfficeConfig -Workspace $resolvedWs -Mode $cfg.mode -Port $usePort | Out-Null
 $url = "http://127.0.0.1:$usePort/"
+[void](Update-SenOfficeTabHeartbeat -Workspace $resolvedWs -Port $usePort -Launched)
 Write-Host ("SEN_OFFICE_URL=" + $url)
+Write-Host "SEN_OFFICE_STATUS=STARTED_NEW"
 
 if (-not $NoBrowser) {
     try { Start-Process $url } catch { <# Ignore headless environments without browser #> }
@@ -71,13 +89,13 @@ if (-not $NoBrowser) {
 function Send-HttpResponse($stream, [int]$statusCode, [string]$statusText, [string]$contentType, [byte[]]$bodyBytes, [int]$allowedPort = 47890, [string]$etag = "") {
     $etagHdr = if (-not [string]::IsNullOrEmpty($etag)) { "ETag: `"$etag`"`r`n" } else { "" }
     $header = "HTTP/1.1 $statusCode $statusText`r`n" +
-              "Content-Type: $contentType`r`n" +
-              "Content-Length: $($bodyBytes.Length)`r`n" +
-              $etagHdr +
-              "Cache-Control: no-store`r`n" +
-              "Access-Control-Allow-Origin: http://127.0.0.1:$allowedPort`r`n" +
-              "X-Content-Type-Options: nosniff`r`n" +
-              "Connection: close`r`n`r`n"
+    "Content-Type: $contentType`r`n" +
+    "Content-Length: $($bodyBytes.Length)`r`n" +
+    $etagHdr +
+    "Cache-Control: no-store`r`n" +
+    "Access-Control-Allow-Origin: http://127.0.0.1:$allowedPort`r`n" +
+    "X-Content-Type-Options: nosniff`r`n" +
+    "Connection: close`r`n`r`n"
     $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($header)
     $stream.Write($headerBytes, 0, $headerBytes.Length)
     if ($bodyBytes.Length -gt 0) {
@@ -97,13 +115,16 @@ try {
             if ([string]::IsNullOrEmpty($reqLine)) { $client.Close(); continue }
             $parts = $reqLine -split ' '
             $method = $parts[0]
-            $path = ($parts[1] -split '\?')[0]
+            $rawUrlParts = $parts[1] -split '\?', 2
+            $path = $rawUrlParts[0]
+            $queryStr = if ($rawUrlParts.Count -gt 1) { $rawUrlParts[1] } else { "" }
 
             $contentLen = 0
             $originHdr = ""
             $hostHdr = ""
             $contentTypeHdr = ""
             $ifNoneMatchHdr = ""
+            $uaHdr = ""
             while ($true) {
                 $hLine = $reader.ReadLine()
                 if ([string]::IsNullOrEmpty($hLine)) { break }
@@ -121,6 +142,9 @@ try {
                 }
                 elseif ($hLine -match '(?i)^If-None-Match:\s*(.+)$') {
                     $ifNoneMatchHdr = $matches[1].Trim()
+                }
+                elseif ($hLine -match '(?i)^User-Agent:\s*(.+)$') {
+                    $uaHdr = $matches[1].Trim()
                 }
             }
 
@@ -165,6 +189,7 @@ try {
                 Send-HttpResponse $stream 200 "OK" "text/html; charset=utf-8" $bytes $usePort
             }
             elseif ($method -eq "GET" -and $path -eq "/api/state") {
+                $tabSess = Update-SenOfficeTabHeartbeat -Workspace $resolvedWs -Port $usePort -UserAgent $uaHdr -QueryString $queryStr
                 $c = Get-SenOfficeConfig -Workspace $resolvedWs
                 $evs = @(Read-SenOfficeEvents -Workspace $resolvedWs -Limit 150)
                 $sh = Read-SenOfficeShowcase -Workspace $resolvedWs
@@ -173,17 +198,24 @@ try {
                 $met = Get-SenQualityMetrics -Workspace $resolvedWs
                 $rec = Get-SenRecoveryState -Workspace $resolvedWs
                 $les = @(Get-SenExecutionLessons -Workspace $resolvedWs)
+                $inObj = Read-SenSafeJson -Path (Join-Path $resolvedWs ".agents/office/current-intake.json")
+                $auObj = Read-SenSafeJson -Path (Join-Path $resolvedWs ".agents/office/process-audit.json")
+                $qItems = Read-SenSafeJson -Path (Join-Path $resolvedWs ".agents/office/task-queue.state")
                 $st = [ordered]@{
-                    live      = $true
-                    workspace = $resolvedWs
-                    config    = $c
-                    events    = $evs
-                    showcase  = $sh
-                    quota     = $q
-                    tasks     = $tks
-                    metrics   = $met
-                    recovery  = $rec
-                    lessons   = $les
+                    live       = $true
+                    workspace  = $resolvedWs
+                    config     = $c
+                    events     = $evs
+                    showcase   = $sh
+                    quota      = $q
+                    tasks      = $tks
+                    metrics    = $met
+                    recovery   = $rec
+                    lessons    = $les
+                    intake     = $inObj
+                    audit      = $auObj
+                    queue      = $(if ($qItems) { @($qItems) } else { @() })
+                    tabSession = $tabSess
                 }
                 $jBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $st -Depth 8 -Compress))
                 $etagVal = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($jBytes))).Replace("-", "").Substring(0, 16).ToLowerInvariant()
@@ -193,6 +225,11 @@ try {
                 else {
                     Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort $etagVal
                 }
+            }
+            elseif ($method -eq "POST" -and $path -eq "/api/client-bye") {
+                [void](Update-SenOfficeTabHeartbeat -Workspace $resolvedWs -Port $usePort -UserAgent $uaHdr -Closed)
+                $jBytes = [System.Text.Encoding]::UTF8.GetBytes('{"closed":true}')
+                Send-HttpResponse $stream 200 "OK" "application/json; charset=utf-8" $jBytes $usePort
             }
             elseif ($method -eq "POST" -and $path -eq "/api/config") {
                 $reqObj = ConvertFrom-Json -InputObject $bodyStr

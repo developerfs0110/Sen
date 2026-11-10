@@ -1,22 +1,22 @@
 {
-  "manifestVersion": "0.5.0",
-  "updatedAt": "2026-11-08T00:00:00Z",
+  "manifestVersion": "0.5.2",
+  "updatedAt": "2026-11-10T00:00:00Z",
   "stages": [
     {
       "stage": 1,
-      "name": "Intake & Triage"
+      "name": "Intake, Requirement Analysis & Collision Queue"
     },
     {
       "stage": 2,
-      "name": "Design & Plan"
+      "name": "Tech Stack, Design, Plan & Approval Gate"
     },
     {
       "stage": 3,
-      "name": "Execution & TDD"
+      "name": "Execution & Multi-Layer TDD"
     },
     {
       "stage": 4,
-      "name": "Handover & Final Gates"
+      "name": "Handover, Compliance & Final Gates"
     }
   ],
   "steps": [
@@ -25,7 +25,7 @@
       "stage": 1,
       "minTier": 1,
       "scope": "all",
-      "title": "Instant-Ack waiting notice, tier classification & deterministic risk score (Get-SenTaskRiskScore)"
+      "title": "Instant-Ack waiting notice, Requirement Engineering (FR/NFR/Acceptance Criteria), tier classification (Get-SenTaskRiskScore), Singleton Office Tab check (Get-SenOfficeTabStatus) & 4-Signal Target Collision Queue (Test-SenTargetCollision, Register-SenTaskQueue)"
     },
     {
       "id": "S1-AUDIT-INIT",
@@ -39,14 +39,14 @@
       "stage": 2,
       "minTier": 2,
       "scope": "all",
-      "title": "Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best, Invoke-SenDialecticalAudit)"
+      "title": "5-Layer Tech Stack Discovery/Advisory (Get-SenProjectTechStack), Dialectical Proof, Critique & Resource Cost column (Best-of-the-Best, Invoke-SenDialecticalAudit) & Approval-First Gate"
     },
     {
       "id": "S2-DESIGN-SPEC",
       "stage": 2,
       "minTier": 3,
       "scope": "all",
-      "title": "Write technical Design Spec (docs/superpowers/specs/*.md) & Phase 1 Output Simulation (Write-SenOfficeShowcase)"
+      "title": "Write technical Design Spec (docs/superpowers/specs/*.md), API Contract / DB Schema & Phase 1 Output Simulation (Write-SenOfficeShowcase)"
     },
     {
       "id": "S2-IMPL-PLAN",
@@ -74,7 +74,7 @@
       "stage": 3,
       "minTier": 1,
       "scope": "all",
-      "title": "Execute tasks with verified test evidence (ExitCode = 0), Bounded Repair Loop (Invoke-SenBoundedRepairRound / Invoke-SenEscalationQuarantine, .agents/office/bounded-loops.json) & zero hung tasks (Test-SenHungTasks)"
+      "title": "Execute tasks across Testing Pyramid (Unit/Integration/Smoke) with verified test evidence (ExitCode = 0), Bounded Repair Loop (Invoke-SenBoundedRepairRound / Invoke-SenEscalationQuarantine, .agents/office/bounded-loops.json) & zero hung tasks (Test-SenHungTasks)"
     },
     {
       "id": "S3-TWOWAY-SYNC",
@@ -102,7 +102,7 @@
       "stage": 4,
       "minTier": 2,
       "scope": "all",
-      "title": "Sync docs/CONTEXT.md & TODO.md/README/CHANGELOG (Test-SenCapabilityParity), state seal & Git hooks (Sync-SenOfficeState, Install-SenGitHooks), Phase 2 Output Simulation (Write-SenOfficeShowcase), delivery report & CI push loop (Invoke-SenCiPushLoop)"
+      "title": "Sync docs/CONTEXT.md & TODO.md/README/CHANGELOG (Test-SenCapabilityParity), state seal & Git hooks (Sync-SenOfficeState, Install-SenGitHooks), Phase 2 Output Simulation (Write-SenOfficeShowcase), Runbook/delivery report & CI push loop (Invoke-SenCiPushLoop)"
     }
   ]
 }

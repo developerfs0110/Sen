@@ -76,7 +76,7 @@ function Get-SenHungProcessIds {
         $winProcs = if ($env:OS -eq 'Windows_NT' -and (Get-Command Get-CimInstance -EA SilentlyContinue)) { @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -EA SilentlyContinue) } else { @() }
         $anc = [Collections.Generic.HashSet[int]]::new(); $curP = $PID
         for ($k = 0; $k -lt 4; $k++) { [void]$anc.Add($curP); $pe = $winProcs | Where-Object { [int]$_.ProcessId -eq $curP } | Select-Object -First 1; if ($pe -and [int]$pe.ParentProcessId -gt 0) { $curP = [int]$pe.ParentProcessId } else { break } }
-        $hiddenOffices = @($winProcs | Where-Object { [string]$_.CommandLine -match '(?i)start-office\.ps1' -and [string]$_.CommandLine -match '(?i)-WindowStyle\s+Hidden' } | Sort-Object CreationDate -Descending)
+        $hiddenOffices = @($winProcs | Where-Object { [string]$_.CommandLine -match '(?i)start-office\.ps1' } | Sort-Object CreationDate)
         $keepPid = if ($hiddenOffices.Count -gt 0) { [int]$hiddenOffices[0].ProcessId } else { 0 }
         foreach ($wp in $winProcs) {
             $wpId = if ($wp) { [int]$wp.ProcessId } else { 0 }; $cmd = [string]$wp.CommandLine
@@ -86,7 +86,7 @@ function Get-SenHungProcessIds {
             $proc = if ($isTarget) { Get-Process -Id $wpId -EA SilentlyContinue } else { $null }
             if ($null -ne $proc -and $proc.StartTime.ToUniversalTime() -lt $procCutoff) { $hungPids.Add($wpId) }
         }
-        foreach ($up in @(if ($env:OS -ne 'Windows_NT') { Get-Process -Name pwsh,powershell -EA SilentlyContinue } else { @() })) {
+        foreach ($up in @(if ($env:OS -ne 'Windows_NT') { Get-Process -Name pwsh, powershell -EA SilentlyContinue } else { @() })) {
             $uCmd = if ($up.PSObject.Properties['CommandLine'] -and $up.CommandLine) { [string]$up.CommandLine } elseif (Test-Path "/proc/$($up.Id)/cmdline") { [IO.File]::ReadAllText("/proc/$($up.Id)/cmdline").Replace([char]0, ' ') } else { (@(& ps -ww -p $up.Id -o command= 2>$null) -join ' ') }
             if ($up.Id -ne $PID -and $up.StartTime.ToUniversalTime() -le $procCutoff -and $uCmd -match '(?i)(Sen\.psm1|Test-SenDeliveryGate|Invoke-SenPostCodePipeline)' -and ((-not $isTempWs) -or ($uCmd.Replace('\', '/').IndexOf($normWs, [StringComparison]::OrdinalIgnoreCase) -ge 0))) { $hungPids.Add([int]$up.Id) }
         }
@@ -383,13 +383,85 @@ function Test-SenDeliveryReconciliation {
     }
 }
 
+function Resolve-SenBrowserIdentity {
+    param([string]$UserAgent = "", [string]$CachedBrowser = "", [string]$CachedProfile = "")
+    $bName = if ($UserAgent -match '(?i)Edg/') { "Microsoft Edge" } elseif ($UserAgent -match '(?i)CocCoc') { "CocCoc" } elseif ($UserAgent -match '(?i)Brave') { "Brave" } elseif ($UserAgent -match '(?i)Firefox/') { "Mozilla Firefox" } elseif ($UserAgent -match '(?i)Chrome/') { "Google Chrome" } elseif ($CachedBrowser) { $CachedBrowser } else { "" }
+    if ([string]::IsNullOrWhiteSpace($bName) -and $env:OS -eq 'Windows_NT') {
+        try {
+            $progId = [string](Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice" -Name "ProgId" -EA SilentlyContinue).ProgId
+            $bName = if ($progId -match '(?i)MSEdge') { "Microsoft Edge" } elseif ($progId -match '(?i)Brave') { "Brave" } elseif ($progId -match '(?i)CocCoc') { "CocCoc" } elseif ($progId -match '(?i)Firefox') { "Mozilla Firefox" } else { "Google Chrome" }
+        }
+        catch { <# Fallback browser name #> $bName = "Default Browser" }
+    }
+    if ([string]::IsNullOrWhiteSpace($bName)) { $bName = "Default Browser" }
+    $prof = if (-not [string]::IsNullOrWhiteSpace($CachedProfile)) { $CachedProfile } else { "Default" }
+    return [pscustomobject]@{ BrowserName = $bName; ProfileName = $prof }
+}
+
+function Update-SenOfficeTabHeartbeat {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Workspace, [int]$Port = 47890, [string]$UserAgent = "", [string]$QueryString = "", [string]$TabTitle = "", [switch]$Closed, [switch]$Launched)
+    $stPath = Join-Path $Workspace ".agents/office/tab-session.state"
+    $cur = Read-SenSafeJson -Path $stPath
+    $qMap = @{}
+    foreach ($kv in @($QueryString.TrimStart('?') -split '&')) {
+        if ($kv -match '^([^=]+)=(.*)$') { $qMap[$matches[1]] = [Uri]::UnescapeDataString($matches[2]) }
+    }
+    $idInfo = Resolve-SenBrowserIdentity -UserAgent $UserAgent -CachedBrowser $(if ($qMap['browser']) { $qMap['browser'] } elseif ($cur) { [string]$cur.browserName } else { "" }) -CachedProfile $(if ($qMap['profile']) { $qMap['profile'] } elseif ($cur) { [string]$cur.profileName } else { "Default" })
+    $tTitle = if ($TabTitle) { $TabTitle } elseif ($qMap['title']) { [string]$qMap['title'] } elseif ($cur -and $cur.tabTitle) { [string]$cur.tabTitle } else { "Sen Office 3D" }
+    $vis = if ($Closed.IsPresent) { "closed" } elseif ($qMap['vis']) { [string]$qMap['vis'] } elseif ($cur -and $cur.visibilityState) { [string]$cur.visibilityState } else { "visible" }
+    $tId = if ($qMap['tabId']) { [string]$qMap['tabId'] } elseif ($cur -and $cur.tabId) { [string]$cur.tabId } else { "tab-" + $Port }
+    $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $next = [ordered]@{
+        workspace = $Workspace; port = $Port; url = "http://127.0.0.1:$Port/"; tabId = $tId
+        browserName = $idInfo.BrowserName; profileName = $idInfo.ProfileName; tabTitle = $tTitle
+        visibilityState = $vis; tabClosed = [bool]$Closed.IsPresent; lastPingAt = $nowIso
+        launchedAt = $(if ($Launched.IsPresent -or (-not $cur)) { $nowIso } else { [string]$cur.launchedAt })
+    }
+    Write-SenAtomicJson -Path $stPath -InputObject $next -Depth 4
+    return [pscustomobject]$next
+}
+
+function Get-SenOfficeTabStatus {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][Alias("WorkspacePath", "Path")][string]$Workspace, [int]$Port = 0, [int]$HeartbeatTimeoutSeconds = 300, [switch]$SimulateAliveTab)
+    $cfg = Get-SenOfficeConfig -Workspace $Workspace
+    $usePort = if ($Port -gt 1024) { $Port } else { [int]$cfg.port }
+    $stPath = Join-Path $Workspace ".agents/office/tab-session.state"
+    if ($SimulateAliveTab.IsPresent) { [void](Update-SenOfficeTabHeartbeat -Workspace $Workspace -Port $usePort -TabTitle "Sen Office 3D (Live)" -Launched) }
+    $sess = Read-SenSafeJson -Path $stPath
+    $srvAlive = $SimulateAliveTab.IsPresent
+    if (-not $srvAlive) {
+        $tc = [Net.Sockets.TcpClient]::new()
+        try { $ar = $tc.BeginConnect("127.0.0.1", $usePort, $null, $null); if ($ar.AsyncWaitHandle.WaitOne(250, $false) -and $tc.Connected) { $srvAlive = $true } } catch { <# Port closed #> $srvAlive = $false } finally { try { $tc.Close() } catch { <# Ignore #> } }
+    }
+    $idInfo = Resolve-SenBrowserIdentity -CachedBrowser $(if ($sess) { [string]$sess.browserName } else { "" }) -CachedProfile $(if ($sess) { [string]$sess.profileName } else { "Default" })
+    $pingAge = 999999.0; $pingDt = [DateTime]::MinValue
+    if ($sess -and $sess.lastPingAt -and [DateTime]::TryParse([string]$sess.lastPingAt, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$pingDt)) {
+        $pingAge = ([DateTime]::UtcNow - $pingDt).TotalSeconds
+    }
+    $tabAlive = $srvAlive -and ($null -ne $sess) -and (-not [bool]$sess.tabClosed) -and ($pingAge -le $HeartbeatTimeoutSeconds)
+    $tTitle = if ($sess -and $sess.tabTitle) { [string]$sess.tabTitle } else { "Sen Office 3D" }
+    $vis = if ($tabAlive) { $(if ($sess.visibilityState) { [string]$sess.visibilityState } else { "visible" }) } else { "closed" }
+    $url = "http://127.0.0.1:$usePort/"
+    $act = if (-not $srvAlive) { "start_server_and_open_tab" } elseif (-not $tabAlive) { "reuse_server_and_open_tab" } else { "reuse_existing_tab" }
+    $hint = if ($tabAlive) { "Van phong 3D dang mo san tai trinh duyet $($idInfo.BrowserName) (Profile: $($idInfo.ProfileName), Tab: '$tTitle' - $url, Trang thai: $vis). Chuyen sang tab do de xem truc tiep." } else { "Tab Van phong 3D chua mo hoac da dong; se mo 1 tab duy nhat tai $url tren $($idInfo.BrowserName) (Profile: $($idInfo.ProfileName))." }
+    return [pscustomobject][ordered]@{
+        Workspace = $Workspace; Port = $usePort; Url = $url; ServerAlive = [bool]$srvAlive; TabAlive = [bool]$tabAlive
+        VisibilityState = $vis; BrowserName = $idInfo.BrowserName; ProfileName = $idInfo.ProfileName; TabTitle = $tTitle
+        LastPingAt = $(if ($sess) { $sess.lastPingAt } else { $null }); PingAgeSeconds = [Math]::Round($pingAge, 1)
+        ActionNeeded = $act; ShouldOpenNewTab = (-not $tabAlive); UserHint = $hint
+    }
+}
+
 $senCoreInternalExports = @(
     "Get-SenTextDigest", "Get-SenRepoCodeRevision", "Invoke-SenLiveEvidenceRunner", "Test-SenTaskAcceptanceCriteria",
     "Get-SenHungProcessIds", "Test-SenSymlinkEscape", "Build-SenHarnessBridgeText", "Install-SenHarnessHookFile",
     "Resolve-SenRequestedHarnesses", "Test-SenHarnessLiveProbe", "Sync-SenTodoMarkdownItems", "Get-SenStepArtifactHash",
-    "Register-SenHookExecution", "Invoke-SenPreToolHookBootstrap", "Complete-SenHookExecution", "Test-SenDeliveryReconciliation"
+    "Register-SenHookExecution", "Invoke-SenPreToolHookBootstrap", "Complete-SenHookExecution", "Test-SenDeliveryReconciliation",
+    "Resolve-SenBrowserIdentity", "Update-SenOfficeTabHeartbeat", "Get-SenOfficeTabStatus"
 )
-  Export-ModuleMember -Function $senCoreInternalExports
+if ($senCoreInternalExports) { Export-ModuleMember -Function $senCoreInternalExports }
 
 if (-not $global:SenCoreBootstrapActive) {
     $global:SenCoreBootstrapActive = $true

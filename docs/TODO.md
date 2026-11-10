@@ -1,6 +1,6 @@
 # Danh Sách Việc Cần Làm (Backlog & Lộ Trình Nâng Cấp) — Sen (`sen-method`)
 
-- **Cập nhật lần cuối:** 2026-11-09 (`v0.5.1` — Hoàn tất toàn bộ 26/26 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
+- **Cập nhật lần cuối:** 2026-11-10 (`v0.5.1` — Hoàn tất toàn bộ 27/27 hạng mục chính + 4 hạng mục bảo lưu chờ xác nhận)
 - **Mục đích:** Lưu trữ có cấu trúc mọi công việc, ý tưởng và hạng mục cải tiến được Boss chỉ đạo `"lưu vào task cần làm"` trong quá trình trao đổi, đảm bảo không thất thoát giữa các phiên làm việc.
 - **Trạng thái ký hiệu:** `[ ]` Chờ triển khai · `[~]` Đang thực hiện · `[x]` Đã hoàn thành
 
@@ -127,6 +127,10 @@
 - [x] **TASK-26 (P0): Kiểm toán Bảo đảm Vận hành (`Sen-Audit.docx`), Vá 10 lỗ hổng Red-Team (`F-01..F-10` / `AT-01..AT-10`) & Đóng 3 Chốt Chặn Vật Lý Chống Quên (`Initialize-SenIntake`, `Test-SenIntakeCompleteness`, `Dirty-Tree Watchdog`)**
   - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu khi thực hiện Operational Assurance Audit & FMEA theo `Sen-Review/Sen-Audit.docx` (2026-11-09).
   - **Kết quả (`v0.5.1`):** Đã vá toàn bộ 10 lỗ hổng `F-01..F-10` (bật mặc định `-EnforcePhysicalDiff = $true`, đóng lỗ hổng `If-Exists` cho task Cấp 2/3, nối cáp `claims.json`/`falsification-plans.json`, chặn nhảy cóc trạng thái và lệnh giả trong `Complete-SenTaskReview`, chặn `.NET`/`Python` ghi đè `.agents/office/*.json` trong `guard.ps1`, sửa Incremental Auto-Restore Point cho các file thứ 2..N, sửa Regex đường dẫn ổ đĩa Windows trong `Sync-SenPlanToTasks`, xóa hành vi tự tạo giả `showcase.json` trong `Test-SenSingleStepEvidence`), đồng thời bổ sung `Initialize-SenIntake` & `Test-SenIntakeCompleteness` và cảnh báo `[SEN WATCHDOG]` trong `office-post.ps1` (vượt qua 10/10 bài kiểm thử tấn công `AT-01..AT-10` với 0 lỗ hổng).
+
+- [x] **TASK-27 (P0): Tối ưu Singleton 3D Office (`Get-SenOfficeTabStatus`), Thanh Tiêu Đề Tiến Trình 3 Tầng (`#processTitleBanner`), Chuẩn Hóa Quy Trình SDLC 8 Bước (`Get-SenProjectTechStack` & Approval-First Handshake) và Hàng Đợi Tự Động Chống Đụng Độ (`Test-SenTargetCollision` & `Register-SenTaskQueue`)**
+  - **Nguồn:** Chỉ đạo trực tiếp của anh Gấu về tối ưu chống mở trùng tab Văn phòng 3D, hiển thị rõ tiêu đề công việc chính trên Văn phòng 3D, bổ sung khái niệm Tech Stack + quy trình SDLC chờ người dùng gật đầu trước khi code, và tự động xếp hàng đợi khi có phiên khác đang sửa cùng đích (2026-11-10).
+  - **Kết quả (`v0.5.1`):** Đã triển khai `Get-SenOfficeTabStatus` & `Update-SenOfficeTabHeartbeat` (`.agents/office/tab-session.state` + beacon `/api/client-bye`) để nhận diện trình duyệt/profile/tab đang mở và chỉ mở tab mới khi tab cũ đã đóng; bổ sung thanh tiêu đề 3 tầng `#processTitleBanner` (`Mission` · `SDLC Stage` · `Live Action & Queue`) trong `office/index.html` và chặn `AUTO-WORK` ghi đè tên nhiệm vụ chính; bổ sung `Get-SenProjectTechStack` (khảo sát/đề xuất 5 tầng công nghệ `Frontend`, `Backend`, `Database`, `Infrastructure`, `Testing`) và chuẩn hóa quy trình SDLC Approval-First trong `rules/AGENTS.md` + `scripts/process-manifest.json`; đồng thời triển khai `Test-SenTargetCollision` (khóa hoàn tất 4 tín hiệu: `WorkingTreeClean`, `PushSynced`, `QuietWindowPassed`, `ActiveTaskLockFree`) và hàng đợi FIFO bền vững `Register-SenTaskQueue` (`.agents/office/task-queue.state`).
 
 ---
 

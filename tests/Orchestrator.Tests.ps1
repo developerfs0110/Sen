@@ -526,3 +526,61 @@ Test "TASK-22 3-Signal Liveness Probe protects active long-running tasks and cat
         Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+Test "Get-SenProjectTechStack discovers 5-layer stack from manifests and recommends default stack for greenfield" {
+    $ws = Join-Path ([System.IO.Path]::GetTempPath()) ("sen-stack-test-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+    [System.IO.Directory]::CreateDirectory($ws) | Out-Null
+    try {
+        $green = Get-SenProjectTechStack -Workspace $ws
+        Assert-Equal $true $green.IsGreenfield "greenfield workspace has no manifests"
+        Assert-True (([string]($green.Layers.Frontend -join ", ")).Contains("Recommend")) "greenfield frontend recommendation present"
+        Assert-True ($green.RecommendedOptions.Count -ge 2) "greenfield recommended options present"
+
+        $pkgJson = '{"dependencies":{"next":"15.0.0","react":"19.0.0","tailwindcss":"4.0.0","@prisma/client":"6.0.0"},"devDependencies":{"vitest":"2.0.0","@playwright/test":"1.49.0"}}'
+        [System.IO.File]::WriteAllText((Join-Path $ws "package.json"), $pkgJson, [System.Text.UTF8Encoding]::new($false))
+        $disc = Get-SenProjectTechStack -Workspace $ws
+        Assert-Equal $false $disc.IsGreenfield "package.json discovered"
+        Assert-True (($disc.Layers.Frontend -join ", ").Contains("Next.js")) "Next.js detected in Frontend layer"
+        Assert-True (($disc.Layers.Database -join ", ").Contains("Prisma")) "Prisma detected in Database layer"
+        Assert-True (($disc.Layers.Testing -join ", ").Contains("Playwright")) "Playwright detected in Testing layer"
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test "Test-SenTargetCollision and Register-SenTaskQueue enforce 4-Signal lock and FIFO auto-queue" {
+    $ws = Join-Path ([System.IO.Path]::GetTempPath()) ("sen-queue-test-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+    [System.IO.Directory]::CreateDirectory($ws) | Out-Null
+    try {
+        New-SenTask -Workspace $ws -Id "TASK-A" -Title "Active task on Sen.psm1" -Tier 2 -Assignee "dev_be" -AllowedPaths @("scripts/Sen.psm1") | Out-Null
+        Start-SenTask -Workspace $ws -Id "TASK-A" | Out-Null
+
+        $col1 = Test-SenTargetCollision -Workspace $ws -TargetPaths @("scripts/Sen.psm1") -SessionId "sess-b" -QuietWindowSeconds 0
+        Assert-Equal $true $col1.HasCollision "collision detected when TASK-A locks scripts/Sen.psm1"
+        Assert-Equal $false $col1.Signals.ActiveTaskLockFree "ActiveTaskLockFree is false on collision"
+
+        $qEnq = Register-SenTaskQueue -Workspace $ws -Action "enqueue" -QueueId "TASK-B" -Title "Queued update on Sen.psm1" -Tier 2 -TargetPaths @("scripts/Sen.psm1")
+        Assert-Equal 1 $qEnq.PendingCount "queue pending count is 1"
+        Assert-Equal "queued" $qEnq.Items[0].status "TASK-B enqueued with status queued while collision active"
+
+        Submit-SenTaskForReview -Workspace $ws -Id "TASK-A" | Out-Null
+        Complete-SenTaskReview -Workspace $ws -Id "TASK-A" -Passed $true -Reviewer "tester" -EvidenceCommand "tests/run.ps1" -ExitCode 0 | Out-Null
+
+        $col2 = Test-SenTargetCollision -Workspace $ws -TargetPaths @("scripts/Sen.psm1") -SessionId "sess-b" -QuietWindowSeconds 0
+        Assert-Equal $false $col2.HasCollision "collision cleared once TASK-A is done"
+        Assert-Equal $true $col2.PreviousSessionComplete "all 4 completion signals green"
+
+        $qPop = Register-SenTaskQueue -Workspace $ws -Action "pop"
+        Assert-True ($null -ne $qPop.PoppedItem) "queued task popped after collision clears"
+        Assert-Equal "TASK-B" $qPop.PoppedItem.queueId "FIFO head is TASK-B"
+
+        $qDone = Register-SenTaskQueue -Workspace $ws -Action "complete" -QueueId "TASK-B"
+        Assert-Equal 0 $qDone.PendingCount "pending count is 0 after completion"
+        [void](Register-SenTaskQueue -Workspace $ws -Action "clear")
+    }
+    finally {
+        Remove-Item -LiteralPath $ws -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+

@@ -308,4 +308,35 @@ Test "office-post.ps1 tracks invoke_subagent as in_progress SUBAGENT-LIVE and co
     } finally { Remove-OfficeTempDir $ws }
 }
 
+Test "Get-SenOfficeTabStatus detects browser/profile/tab state, prevents duplicate tabs, and reopens on close" {
+    $ws = New-OfficeTempDir
+    try {
+        $st0 = Get-SenOfficeTabStatus -Workspace $ws -Port 47991
+        Assert-Equal $false $st0.TabAlive "initial tab is not alive"
+        Assert-Equal $true $st0.ShouldOpenNewTab "must open new tab initially"
+
+        [void](Update-SenOfficeTabHeartbeat -Workspace $ws -Port 47991 -UserAgent "Mozilla/5.0 Chrome/131.0.0.0 Safari/537.36" -QueryString "?tabId=tab-abc123&vis=visible&title=Mission%20TASK-27" -Launched)
+        $st1 = Get-SenOfficeTabStatus -Workspace $ws -Port 47991 -SimulateAliveTab
+        Assert-Equal $true $st1.ServerAlive "simulated server is alive"
+        Assert-Equal $true $st1.TabAlive "simulated tab is alive"
+        Assert-Equal $false $st1.ShouldOpenNewTab "must NOT open duplicate tab when alive"
+        Assert-Equal "reuse_existing_tab" $st1.ActionNeeded "action is reuse_existing_tab"
+        Assert-True (-not [string]::IsNullOrWhiteSpace($st1.BrowserName)) "browser name resolved"
+        Assert-True (-not [string]::IsNullOrWhiteSpace($st1.ProfileName)) "profile name resolved"
+        Assert-True ($st1.UserHint.Contains("Profile:")) "user hint includes browser profile"
+
+        [void](Update-SenOfficeTabHeartbeat -Workspace $ws -Port 47991 -Closed)
+        $st2 = Get-SenOfficeTabStatus -Workspace $ws -Port 47991
+        Assert-Equal $false $st2.TabAlive "tab marked not alive after close beacon"
+        Assert-Equal $true $st2.ShouldOpenNewTab "must open new tab after previous tab closed"
+
+        $htmlPath = Join-Path -Path $repoRoot -ChildPath "office/index.html"
+        $html = [System.IO.File]::ReadAllText($htmlPath, [System.Text.Encoding]::UTF8)
+        foreach ($m in @("processTitleBanner", "ptMission", "ptStage", "ptAction", "/api/client-bye")) {
+            Assert-True ($html.Contains($m)) "office/index.html must contain 3-tier banner/beacon marker: $m"
+        }
+    } finally { Remove-OfficeTempDir $ws }
+}
+
+
 

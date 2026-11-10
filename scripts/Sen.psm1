@@ -56,10 +56,10 @@ function Get-SenDriveCandidates {
                         $freeGB = [double]($freeBytes / 1GB)
                         $writable = Test-SenDriveWritable -Root $r
                         $items.Add([pscustomobject]@{
-                            Root = $r
-                            FreeGB = $freeGB
-                            Writable = $writable
-                        })
+                                Root     = $r
+                                FreeGB   = $freeGB
+                                Writable = $writable
+                            })
                     }
                     catch { <# Ignore inaccessible drive entry #> }
                 }
@@ -111,10 +111,10 @@ function Get-SenDriveCandidates {
 
         if ($writable -and $freeGB -gt 1.0) {
             $candidates.Add([pscustomobject]@{
-                Root = $root
-                FreeGB = [double][Math]::Round($freeGB, 2)
-                Writable = [bool]$writable
-            })
+                    Root     = $root
+                    FreeGB   = [double][Math]::Round($freeGB, 2)
+                    Writable = [bool]$writable
+                })
         }
     }
 
@@ -403,7 +403,7 @@ function Find-SenToolViaManagers {
     if (-not $Tool.managers) { return $null }
     foreach ($mgr in $Tool.managers) {
         $mgrName = if ($mgr -is [string]) { ($mgr -split '\s+')[0] } elseif ($mgr.PSObject.Properties['name']) { [string]$mgr.name } else { $null }
-        $mgrCmd  = if ($mgr -is [string]) { $mgr } elseif ($mgr.PSObject.Properties['name']) { [string]$mgr.command } else { $null }
+        $mgrCmd = if ($mgr -is [string]) { $mgr } elseif ($mgr.PSObject.Properties['name']) { [string]$mgr.command } else { $null }
         if ([string]::IsNullOrEmpty($mgrCmd)) { continue }
         $mgrOutput = Invoke-SenRunner -Runner $Runner -CommandLine $mgrCmd
         $activeVer = Select-SenManagerActiveVersion -ManagerOutput $mgrOutput
@@ -531,20 +531,20 @@ function Get-SenInstallPlan {
             }
 
             $planItems.Add([pscustomobject]@{
-                Id             = $tool.id
-                DisplayName    = $tool.displayName
-                Version        = $tool.minVersion
-                ApproxSizeMB   = $tool.approxSizeMB
-                Required       = [bool]$isRequired
-                Command        = $cmd
-                Status         = $statusObj.Status
-                CurrentVersion = $statusObj.Version
-                ManualUrl      = $manualUrl
-            })
+                    Id             = $tool.id
+                    DisplayName    = $tool.displayName
+                    Version        = $tool.minVersion
+                    ApproxSizeMB   = $tool.approxSizeMB
+                    Required       = [bool]$isRequired
+                    Command        = $cmd
+                    Status         = $statusObj.Status
+                    CurrentVersion = $statusObj.Version
+                    ManualUrl      = $manualUrl
+                })
         }
     }
 
-    return ,@($planItems.ToArray())
+    return , @($planItems.ToArray())
 }
 
 
@@ -620,9 +620,9 @@ function Test-SenReleaseNoteGate {
     $relDir = Join-Path $Workspace "docs/releases"; $viPath = Join-Path $relDir "v$cleanVer.vi.md"; $enPath = Join-Path $relDir "v$cleanVer.en.md"
     $missing = [Collections.Generic.List[string]]::new()
     foreach ($pair in @(
-        @{ name = "v$cleanVer.vi.md"; path = $viPath; s = $true }, @{ name = "v$cleanVer.en.md"; path = $enPath; s = $true },
-        @{ name = "RELEASE-NOTES.vi.md"; path = (Join-Path $relDir "RELEASE-NOTES.vi.md"); s = $false }, @{ name = "RELEASE-NOTES.en.md"; path = (Join-Path $relDir "RELEASE-NOTES.en.md"); s = $false }
-    )) {
+            @{ name = "v$cleanVer.vi.md"; path = $viPath; s = $true }, @{ name = "v$cleanVer.en.md"; path = $enPath; s = $true },
+            @{ name = "RELEASE-NOTES.vi.md"; path = (Join-Path $relDir "RELEASE-NOTES.vi.md"); s = $false }, @{ name = "RELEASE-NOTES.en.md"; path = (Join-Path $relDir "RELEASE-NOTES.en.md"); s = $false }
+        )) {
         if (-not (Test-Path -LiteralPath $pair.path)) { $missing.Add("MissingFile:$($pair.name)"); continue }
         $txt = [IO.File]::ReadAllText($pair.path, [Text.Encoding]::UTF8)
         if ($pair.s) { foreach ($sec in @("Fixed", "Removed", "Improved")) { if ($txt -notmatch "(?i)\b$sec\b") { $missing.Add("MissingSection:$($pair.name):$sec") } } }
@@ -631,4 +631,129 @@ function Test-SenReleaseNoteGate {
     return [pscustomobject]@{ Passed = ($missing.Count -eq 0); Version = $cleanVer; ViPath = $viPath; EnPath = $enPath; Missing = @($missing.ToArray()) }
 }
 
-Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack, New-SenReleaseNote, Test-SenReleaseNoteGate
+function Get-SenProjectTechStack {
+    [CmdletBinding()]
+    param([Alias("WorkspacePath", "Path")][string]$Workspace = $PWD.Path, [string]$Request = "")
+    $fe = [Collections.Generic.List[string]]::new(); $be = [Collections.Generic.List[string]]::new()
+    $db = [Collections.Generic.List[string]]::new(); $inf = [Collections.Generic.List[string]]::new(); $tst = [Collections.Generic.List[string]]::new()
+    $mans = [Collections.Generic.List[string]]::new()
+    foreach ($m in @("package.json", "tsconfig.json", "pyproject.toml", "requirements.txt", "pubspec.yaml", "go.mod", "Cargo.toml", "plugin.json", "office/index.html", "Dockerfile")) {
+        if (Test-Path -LiteralPath (Join-Path $Workspace $m)) { $mans.Add($m) }
+    }
+    if ($mans.Contains("package.json")) {
+        $pkgTxt = [IO.File]::ReadAllText((Join-Path $Workspace "package.json"), [Text.Encoding]::UTF8)
+        if ($pkgTxt -match '"next"') { $fe.Add("Next.js") }; if ($pkgTxt -match '"react"') { $fe.Add("React") }
+        if ($pkgTxt -match '"vue"') { $fe.Add("Vue") }; if ($pkgTxt -match '"vite"') { $fe.Add("Vite") }
+        if ($pkgTxt -match '"(@nestjs|express|fastify)"') { $be.Add("Node.js") }
+        if ($pkgTxt -match '"(@prisma/client|prisma|pg|mysql2|mongoose)"') { $db.Add("Prisma/SQL/NoSQL ORM") }
+        if ($pkgTxt -match '"(vitest|jest|playwright)"') { $tst.Add("Vitest/Jest/Playwright") }
+    }
+    if ($mans.Contains("pubspec.yaml")) { $fe.Add("Flutter (Dart)"); $tst.Add("flutter_test") }
+    if ($mans.Contains("pyproject.toml") -or $mans.Contains("requirements.txt")) { $be.Add("Python (FastAPI/Django)"); $tst.Add("Pytest") }
+    if ($mans.Contains("go.mod")) { $be.Add("Go"); $tst.Add("go test") }
+    if ($mans.Contains("plugin.json") -or (Test-Path -LiteralPath (Join-Path $Workspace "scripts/Sen.psm1"))) {
+        $be.Add("PowerShell 5.1/7+ & POSIX sh"); $db.Add("Atomic JSON/JSONL State Engine"); $tst.Add("Sen AST/Unit Test Runner")
+    }
+    if ($mans.Contains("office/index.html")) { $fe.Add("HTML5/SVG 3D Isometric UI") }
+    if (Test-Path -LiteralPath (Join-Path $Workspace ".github/workflows")) { $inf.Add("GitHub Actions CI/CD") }
+    if ($mans.Contains("Dockerfile")) { $inf.Add("Docker Container") }
+    $green = ($mans.Count -eq 0)
+    $rec = @(
+        [pscustomobject][ordered]@{ Option = "Web/Mobile Modern Stack"; Stack = "Next.js/Vite + FastAPI/Node.js + PostgreSQL"; ResourceCost = "Low-Medium (~150MB RAM dev, fast HMR)" },
+        [pscustomobject][ordered]@{ Option = "Lightweight Local/CLI Stack"; Stack = "Static HTML5/JS + PowerShell/Python + SQLite/JSON"; ResourceCost = "Minimal (<50MB RAM, zero external DB)" }
+    )
+    $layers = [pscustomobject][ordered]@{
+        Frontend       = $(if ($fe.Count -gt 0) { @($fe.ToArray()) } else { @("TBD (Recommend React/Vite or Flutter)") })
+        Backend        = $(if ($be.Count -gt 0) { @($be.ToArray()) } else { @("TBD (Recommend FastAPI or Node.js)") })
+        Database       = $(if ($db.Count -gt 0) { @($db.ToArray()) } else { @("TBD (Recommend PostgreSQL or SQLite)") })
+        Infrastructure = $(if ($inf.Count -gt 0) { @($inf.ToArray()) } else { @("Localhost + GitHub Actions CI") })
+        Testing        = $(if ($tst.Count -gt 0) { @($tst.ToArray()) } else { @("Unit + Integration + Smoke E2E") })
+    }
+    return [pscustomobject][ordered]@{
+        Workspace = $Workspace; IsGreenfield = $green; DetectedManifests = @($mans.ToArray())
+        Layers = $layers; RecommendedOptions = $rec
+        Summary = $(if ($green) { "Greenfield project: select a 5-layer Tech Stack before coding." } else { "Detected stack: FE=($($layers.Frontend -join ', ')), BE=($($layers.Backend -join ', ')), Test=($($layers.Testing -join ', '))." })
+    }
+}
+
+function Get-SenGitWorkingTreeProbe {
+    param([string]$Workspace)
+    $dirty = [Collections.Generic.List[string]]::new(); $synced = $true
+    if (-not (Test-Path -LiteralPath (Join-Path $Workspace ".git"))) { return [pscustomobject]@{ DirtyFiles = @(); PushSynced = $true } }
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    try {
+        foreach ($ln in @(git -C $Workspace status --porcelain 2>$null)) {
+            if ($ln -match '^\s*[MADRCU\?]{1,2}\s+(.+)$') { $dirty.Add($matches[1].Trim('"').Trim()) }
+        }
+        $hSha = ([string](git -C $Workspace rev-parse HEAD 2>$null)).Trim()
+        $uSha = ([string](git -C $Workspace rev-parse '@{u}' 2>$null)).Trim()
+        if ($hSha -and $uSha -and ($uSha -notmatch 'fatal') -and ($hSha -ne $uSha)) { $synced = $false }
+    }
+    catch { <# Ignore git probe error #> } finally { $ErrorActionPreference = $prev }
+    return [pscustomobject]@{ DirtyFiles = @($dirty.ToArray()); PushSynced = $synced }
+}
+
+function Test-SenTargetCollision {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][Alias("WorkspacePath", "Path")][string]$Workspace, [string[]]$TargetPaths = @(), [string]$SessionId = "", [int]$QuietWindowSeconds = 90)
+    $tasks = if (Get-Command Get-SenTasks -EA SilentlyContinue) { @(Get-SenTasks -Workspace $Workspace) } else { @() }
+    $confTasks = [Collections.Generic.List[string]]::new(); $confFiles = [Collections.Generic.List[string]]::new()
+    foreach ($t in $tasks) {
+        $isActive = ($null -ne $t) -and ([string]$t.status -in @("in_progress", "reviewing")) -and (-not ($t.PSObject.Properties['isTelemetryOnly'] -and [bool]$t.isTelemetryOnly))
+        $otherSess = (-not $SessionId) -or (-not $t.PSObject.Properties['sessionId']) -or ([string]$t.sessionId -ne $SessionId)
+        if ($isActive -and $otherSess -and ($TargetPaths.Count -eq 0 -or (Test-SenPathOverlap -PathsA $TargetPaths -PathsB @($t.allowedPaths)))) {
+            $confTasks.Add([string]$t.id)
+            foreach ($ap in @($t.allowedPaths | Where-Object { $_ })) { if (-not $confFiles.Contains([string]$ap)) { $confFiles.Add([string]$ap) } }
+        }
+    }
+    $gitProbe = Get-SenGitWorkingTreeProbe -Workspace $Workspace
+    $treeClean = ($gitProbe.DirtyFiles.Count -eq 0); $pushSynced = [bool]$gitProbe.PushSynced
+    foreach ($df in $gitProbe.DirtyFiles) {
+        if (($TargetPaths.Count -eq 0 -or (Test-SenPathOverlap -PathsA $TargetPaths -PathsB @($df))) -and (-not $confFiles.Contains($df))) { $confFiles.Add($df) }
+    }
+    $latestModUtc = [DateTime]::MinValue
+    foreach ($f in @(Get-ChildItem -LiteralPath $Workspace -File -EA SilentlyContinue)) { if ($f.LastWriteTimeUtc -gt $latestModUtc) { $latestModUtc = $f.LastWriteTimeUtc } }
+    $quietAge = if ($latestModUtc -gt [DateTime]::MinValue) { [int][Math]::Max(0, ([DateTime]::UtcNow - $latestModUtc).TotalSeconds) } else { 9999 }
+    $quietOk = ($QuietWindowSeconds -le 0) -or ($quietAge -ge $QuietWindowSeconds) -or ($treeClean -and $confTasks.Count -eq 0)
+    $hasCol = ($confTasks.Count -gt 0) -or ($confFiles.Count -gt 0 -and (-not $treeClean -or -not $quietOk)) -or (-not $pushSynced -and $quietAge -lt 180)
+    $prevDone = ($treeClean -and $pushSynced -and $quietOk -and $confTasks.Count -eq 0)
+    return [pscustomobject][ordered]@{
+        Workspace = $Workspace; HasCollision = [bool]$hasCol; PreviousSessionComplete = [bool]$prevDone
+        Signals = [pscustomobject][ordered]@{ WorkingTreeClean = $treeClean; PushSynced = $pushSynced; QuietWindowPassed = $quietOk; ActiveTaskLockFree = ($confTasks.Count -eq 0) }
+        ConflictingTaskIds = @($confTasks.ToArray()); ConflictingFiles = @($confFiles.ToArray()); QuietAgeSeconds = $quietAge
+        Recommendation = $(if ($hasCol) { "Collision detected: enqueue task via Register-SenTaskQueue and wait for 4-Signal completion." } else { "Target files clear for execution." })
+    }
+}
+
+function Register-SenTaskQueue {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][Alias("WorkspacePath", "Path")][string]$Workspace, [ValidateSet("enqueue", "list", "pop", "complete", "clear")][string]$Action = "list", [string]$QueueId = "", [string]$Title = "", [string[]]$TargetPaths = @(), [string]$SessionId = "", [int]$Tier = 2)
+    $qPath = Join-Path $Workspace ".agents/office/task-queue.state"
+    return (Invoke-SenWithFileMutex -FilePath $qPath -Action {
+            $raw = Read-SenSafeJson -Path $qPath
+            $list = [Collections.Generic.List[object]]::new()
+            if ($null -ne $raw) { foreach ($it in @($raw | Where-Object { $_ -and $_.queueId })) { $list.Add($it) } }
+            $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            $col = Test-SenTargetCollision -Workspace $Workspace -TargetPaths $TargetPaths -SessionId $SessionId
+            if ($Action -eq "clear") { $list.Clear(); Write-SenAtomicJson -Path $qPath -InputObject @() -Depth 5; return [pscustomobject]@{ Action = "clear"; Count = 0; Items = @() } }
+            if ($Action -eq "enqueue") {
+                $qid = if ($QueueId) { $QueueId } else { "Q-" + ([DateTime]::UtcNow.ToString("HHmmss")) + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 4)) }
+                $activeQueue = @($list | Where-Object { [string]$_.status -in @("queued", "running", "ready_to_run") })
+                $st = if ($col.HasCollision -or $activeQueue.Count -gt 0) { "queued" } else { "ready_to_run" }
+                $list.Add([pscustomobject][ordered]@{ queueId = $qid; title = $(if ($Title) { $Title } else { $qid }); tier = $Tier; sessionId = $SessionId; targetPaths = @($TargetPaths); status = $st; position = ($activeQueue.Count + 1); conflictingFiles = $col.ConflictingFiles; createdAt = $now; updatedAt = $now })
+            }
+            elseif ($Action -eq "complete" -and $QueueId) {
+                foreach ($it in @($list | Where-Object { [string]$_.queueId -eq $QueueId })) { $it.status = "done"; $it.updatedAt = $now }
+            }
+            $runningCnt = @($list | Where-Object { [string]$_.status -eq "running" }).Count
+            $firstWait = if ($runningCnt -eq 0 -and (-not $col.HasCollision)) { $list | Where-Object { [string]$_.status -eq "queued" } | Select-Object -First 1 } else { $null }
+            if ($null -ne $firstWait) { $firstWait.status = "ready_to_run"; $firstWait.updatedAt = $now }
+            $cand = if ($Action -eq "pop") { $list | Where-Object { [string]$_.status -eq "ready_to_run" -or ([string]$_.status -eq "queued" -and (-not $col.HasCollision)) } | Select-Object -First 1 } else { $null }
+            if ($null -ne $cand) { $cand.status = "running"; $cand.updatedAt = $now }
+            Write-SenAtomicJson -Path $qPath -InputObject @($list.ToArray()) -Depth 6
+            $pending = @($list | Where-Object { [string]$_.status -in @("queued", "ready_to_run", "running") })
+            return [pscustomobject][ordered]@{ Action = $Action; PendingCount = $pending.Count; Collision = $col; PoppedItem = $cand; Items = @($list.ToArray()) }
+        })
+}
+
+Export-ModuleMember -Function Get-SenSelfPayloadNames, Get-SenDriveCandidates, New-SenWorkspace, New-SenFileFromTemplate, Get-SenToolCatalog, Get-SenToolStatus, Get-SenInstallPlan, Install-SenCreativePack, New-SenReleaseNote, Test-SenReleaseNoteGate, Get-SenProjectTechStack, Test-SenTargetCollision, Register-SenTaskQueue
