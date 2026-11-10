@@ -6,6 +6,7 @@
 $ErrorActionPreference = "SilentlyContinue"
 
 try {
+    try { [Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { <# Non-fatal #> }
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw) -and $input) {
         $raw = (@($input) -join "`n")
@@ -110,14 +111,17 @@ try {
     $model = "inherit"
     $argsObj = if ($payload.toolCall -and $payload.toolCall.args) { $payload.toolCall.args } elseif ($payload.tool_input) { $payload.tool_input } elseif ($payload.toolArgs) { $payload.toolArgs } else { $payload }
     $rawUserReq = if ($payload.PSObject.Properties['lastUserInput'] -and $payload.lastUserInput) { [string]$payload.lastUserInput } elseif ($payload.PSObject.Properties['prompt'] -and $payload.prompt) { [string]$payload.prompt } else { "" }
+    if (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue) { $rawUserReq = Repair-SenUtf8Mojibake -Text $rawUserReq }
     if ($rawUserReq -match '(?s)<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>') { $rawUserReq = $matches[1] }
     $rawUserReq = ($rawUserReq -replace '(?s)<ADDITIONAL_METADATA>.*$', '' -replace '[\r\n\t]+', ' ').Trim()
     $isTrivialReply = ($rawUserReq.Length -lt 4) -or ($rawUserReq -match '^(?i)(ok|okay|yes|y|no|duyet|tiep|push|test|done|xong|lam luon|just do it)[.!?]*$')
     $cleanUserReq = if (-not $isTrivialReply) { $(if ($rawUserReq.Length -gt 96) { $rawUserReq.Substring(0, 93) + "..." } else { $rawUserReq }) } else { "" }
     $toolSumArg = if ($argsObj -and $argsObj.PSObject.Properties['toolSummary'] -and $argsObj.toolSummary) { ([string]$argsObj.toolSummary -replace '[\r\n\t]+', ' ').Trim() } elseif ($argsObj -and $argsObj.PSObject.Properties['description'] -and $argsObj.description) { ([string]$argsObj.description -replace '[\r\n\t]+', ' ').Trim() } else { "" }
+    if ($toolSumArg -and (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue)) { $toolSumArg = Repair-SenUtf8Mojibake -Text $toolSumArg }
     $inFile = Join-Path $ws ".agents/office/current-intake.json"
     $inObjCur = if (Test-Path -LiteralPath $inFile) { Read-SenSafeJson -Path $inFile } else { $null }
     $prevReq = if ($inObjCur -and $inObjCur.request) { [string]$inObjCur.request } else { "" }
+    if ($prevReq -and (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue)) { $prevReq = Repair-SenUtf8Mojibake -Text $prevReq }
     if ($cleanUserReq -and ($cleanUserReq -ne $prevReq)) {
         if ($null -ne $inObjCur) {
             $inObjCur | Add-Member -NotePropertyName "request" -NotePropertyValue $cleanUserReq -Force

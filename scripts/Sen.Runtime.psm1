@@ -26,6 +26,7 @@ function Read-SenSafeJson {
     try {
         $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path, [System.Text.Encoding]::UTF8)
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        if (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue) { $raw = Repair-SenUtf8Mojibake -Text $raw }
         if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { return ConvertFrom-Json -InputObject $raw -DateKind String }
         return ConvertFrom-Json -InputObject $raw
     }
@@ -250,6 +251,7 @@ function Read-SenOfficeEvents {
         for ($i = $start; $i -lt $lines.Count; $i++) {
             $ln = $lines[$i].Trim()
             if ($ln) {
+                if (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue) { $ln = Repair-SenUtf8Mojibake -Text $ln }
                 try { $out.Add((ConvertFrom-Json -InputObject $ln)) } catch { <# Skip malformed JSONL line #> }
             }
         }

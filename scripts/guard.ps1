@@ -40,6 +40,7 @@ function Out-Decision([string]$decision, [string]$reason, [string]$ws = "", [str
 }
 
 try {
+    try { [Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { <# Non-fatal #> }
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw) -and $input) {
         $raw = (@($input) -join "`n")

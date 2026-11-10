@@ -8,6 +8,46 @@ function Get-SenTextDigest {
     return ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
 }
 
+function Repair-SenUtf8Mojibake {
+    param([AllowEmptyString()][string]$Text = "")
+    if ([string]::IsNullOrEmpty($Text)) { return "" }
+    $mojiRe = '[\u2500-\u257F\u00DF\u00C6]|[\u00C2-\u00DF][\u0080-\u00BF\u2018-\u203A\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192]|\u00E1[\u00BA\u00BB]'
+    if ($Text -notmatch $mojiRe) { return $Text }
+    return [regex]::Replace($Text, '[^\r\n"''\u1EA0-\u1EF9]+', {
+        param($m)
+        $seg = $m.Value
+        if ($seg -notmatch $mojiRe) { return $seg }
+        foreach ($cp in @(437, 1252, 28591)) {
+            try {
+                $bytes = [System.Text.Encoding]::GetEncoding($cp).GetBytes($seg)
+                $u8 = ([System.Text.Encoding]::UTF8.GetString($bytes)) -replace '[\uFFFD\u0080-\u009F]+$', ''
+                $badBefore = ([regex]::Matches($seg, '[\u2500-\u257F\u00C3\u00C2\u00C4\u00C5\u00C6\u00DF]')).Count
+                $badAfter = ([regex]::Matches($u8, '[\u2500-\u257F\uFFFD\u00C3\u00DF]')).Count
+                if ($u8 -and ($badAfter -lt $badBefore)) { return $u8 }
+            }
+            catch { <# Ignore unsupported codepage #> }
+        }
+        return $seg
+    })
+}
+
+function Repair-SenOfficeMojibake {
+    param([Parameter(Mandatory)][string]$Workspace)
+    $offDir = Join-Path $Workspace ".agents/office"
+    if (-not (Test-Path -LiteralPath $offDir)) { return 0 }
+    $fixedFiles = 0
+    $u8NoBom = [System.Text.UTF8Encoding]::new($false)
+    foreach ($f in @(Get-ChildItem -LiteralPath $offDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @(".json", ".jsonl", ".state") })) {
+        $orig = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+        $rep = Repair-SenUtf8Mojibake -Text $orig
+        if ($rep -ne $orig) {
+            [System.IO.File]::WriteAllText($f.FullName, $rep, $u8NoBom)
+            $fixedFiles++
+        }
+    }
+    return $fixedFiles
+}
+
 function Get-SenRepoCodeRevision {
     param([string]$Workspace)
     if ($Workspace -and (Test-Path -LiteralPath (Join-Path $Workspace ".git"))) {
@@ -471,7 +511,7 @@ function Get-SenOfficeTabStatus {
 }
 
 $senCoreInternalExports = @(
-    "Get-SenTextDigest", "Get-SenRepoCodeRevision", "Invoke-SenLiveEvidenceRunner", "Test-SenTaskAcceptanceCriteria",
+    "Get-SenTextDigest", "Repair-SenUtf8Mojibake", "Repair-SenOfficeMojibake", "Get-SenRepoCodeRevision", "Invoke-SenLiveEvidenceRunner", "Test-SenTaskAcceptanceCriteria",
     "Get-SenHungProcessIds", "Test-SenSymlinkEscape", "Build-SenHarnessBridgeText", "Install-SenHarnessHookFile",
     "Resolve-SenRequestedHarnesses", "Test-SenHarnessLiveProbe", "Sync-SenTodoMarkdownItems", "Get-SenStepArtifactHash",
     "Register-SenHookExecution", "Invoke-SenPreToolHookBootstrap", "Complete-SenHookExecution", "Test-SenDeliveryReconciliation",
