@@ -314,6 +314,29 @@ try {
                 }
             }
         }
+        elseif ($cmdArg -match '(?i)\bgit\s+.*?\bpush\b') {
+            $from = "qa"; $lane = "CI Gate"; $latchStage = 4
+            $ciNote = "Git push (run Invoke-SenCiPushLoop / verify CI green)"
+            if ($ws -notmatch '(?i)([\\/](temp|tmp|T)[\\/]|sen-(orch|harness|gov|adv|.*-test)|TestDrive)') {
+                try {
+                    $gitDir = if ($cmdArg -match '(?i)\bgit\s+-C\s+["'']?([^"''\s]+)["'']?') { $matches[1] } else { $ws }
+                    $remUrl = (& git -C $gitDir remote get-url origin 2>$null | Out-String).Trim()
+                    if ($remUrl -match 'github\.com[:/]([^/]+/[^/\.\s]+)') {
+                        $repoSlug = $matches[1] -replace '\.git$', ''
+                        $ciRes = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoSlug/actions/runs?per_page=3" -Headers @{ "User-Agent" = "Sen-CI-Monitor" } -TimeoutSec 3 -ErrorAction SilentlyContinue
+                        if ($ciRes -and $ciRes.workflow_runs) {
+                            $runs = @($ciRes.workflow_runs)
+                            $failCnt = @($runs | Where-Object { [string]$_.conclusion -eq 'failure' }).Count
+                            $qCnt = @($runs | Where-Object { [string]$_.status -in @('queued', 'in_progress') }).Count
+                            if ($failCnt -gt 0) { $kind = "alert"; $ciNote = "CI ALERT ($repoSlug): $failCnt recent failed, $qCnt queued/running - MUST fix & verify CI!" }
+                            else { $ciNote = "CI Status ($repoSlug): $qCnt queued/running, recent green" }
+                        }
+                    }
+                }
+                catch { <# Non-fatal CI status check #> }
+            }
+            $ecoText = $ciNote
+        }
         else {
             $from = "be"
             $lane = "System Cmd"

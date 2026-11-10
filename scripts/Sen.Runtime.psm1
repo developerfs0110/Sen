@@ -1,736 +1,691 @@
 # scripts/Sen.Runtime.psm1
 # Lightweight ASCII-only runtime module for Sen Hooks (guard.ps1, office-post.ps1),
 # Local Office Server (start-office.ps1), Risk Engine, and Stateful Task Manager (v0.3.0+).
-
 $ErrorActionPreference = "Stop"
-if (-not (Get-Command Get-SenStepArtifactHash -ErrorAction SilentlyContinue)) {
-    $prevBoot = $global:SenCoreBootstrapActive; $global:SenCoreBootstrapActive = $true
-    try { Import-Module (Join-Path $PSScriptRoot "Sen.Core.psm1") -Global -Force -DisableNameChecking } finally { $global:SenCoreBootstrapActive = $prevBoot }
+if (-not (Get-Command Get-SenStepArtifactHash -EA SilentlyContinue)) {
+$prevBoot = $global:SenCoreBootstrapActive; $global:SenCoreBootstrapActive = $true
+try { Import-Module (Join-Path $PSScriptRoot "Sen.Core.psm1") -Global -Force -DisableNameChecking } finally { $global:SenCoreBootstrapActive = $prevBoot }
 }
-
 function Write-SenAtomicJson {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)]$InputObject, [int]$Depth = 8, [switch]$Compress)
-    $parent = Split-Path -Parent $Path
-    if ($parent -and -not (Test-Path -LiteralPath $parent)) { [System.IO.Directory]::CreateDirectory($parent) | Out-Null }
-    $tmpPath = "$Path.$PID.$([Guid]::NewGuid().ToString('N').Substring(0, 8)).tmp"
-    $json = if ($Compress) { ConvertTo-Json -InputObject $InputObject -Depth $Depth -Compress } else { ConvertTo-Json -InputObject $InputObject -Depth $Depth }
-    [System.IO.File]::WriteAllText($tmpPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
-    Move-Item -LiteralPath $tmpPath -Destination $Path -Force
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)]$InputObject, [int]$Depth = 8, [switch]$Compress)
+$parent = Split-Path -Parent $Path
+if ($parent -and -not (Test-Path -LiteralPath $parent)) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
+$tmpPath = "$Path.$PID.$([Guid]::NewGuid().ToString('N').Substring(0, 8)).tmp"
+$json = if ($Compress) { ConvertTo-Json -InputObject $InputObject -Depth $Depth -Compress } else { ConvertTo-Json -InputObject $InputObject -Depth $Depth }
+[IO.File]::WriteAllText($tmpPath, $json + "`n", [Text.UTF8Encoding]::new($false))
+Move-Item -LiteralPath $tmpPath -Destination $Path -Force
 }
-
 function Read-SenSafeJson {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    try {
-        $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path, [System.Text.Encoding]::UTF8)
-        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        if (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue) { $raw = Repair-SenUtf8Mojibake -Text $raw }
-        if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { return ConvertFrom-Json -InputObject $raw -DateKind String }
-        return ConvertFrom-Json -InputObject $raw
-    }
-    catch { return $null }
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Path)
+if (-not (Test-Path -LiteralPath $Path)) { return $null }
+try {
+$raw = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path, [Text.Encoding]::UTF8)
+if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+if (Get-Command Repair-SenUtf8Mojibake -EA SilentlyContinue) { $raw = Repair-SenUtf8Mojibake -Text $raw }
+if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) { return ConvertFrom-Json -InputObject $raw -DateKind String }
+return ConvertFrom-Json -InputObject $raw
 }
-
+catch { return $null }
+}
 function Test-SenPathOverlap {
-    param([string[]]$PathsA = @(), [string[]]$PathsB = @())
-    if ($null -eq $PathsA -or $null -eq $PathsB -or $PathsA.Count -eq 0 -or $PathsB.Count -eq 0) { return $false }
-    foreach ($a in $PathsA) {
-        if ([string]::IsNullOrWhiteSpace($a)) { continue }
-        $na = $a.Replace('\', '/').Trim().Trim('/').ToLowerInvariant()
-        if ([string]::IsNullOrEmpty($na)) { continue }
-        foreach ($b in $PathsB) {
-            if ([string]::IsNullOrWhiteSpace($b)) { continue }
-            $nb = $b.Replace('\', '/').Trim().Trim('/').ToLowerInvariant()
-            if ($nb -and ($na -eq $nb -or $na.StartsWith($nb + "/") -or $nb.StartsWith($na + "/"))) { return $true }
-        }
-    }
-    return $false
+param([string[]]$PathsA = @(), [string[]]$PathsB = @())
+if ($null -eq $PathsA -or $null -eq $PathsB -or $PathsA.Count -eq 0 -or $PathsB.Count -eq 0) { return $false }
+foreach ($a in $PathsA) {
+if ([string]::IsNullOrWhiteSpace($a)) { continue }
+$na = $a.Replace('\', '/').Trim().Trim('/').ToLowerInvariant()
+if ([string]::IsNullOrEmpty($na)) { continue }
+foreach ($b in $PathsB) {
+if ([string]::IsNullOrWhiteSpace($b)) { continue }
+$nb = $b.Replace('\', '/').Trim().Trim('/').ToLowerInvariant()
+if ($nb -and ($na -eq $nb -or $na.StartsWith($nb + "/") -or $nb.StartsWith($na + "/"))) { return $true }
 }
-
+}
+return $false
+}
 function Protect-SenRedactedText {
-    [CmdletBinding()]
-    param([AllowEmptyString()][string]$Text = "")
-    if ([string]::IsNullOrEmpty($Text)) { return "" }
-    $s = $Text
-    $s = [regex]::Replace($s, '(?i)(\bbearer\s+)[^\s"''&]+', '$1[REDACTED]')
-    $s = [regex]::Replace($s, '\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}', '[REDACTED]')
-    $s = [regex]::Replace($s, '\b(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})', '[REDACTED]')
-    $s = [regex]::Replace($s, '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b', '[REDACTED]')
-    $s = [regex]::Replace($s, '\bAIza[0-9A-Za-z_-]{35}\b', '[REDACTED]')
-    $s = [regex]::Replace($s, '-----BEGIN [A-Z ]*PRIVATE KEY-----[^\s"''&]*', '[REDACTED]')
-    $s = [regex]::Replace($s, '\bxox[abpr]-[A-Za-z0-9-]{10,}', '[REDACTED]')
-    $s = [regex]::Replace($s, '\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}', '[REDACTED]')
-    $s = [regex]::Replace($s, '(?i)(\b(?:api[_-]?key|access[_-]?key|token|secret|password|passwd|pwd|authorization|cookie)\b["'']?\s*[:=]\s*["'']?)[^\s"''&]+', '$1[REDACTED]')
-    $s = [regex]::Replace($s, '(//[^/\s:@]+:)[^/\s@]+(@)', '$1[REDACTED]$2')
-    return $s
+[CmdletBinding()]
+param([AllowEmptyString()][string]$Text = "")
+if ([string]::IsNullOrEmpty($Text)) { return "" }
+$s = $Text
+$s = [regex]::Replace($s, '(?i)(\bbearer\s+)[^\s"''&]+', '$1[REDACTED]')
+$s = [regex]::Replace($s, '\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}', '[REDACTED]')
+$s = [regex]::Replace($s, '\b(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})', '[REDACTED]')
+$s = [regex]::Replace($s, '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b', '[REDACTED]')
+$s = [regex]::Replace($s, '\bAIza[0-9A-Za-z_-]{35}\b', '[REDACTED]')
+$s = [regex]::Replace($s, '-----BEGIN [A-Z ]*PRIVATE KEY-----[^\s"''&]*', '[REDACTED]')
+$s = [regex]::Replace($s, '\bxox[abpr]-[A-Za-z0-9-]{10,}', '[REDACTED]')
+$s = [regex]::Replace($s, '\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}', '[REDACTED]')
+$s = [regex]::Replace($s, '(?i)(\b(?:api[_-]?key|access[_-]?key|token|secret|password|passwd|pwd|authorization|cookie)\b["'']?\s*[:=]\s*["'']?)[^\s"''&]+', '$1[REDACTED]')
+$s = [regex]::Replace($s, '(//[^/\s:@]+:)[^/\s@]+(@)', '$1[REDACTED]$2')
+return $s
 }
-
 function Get-SenOfficeConfig {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $default = [ordered]@{ mode = "eco"; port = 47890; scale = "standard"; updatedAt = $null }
-    $obj = Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/config.json")
-    if ($null -eq $obj) { return $default }
-    $mode = if ($obj.mode -in @("off", "eco", "full")) { [string]$obj.mode } else { "eco" }
-    $port = if ($obj.port -and [int]$obj.port -gt 1024) { [int]$obj.port } else { 47890 }
-    $scale = if ($obj.PSObject.Properties.Name -contains "scale" -and $obj.scale -in @("mini", "standard", "enterprise")) { [string]$obj.scale } else { "standard" }
-    return [ordered]@{ mode = $mode; port = $port; scale = $scale; updatedAt = $obj.updatedAt }
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Workspace)
+$default = [ordered]@{ mode = "eco"; port = 47890; scale = "standard"; updatedAt = $null }
+$obj = Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/config.json")
+if ($null -eq $obj) { return $default }
+$mode = if ($obj.mode -in @("off", "eco", "full")) { [string]$obj.mode } else { "eco" }
+$port = if ($obj.port -and [int]$obj.port -gt 1024) { [int]$obj.port } else { 47890 }
+$scale = if ($obj.PSObject.Properties.Name -contains "scale" -and $obj.scale -in @("mini", "standard", "enterprise")) { [string]$obj.scale } else { "standard" }
+return [ordered]@{ mode = $mode; port = $port; scale = $scale; updatedAt = $obj.updatedAt }
 }
-
 function Set-SenOfficeConfig {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Workspace, [ValidateSet("off", "eco", "full")][string]$Mode = "eco", [int]$Port = 0, [ValidateSet("mini", "standard", "enterprise", "")][string]$Scale = "")
-    $cur = Get-SenOfficeConfig -Workspace $Workspace
-    $usePort = if ($Port -gt 1024) { $Port } else { [int]$cur.port }
-    $useScale = if ($Scale -in @("mini", "standard", "enterprise")) { $Scale } elseif ($cur.scale -in @("mini", "standard", "enterprise")) { [string]$cur.scale } else { "standard" }
-    $next = [ordered]@{ mode = $Mode; port = $usePort; scale = $useScale; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
-    Write-SenAtomicJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/config.json") -InputObject $next -Depth 5
-    return $next
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Workspace, [ValidateSet("off", "eco", "full")][string]$Mode = "eco", [int]$Port = 0, [ValidateSet("mini", "standard", "enterprise", "")][string]$Scale = "")
+$cur = Get-SenOfficeConfig -Workspace $Workspace
+$usePort = if ($Port -gt 1024) { $Port } else { [int]$cur.port }
+$useScale = if ($Scale -in @("mini", "standard", "enterprise")) { $Scale } elseif ($cur.scale -in @("mini", "standard", "enterprise")) { [string]$cur.scale } else { "standard" }
+$next = [ordered]@{ mode = $Mode; port = $usePort; scale = $useScale; updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") }
+Write-SenAtomicJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/config.json") -InputObject $next -Depth 5
+return $next
 }
-
 function Sync-SenOfficeActiveWorkspace {
-    param([int]$Port, [string]$Workspace)
-    $normWs = try { [System.IO.Path]::GetFullPath($Workspace).TrimEnd('\', '/') } catch { <# Fallback #> $Workspace.TrimEnd('\', '/') }
-    $srvWs = ""
-    try { $st = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/state" -Method Get -TimeoutSec 1 -EA Stop; if ($st -and $st.workspace) { $srvWs = ([string]$st.workspace).TrimEnd('\', '/') } } catch { <# Ignore #> }
-    if (-not $srvWs -or $srvWs.Equals($normWs, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-    try { $sw = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/switch-workspace" -Method Post -ContentType "application/json" -Body (ConvertTo-Json @{ workspace = $normWs } -Compress) -TimeoutSec 1 -EA Stop; if ($sw -and $sw.switched) { return $true } } catch { <# Restart stale server #> }
-    try {
-        foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -EA SilentlyContinue)) {
-            if ($wp -and [int]$wp.ProcessId -ne $PID -and [string]$wp.CommandLine -match '(?i)(-File|-Command)\s+"?[^"]*start-office\.ps1') { Stop-Process -Id ([int]$wp.ProcessId) -Force -EA SilentlyContinue }
-        }
-        Start-Sleep -Milliseconds 150
-    }
-    catch { <# Ignore #> }
-    return $false
+param([int]$Port, [string]$Workspace)
+$normWs = try { [IO.Path]::GetFullPath($Workspace).TrimEnd('\', '/') } catch { <# Fallback #> $Workspace.TrimEnd('\', '/') }
+$srvWs = ""
+try { $st = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/state" -Method Get -TimeoutSec 1 -EA Stop; if ($st -and $st.workspace) { $srvWs = ([string]$st.workspace).TrimEnd('\', '/') } } catch { <# Ignore #> }
+if (-not $srvWs -or $srvWs.Equals($normWs, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+try { $sw = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/switch-workspace" -Method Post -ContentType "application/json" -Body (ConvertTo-Json @{ workspace = $normWs } -Compress) -TimeoutSec 1 -EA Stop; if ($sw -and $sw.switched) { return $true } } catch { <# Restart stale server #> }
+try {
+foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -EA SilentlyContinue)) {
+if ($wp -and [int]$wp.ProcessId -ne $PID -and [string]$wp.CommandLine -match '(?i)(-File|-Command)\s+"?[^"]*start-office\.ps1') { Stop-Process -Id ([int]$wp.ProcessId) -Force -EA SilentlyContinue }
 }
-
+Start-Sleep -Milliseconds 150
+}
+catch { <# Ignore #> }
+return $false
+}
 function Start-SenOfficeIfIdle {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Workspace, [switch]$NoBrowser)
-    try {
-        if ($env:SEN_NO_AUTO_OFFICE -eq "1" -or [string]::IsNullOrWhiteSpace($Workspace)) { return $false }
-        if ($Workspace -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test|test_)|TestDrive)') { return $false }
-        $cfg = Get-SenOfficeConfig -Workspace $Workspace
-        if ($cfg.mode -eq "off") { return $false }
-        $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
-        if (-not (Test-Path -LiteralPath $officeDir)) { [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null }
-        $stampPath = Join-Path -Path $officeDir -ChildPath "autostart.stamp"
-        if (Test-Path -LiteralPath $stampPath) {
-            $ageSec = ([DateTime]::UtcNow - (Get-Item -LiteralPath $stampPath).LastWriteTimeUtc).TotalSeconds
-            if ($ageSec -ge 0 -and $ageSec -lt 20) { return $true }
-        }
-        $tabSt = Get-SenOfficeTabStatus -Workspace $Workspace -Port ([int]$cfg.port) -HeartbeatTimeoutSeconds 3600
-        [System.IO.File]::WriteAllText($stampPath, [DateTime]::UtcNow.ToString("o"), [System.Text.UTF8Encoding]::new($false))
-        if ($tabSt.ServerAlive -and (Sync-SenOfficeActiveWorkspace -Port $tabSt.Port -Workspace $Workspace)) {
-            if ($tabSt.TabAlive -or $NoBrowser.IsPresent) { return $true }
-            [void](Update-SenOfficeTabHeartbeat -Workspace $Workspace -Port $tabSt.Port -Launched)
-            try { Start-Process $tabSt.Url | Out-Null } catch { <# Ignore headless browser launch #> }
-            return $true
-        }
-        $startScr = Join-Path -Path $PSScriptRoot -ChildPath "start-office.ps1"
-        if (-not (Test-Path -LiteralPath $startScr)) { return $false }
-        [void](Update-SenOfficeTabHeartbeat -Workspace $Workspace -Port $tabSt.Port -Launched)
-        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell.exe" }
-        $argList = if ($env:OS -eq 'Windows_NT') { @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"") } else { @("-NoProfile", "-File", $startScr, "-Workspace", $Workspace) }
-        if ($NoBrowser.IsPresent -or $tabSt.TabAlive) { $argList += "-NoBrowser" }
-        if ($env:OS -eq 'Windows_NT') { Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null } else { Start-Process -FilePath $psExe -ArgumentList $argList | Out-Null }
-        return $true
-    }
-    catch { return $false }
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Workspace, [switch]$NoBrowser)
+try {
+if ($env:SEN_NO_AUTO_OFFICE -eq "1" -or [string]::IsNullOrWhiteSpace($Workspace)) { return $false }
+if ($Workspace -match '(?i)([\\/](temp|tmp|T)[\\/]|sen-(harness|gov|adv|.*-test|test_)|TestDrive)') { return $false }
+$cfg = Get-SenOfficeConfig -Workspace $Workspace
+if ($cfg.mode -eq "off") { return $false }
+$officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+if (-not (Test-Path -LiteralPath $officeDir)) { [IO.Directory]::CreateDirectory($officeDir) | Out-Null }
+$stampPath = Join-Path -Path $officeDir -ChildPath "autostart.stamp"
+if (Test-Path -LiteralPath $stampPath) {
+$ageSec = ([DateTime]::UtcNow - (Get-Item -LiteralPath $stampPath).LastWriteTimeUtc).TotalSeconds
+if ($ageSec -ge 0 -and $ageSec -lt 20) { return $true }
+}
+$tabSt = Get-SenOfficeTabStatus -Workspace $Workspace -Port ([int]$cfg.port) -HeartbeatTimeoutSeconds 3600
+[IO.File]::WriteAllText($stampPath, [DateTime]::UtcNow.ToString("o"), [Text.UTF8Encoding]::new($false))
+if ($tabSt.ServerAlive -and (Sync-SenOfficeActiveWorkspace -Port $tabSt.Port -Workspace $Workspace)) {
+if ($tabSt.TabAlive -or $NoBrowser.IsPresent) { return $true }
+[void](Update-SenOfficeTabHeartbeat -Workspace $Workspace -Port $tabSt.Port -Launched)
+try { Start-Process $tabSt.Url | Out-Null } catch { <# Ignore headless browser launch #> }
+return $true
+}
+$startScr = Join-Path -Path $PSScriptRoot -ChildPath "start-office.ps1"
+if (-not (Test-Path -LiteralPath $startScr)) { return $false }
+[void](Update-SenOfficeTabHeartbeat -Workspace $Workspace -Port $tabSt.Port -Launched)
+$psExe = if (Get-Command pwsh -EA SilentlyContinue) { "pwsh" } else { "powershell.exe" }
+$argList = if ($env:OS -eq 'Windows_NT') { @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$startScr`"", "-Workspace", "`"$Workspace`"") } else { @("-NoProfile", "-File", $startScr, "-Workspace", $Workspace) }
+if ($NoBrowser.IsPresent -or $tabSt.TabAlive) { $argList += "-NoBrowser" }
+if ($env:OS -eq 'Windows_NT') { Start-Process -FilePath $psExe -ArgumentList $argList -WindowStyle Hidden | Out-Null } else { Start-Process -FilePath $psExe -ArgumentList $argList | Out-Null }
+return $true
+}
+catch { return $false }
 }
 Set-Item -Path "Function:\global:Start-SenOfficeIfIdle" -Value ${function:Start-SenOfficeIfIdle} -Force
-
 function Invoke-SenWithFileMutex {
-    param([Parameter(Mandatory = $true)][string]$FilePath, [Parameter(Mandatory = $true)][scriptblock]$Action)
-    $canonPath = try { [System.IO.Path]::GetFullPath($FilePath).Replace('\', '/').ToLowerInvariant() } catch { <# Fallback #> $FilePath.Replace('\', '/').ToLowerInvariant() }
-    $shaHex = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($canonPath)))).Replace("-", "").Substring(0, 24).ToLowerInvariant()
-    $mtx = [System.Threading.Mutex]::new($false, "Local\SenStateMutex_$shaHex")
-    $hasLock = $false
-    try {
-        try { $hasLock = $mtx.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
-        if (-not $hasLock) { throw "Concurrency lock timeout acquiring state mutex on '$FilePath'." }
-        return (& $Action)
-    }
-    finally {
-        if ($hasLock) { try { $mtx.ReleaseMutex() } catch { <# Ignore release error #> } }
-        $mtx.Dispose()
-    }
+param([Parameter(Mandatory = $true)][string]$FilePath, [Parameter(Mandatory = $true)][scriptblock]$Action)
+$canonPath = try { [IO.Path]::GetFullPath($FilePath).Replace('\', '/').ToLowerInvariant() } catch { <# Fallback #> $FilePath.Replace('\', '/').ToLowerInvariant() }
+$shaHex = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($canonPath)))).Replace("-", "").Substring(0, 24).ToLowerInvariant()
+$mtx = [System.Threading.Mutex]::new($false, "Local\SenStateMutex_$shaHex")
+$hasLock = $false
+try {
+try { $hasLock = $mtx.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
+if (-not $hasLock) { throw "Concurrency lock timeout acquiring state mutex on '$FilePath'." }
+return (& $Action)
+}
+finally {
+if ($hasLock) { try { $mtx.ReleaseMutex() } catch { <# Ignore release error #> } }
+$mtx.Dispose()
+}
 }
 Set-Item -Path "Function:\global:Invoke-SenWithFileMutex" -Value ${function:Invoke-SenWithFileMutex} -Force
-
 function Write-SenOfficeEvent {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [Parameter(Mandatory = $true)]
-        [string]$From,
-        [Parameter(Mandatory = $true)]
-        [string]$To,
-        [string]$Lane = "Main",
-        [Parameter(Mandatory = $true)]
-        [string]$EcoText,
-        [string]$FullText = "",
-        [string]$Kind = "",
-        [int]$Hold = 1,
-        [string]$Source = "hook-post",
-        [string]$Tool = "",
-        [string]$Target = "",
-        [string]$Command = "",
-        [string]$Model = "inherit"
-    )
-    try {
-        $cfg = Get-SenOfficeConfig -Workspace $Workspace
-        if ($cfg.mode -eq "off") { return $false }
-        [void](Start-SenOfficeIfIdle -Workspace $Workspace)
-
-        $officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
-        if (-not (Test-Path -LiteralPath $officeDir)) {
-            [System.IO.Directory]::CreateDirectory($officeDir) | Out-Null
-        }
-        $evPath = Join-Path -Path $officeDir -ChildPath "events.jsonl"
-        $ts = [int64]([DateTime]::UtcNow - [DateTime]::new(1970, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)).TotalMilliseconds
-        $safeEco = Protect-SenRedactedText -Text $EcoText
-        $safeFull = if ([string]::IsNullOrEmpty($FullText)) { $safeEco } else { Protect-SenRedactedText -Text $FullText }
-
-        $entry = [ordered]@{
-            id       = "ev-$ts-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
-            ts       = $ts
-            from     = $From
-            to       = $To
-            lane     = $Lane
-            kind     = $Kind
-            hold     = $Hold
-            ecoText  = $safeEco
-            fullText = $safeFull
-            source   = $Source
-            tool     = $Tool
-            target   = (Protect-SenRedactedText -Text $Target)
-            command  = (Protect-SenRedactedText -Text $Command)
-            model    = $Model
-        }
-        $line = ConvertTo-Json -InputObject $entry -Compress -Depth 5
-        return (Invoke-SenWithFileMutex -FilePath $evPath -Action {
-                $existing = [System.Collections.Generic.List[string]]::new()
-                if (Test-Path -LiteralPath $evPath) {
-                    foreach ($l in [System.IO.File]::ReadAllLines($evPath, [System.Text.Encoding]::UTF8)) {
-                        if (-not [string]::IsNullOrWhiteSpace($l)) { $existing.Add($l) }
-                    }
-                }
-                $existing.Add($line)
-                while ($existing.Count -gt 200) {
-                    $existing.RemoveAt(0)
-                }
-                $tmpEv = "$evPath.$PID.tmp"
-                [System.IO.File]::WriteAllText($tmpEv, ($existing -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
-                Move-Item -LiteralPath $tmpEv -Destination $evPath -Force
-                return $true
-            })
-    }
-    catch {
-        return $false
-    }
+[CmdletBinding()]
+param(
+[Parameter(Mandatory = $true)]
+[string]$Workspace,
+[Parameter(Mandatory = $true)]
+[string]$From,
+[Parameter(Mandatory = $true)]
+[string]$To,
+[string]$Lane = "Main",
+[Parameter(Mandatory = $true)]
+[string]$EcoText,
+[string]$FullText = "",
+[string]$Kind = "",
+[int]$Hold = 1,
+[string]$Source = "hook-post",
+[string]$Tool = "",
+[string]$Target = "",
+[string]$Command = "",
+[string]$Model = "inherit"
+)
+try {
+$cfg = Get-SenOfficeConfig -Workspace $Workspace
+if ($cfg.mode -eq "off") { return $false }
+[void](Start-SenOfficeIfIdle -Workspace $Workspace)
+$officeDir = Join-Path -Path $Workspace -ChildPath ".agents/office"
+if (-not (Test-Path -LiteralPath $officeDir)) {
+[IO.Directory]::CreateDirectory($officeDir) | Out-Null
 }
-
+$evPath = Join-Path -Path $officeDir -ChildPath "events.jsonl"
+$ts = [int64]([DateTime]::UtcNow - [DateTime]::new(1970, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)).TotalMilliseconds
+$safeEco = Protect-SenRedactedText -Text $EcoText
+$safeFull = if ([string]::IsNullOrEmpty($FullText)) { $safeEco } else { Protect-SenRedactedText -Text $FullText }
+$entry = [ordered]@{
+id       = "ev-$ts-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
+ts       = $ts
+from     = $From
+to       = $To
+lane     = $Lane
+kind     = $Kind
+hold     = $Hold
+ecoText  = $safeEco
+fullText = $safeFull
+source   = $Source
+tool     = $Tool
+target   = (Protect-SenRedactedText -Text $Target)
+command  = (Protect-SenRedactedText -Text $Command)
+model    = $Model
+}
+$line = ConvertTo-Json -InputObject $entry -Compress -Depth 5
+return (Invoke-SenWithFileMutex -FilePath $evPath -Action {
+$existing = [Collections.Generic.List[string]]::new()
+if (Test-Path -LiteralPath $evPath) {
+foreach ($l in [IO.File]::ReadAllLines($evPath, [Text.Encoding]::UTF8)) {
+if (-not [string]::IsNullOrWhiteSpace($l)) { $existing.Add($l) }
+}
+}
+$existing.Add($line)
+while ($existing.Count -gt 200) {
+$existing.RemoveAt(0)
+}
+$tmpEv = "$evPath.$PID.tmp"
+[IO.File]::WriteAllText($tmpEv, ($existing -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+Move-Item -LiteralPath $tmpEv -Destination $evPath -Force
+return $true
+})
+}
+catch {
+return $false
+}
+}
 function Read-SenOfficeEvents {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [int]$Limit = 200
-    )
-    $evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
-    if (-not (Test-Path -LiteralPath $evPath)) { return @() }
-    $out = [System.Collections.Generic.List[object]]::new()
-    try {
-        $lines = [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $evPath).Path, [System.Text.Encoding]::UTF8)
-        $start = [Math]::Max(0, $lines.Count - $Limit)
-        for ($i = $start; $i -lt $lines.Count; $i++) {
-            $ln = $lines[$i].Trim()
-            if ($ln) {
-                if (Get-Command Repair-SenUtf8Mojibake -ErrorAction SilentlyContinue) { $ln = Repair-SenUtf8Mojibake -Text $ln }
-                try { $out.Add((ConvertFrom-Json -InputObject $ln)) } catch { <# Skip malformed JSONL line #> }
-            }
-        }
-    }
-    catch { <# Return partial or empty list if events.jsonl is concurrently locked #> }
-    return $out.ToArray()
+[CmdletBinding()]
+param(
+[Parameter(Mandatory = $true)]
+[string]$Workspace,
+[int]$Limit = 200
+)
+$evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
+if (-not (Test-Path -LiteralPath $evPath)) { return @() }
+$out = [Collections.Generic.List[object]]::new()
+try {
+$lines = [IO.File]::ReadAllLines((Resolve-Path -LiteralPath $evPath).Path, [Text.Encoding]::UTF8)
+$start = [Math]::Max(0, $lines.Count - $Limit)
+for ($i = $start; $i -lt $lines.Count; $i++) {
+$ln = $lines[$i].Trim()
+if ($ln) {
+if (Get-Command Repair-SenUtf8Mojibake -EA SilentlyContinue) { $ln = Repair-SenUtf8Mojibake -Text $ln }
+try { $out.Add((ConvertFrom-Json -InputObject $ln)) } catch { <# Skip malformed JSONL line #> }
 }
-
+}
+}
+catch { <# Return partial or empty list if events.jsonl is concurrently locked #> }
+return $out.ToArray()
+}
 function Clear-SenOfficeEvents {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [switch]$Force
-    )
-    $evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
-    if (Test-Path -LiteralPath $evPath) {
-        if (-not $Force) {
-            $kept = [System.Collections.Generic.List[string]]::new()
-            foreach ($ln in [System.IO.File]::ReadAllLines($evPath, [System.Text.Encoding]::UTF8)) {
-                if ($ln -match '"source"\s*:\s*"guard-denied"') { $kept.Add($ln) }
-            }
-            if ($kept.Count -gt 0) {
-                [System.IO.File]::WriteAllText($evPath, ($kept -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
-                return
-            }
-        }
-        Remove-Item -LiteralPath $evPath -Force -ErrorAction SilentlyContinue
-    }
+[CmdletBinding()]
+param(
+[Parameter(Mandatory = $true)]
+[string]$Workspace,
+[switch]$Force
+)
+$evPath = Join-Path -Path $Workspace -ChildPath ".agents/office/events.jsonl"
+if (Test-Path -LiteralPath $evPath) {
+if (-not $Force) {
+$kept = [Collections.Generic.List[string]]::new()
+foreach ($ln in [IO.File]::ReadAllLines($evPath, [Text.Encoding]::UTF8)) {
+if ($ln -match '"source"\s*:\s*"guard-denied"') { $kept.Add($ln) }
 }
-
+if ($kept.Count -gt 0) {
+[IO.File]::WriteAllText($evPath, ($kept -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+return
+}
+}
+Remove-Item -LiteralPath $evPath -Force -EA SilentlyContinue
+}
+}
 function Test-SenStuckLoop {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace,
-        [string]$ToolName = "",
-        [string]$Target = "",
-        [switch]$Failed,
-        [string]$ErrorText = "",
-        [switch]$Reset
-    )
-    $loopsPath = Join-Path -Path $Workspace -ChildPath ".agents/office/loops.json"
-    if ($Reset) {
-        if (Test-Path -LiteralPath $loopsPath) {
-            Remove-Item -LiteralPath $loopsPath -Force -ErrorAction SilentlyContinue
-        }
-        return [ordered]@{ IsStuck = $false; Streak = 0; Key = ""; Reason = $null }
-    }
-
-    $normTarget = [regex]::Replace(([string]$Target).Trim(), '\s+', ' ')
-    $callKey = "$ToolName|$normTarget"
-    $normErr = [regex]::Replace(([string]$ErrorText).Trim(), '\d{1,2}:\d{2}(:\d{2})?|\d+\s?(ms|s)\b', '#t')
-
-    $state = @{ key = ""; err = ""; streak = 0; updatedAt = "" }
-    $loaded = Read-SenSafeJson -Path $loopsPath
-    if ($null -ne $loaded) {
-        $state.key = [string]$loaded.key
-        $state.err = [string]$loaded.err
-        $state.streak = [int]$loaded.streak
-    }
-
-    if ($Failed) {
-        if ($state.key -eq $callKey -and ($state.err -eq $normErr -or [string]::IsNullOrEmpty($normErr))) {
-            $state.streak = [int]$state.streak + 1
-        }
-        else {
-            $state.key = $callKey
-            $state.err = $normErr
-            $state.streak = 1
-        }
-        $state.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-        Write-SenAtomicJson -Path $loopsPath -InputObject $state -Depth 4 -Compress
-    }
-
-    $isStuck = ($state.key -eq $callKey) -and ([int]$state.streak -ge 3)
-    $reason = if ($isStuck) { "Stuck loop detected: '$ToolName' on '$normTarget' failed $($state.streak) times in a row. Stop and change approach or ask the user." } else { $null }
-    return [ordered]@{
-        IsStuck = $isStuck
-        Streak  = if ($state.key -eq $callKey) { [int]$state.streak } else { 0 }
-        Key     = $callKey
-        Reason  = $reason
-    }
+[CmdletBinding()]
+param(
+[Parameter(Mandatory = $true)]
+[string]$Workspace,
+[string]$ToolName = "",
+[string]$Target = "",
+[switch]$Failed,
+[string]$ErrorText = "",
+[switch]$Reset
+)
+$loopsPath = Join-Path -Path $Workspace -ChildPath ".agents/office/loops.json"
+if ($Reset) {
+if (Test-Path -LiteralPath $loopsPath) {
+Remove-Item -LiteralPath $loopsPath -Force -EA SilentlyContinue
 }
-
+return [ordered]@{ IsStuck = $false; Streak = 0; Key = ""; Reason = $null }
+}
+$normTarget = [regex]::Replace(([string]$Target).Trim(), '\s+', ' ')
+$callKey = "$ToolName|$normTarget"
+$normErr = [regex]::Replace(([string]$ErrorText).Trim(), '\d{1,2}:\d{2}(:\d{2})?|\d+\s?(ms|s)\b', '#t')
+$state = @{ key = ""; err = ""; streak = 0; updatedAt = "" }
+$loaded = Read-SenSafeJson -Path $loopsPath
+if ($null -ne $loaded) {
+$state.key = [string]$loaded.key
+$state.err = [string]$loaded.err
+$state.streak = [int]$loaded.streak
+}
+if ($Failed) {
+if ($state.key -eq $callKey -and ($state.err -eq $normErr -or [string]::IsNullOrEmpty($normErr))) {
+$state.streak = [int]$state.streak + 1
+}
+else {
+$state.key = $callKey
+$state.err = $normErr
+$state.streak = 1
+}
+$state.updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+Write-SenAtomicJson -Path $loopsPath -InputObject $state -Depth 4 -Compress
+}
+$isStuck = ($state.key -eq $callKey) -and ([int]$state.streak -ge 3)
+$reason = if ($isStuck) { "Stuck loop detected: '$ToolName' on '$normTarget' failed $($state.streak) times in a row. Stop and change approach or ask the user." } else { $null }
+return [ordered]@{
+IsStuck = $isStuck
+Streak  = if ($state.key -eq $callKey) { [int]$state.streak } else { 0 }
+Key     = $callKey
+Reason  = $reason
+}
+}
 function Write-SenOfficeShowcase {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace,
-        [Parameter(Mandatory = $false)][hashtable]$Showcase = $null,
-        [string]$TaskId = "", [string]$Title = "", [int]$Phase = 0,
-        [string]$Blueprint = "", [string]$Summary = "", [string]$Domain = "",
-        [string[]]$ExpectedOutputs = @(), [string[]]$VerifiedOutputs = @(), [Alias("Mermaid", "Diagram")][string[]]$Diagrams = @(),
-        [hashtable]$Gates = $null, [hashtable]$Metrics = $null,
-        [hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
-        [int]$Tier = 2
-    )
-    [void](Start-SenOfficeIfIdle -Workspace $Workspace)
-    $existing = Read-SenOfficeShowcase -Workspace $Workspace
-    $merged = if ($null -ne $existing) { ConvertTo-SenHashtable -InputObject $existing } else { @{ } }
-    $nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-    if ($Diagrams.Count -gt 0) { $merged["diagrams"] = $Diagrams }
-    if ($null -ne $Showcase) {
-        foreach ($k in $Showcase.Keys) {
-            if ($null -ne $Showcase[$k] -or (-not $merged.ContainsKey($k))) { $merged[$k] = $Showcase[$k] }
-        }
-    }
-    else {
-        if ($Title) { $merged["projectTitle"] = $Title }
-        elseif (-not $merged["projectTitle"]) { $merged["projectTitle"] = if ($TaskId) { $TaskId } else { (Split-Path $Workspace -Leaf) } }
-        if ($Domain) { $merged["domain"] = $Domain }
-        if ($null -ne $Metrics) { $merged["metrics"] = $Metrics }
-        if ($PSBoundParameters.ContainsKey("Tier") -or (-not $merged["tier"])) { $merged["tier"] = $Tier }
-        $txt = if ($Summary) { $Summary } elseif ($Blueprint) { $Blueprint } elseif ($Title) { $Title } else { "Output Showcase" }
-        if ($null -ne $Phase1Data) { $merged["phase1"] = $Phase1Data }
-        if ($null -ne $Phase2Data) { $merged["phase2"] = $Phase2Data }
-        if ($Phase -eq 2 -and $null -eq $Phase2Data) {
-            $g = if ($null -ne $Gates) { $Gates } else { @{ tests = "PASS"; build = "PASS"; security = "PASS"; legal = "PASS" } }
-            $vo = if ($VerifiedOutputs.Count -gt 0) { $VerifiedOutputs } elseif ($null -ne $Metrics -and $Metrics.Count -gt 0) { @($Metrics.Keys | ForEach-Object { "$($_): $($Metrics[$_])" }) } elseif ($TaskId) { @($TaskId) } else { @("docs/CONTEXT.md") }
-            $merged["phase2"] = @{ summary = $txt; verifiedOutputs = $vo; gates = $g; updatedAt = $nowIso }
-        }
-        elseif (($Phase -eq 1 -or ($Phase -eq 0 -and $null -eq $Phase2Data)) -and $null -eq $Phase1Data) {
-            $eo = if ($ExpectedOutputs.Count -gt 0) { $ExpectedOutputs } elseif ($TaskId) { @($TaskId) } else { @() }
-            $merged["phase1"] = @{ summary = $txt; specPath = $TaskId; expectedOutputs = $eo; updatedAt = $nowIso }
-        }
-    }
-    $merged["updatedAt"] = $nowIso
-    $scPath = Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json"
-    Write-SenAtomicJson -Path $scPath -InputObject $merged -Depth 8
+[CmdletBinding()]
+param(
+[Parameter(Mandatory = $true)][Alias("WorkspacePath", "Path")][string]$Workspace,
+[Parameter(Mandatory = $false)][hashtable]$Showcase = $null,
+[string]$TaskId = "", [string]$Title = "", [int]$Phase = 0,
+[string]$Blueprint = "", [string]$Summary = "", [string]$Domain = "",
+[string[]]$ExpectedOutputs = @(), [string[]]$VerifiedOutputs = @(), [Alias("Mermaid", "Diagram")][string[]]$Diagrams = @(),
+[hashtable]$Gates = $null, [hashtable]$Metrics = $null,
+[hashtable]$Phase1Data = $null, [hashtable]$Phase2Data = $null,
+[int]$Tier = 2
+)
+[void](Start-SenOfficeIfIdle -Workspace $Workspace)
+$existing = Read-SenOfficeShowcase -Workspace $Workspace
+$merged = if ($null -ne $existing) { ConvertTo-SenHashtable -InputObject $existing } else { @{ } }
+$nowIso = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+if ($Diagrams.Count -gt 0) { $merged["diagrams"] = $Diagrams }
+if ($null -ne $Showcase) {
+foreach ($k in $Showcase.Keys) {
+if ($null -ne $Showcase[$k] -or (-not $merged.ContainsKey($k))) { $merged[$k] = $Showcase[$k] }
 }
-
+}
+else {
+if ($Title) { $merged["projectTitle"] = $Title }
+elseif (-not $merged["projectTitle"]) { $merged["projectTitle"] = if ($TaskId) { $TaskId } else { (Split-Path $Workspace -Leaf) } }
+if ($Domain) { $merged["domain"] = $Domain }
+if ($null -ne $Metrics) { $merged["metrics"] = $Metrics }
+if ($PSBoundParameters.ContainsKey("Tier") -or (-not $merged["tier"])) { $merged["tier"] = $Tier }
+$txt = if ($Summary) { $Summary } elseif ($Blueprint) { $Blueprint } elseif ($Title) { $Title } else { "Output Showcase" }
+if ($null -ne $Phase1Data) { $merged["phase1"] = $Phase1Data }
+if ($null -ne $Phase2Data) { $merged["phase2"] = $Phase2Data }
+if ($Phase -eq 2 -and $null -eq $Phase2Data) {
+$g = if ($null -ne $Gates) { $Gates } else { @{ tests = "PASS"; build = "PASS"; security = "PASS"; legal = "PASS" } }
+$vo = if ($VerifiedOutputs.Count -gt 0) { $VerifiedOutputs } elseif ($null -ne $Metrics -and $Metrics.Count -gt 0) { @($Metrics.Keys | ForEach-Object { "$($_): $($Metrics[$_])" }) } elseif ($TaskId) { @($TaskId) } else { @("docs/CONTEXT.md") }
+$merged["phase2"] = @{ summary = $txt; verifiedOutputs = $vo; gates = $g; updatedAt = $nowIso }
+}
+elseif (($Phase -eq 1 -or ($Phase -eq 0 -and $null -eq $Phase2Data)) -and $null -eq $Phase1Data) {
+$eo = if ($ExpectedOutputs.Count -gt 0) { $ExpectedOutputs } elseif ($TaskId) { @($TaskId) } else { @() }
+$merged["phase1"] = @{ summary = $txt; specPath = $TaskId; expectedOutputs = $eo; updatedAt = $nowIso }
+}
+}
+$merged["updatedAt"] = $nowIso
+$scPath = Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json"
+Write-SenAtomicJson -Path $scPath -InputObject $merged -Depth 8
+}
 function Read-SenOfficeShowcase {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Workspace
-    )
-    return (Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json"))
+[CmdletBinding()]
+param(
+[Parameter(Mandatory = $true)]
+[string]$Workspace
+)
+return (Read-SenSafeJson -Path (Join-Path -Path $Workspace -ChildPath ".agents/office/showcase.json"))
 }
-
 function Get-SenAntigravityQuota {
-    [CmdletBinding()]
-    param([string]$DbPath = "")
-    $candidates = @()
-    if (-not [string]::IsNullOrWhiteSpace($DbPath)) {
-        $candidates += $DbPath
-    }
-    else {
-        if ($env:APPDATA) {
-            $candidates += Join-Path $env:APPDATA "Antigravity\User\globalStorage\state.vscdb"
-        }
-        if ($env:HOME) {
-            $candidates += Join-Path $env:HOME "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
-            $candidates += Join-Path $env:HOME ".config/Antigravity/User/globalStorage/state.vscdb"
-        }
-    }
-    $dbFile = $null
-    foreach ($c in $candidates) {
-        if ($c -and (Test-Path -LiteralPath $c)) { $dbFile = $c; break }
-    }
-    if (-not $dbFile) {
-        return @{ available = $false; status = "Unavailable"; source = "none"; models = @() }
-    }
-    $proRemain = $null
-    $flashRemain = $null
-    try {
-        $fs = [System.IO.File]::Open($dbFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-        try {
-            $len = [int][Math]::Min(65536, $fs.Length)
-            $buf = New-Object byte[] $len
-            [void]$fs.Read($buf, 0, $len)
-            $txt = [System.Text.Encoding]::ASCII.GetString($buf)
-            $mList = @([regex]::Matches($txt, '"pctLeft"\s*:\s*(\d{1,3})'))
-            if ($mList.Count -ge 1) { $proRemain = [int]$mList[0].Groups[1].Value }
-            if ($mList.Count -ge 2) { $flashRemain = [int]$mList[1].Groups[1].Value }
-        }
-        finally { $fs.Close() }
-    }
-    catch { <# Safe fallback if SQLite file is locked exclusively #> }
-    if ($null -eq $proRemain) {
-        return @{ available = $false; status = "Unavailable"; source = "state.vscdb (unreadable)"; models = @() }
-    }
-    $modelsOut = @(@{ label = "Gemini Pro / Inherit"; pctLeft = $proRemain })
-    if ($null -ne $flashRemain) { $modelsOut += @{ label = "Gemini Flash / Scout"; pctLeft = $flashRemain } }
-    return @{
-        available = $true
-        status    = "Available"
-        source    = "state.vscdb (read-only)"
-        models    = $modelsOut
-    }
+[CmdletBinding()]
+param([string]$DbPath = "")
+$candidates = @()
+if (-not [string]::IsNullOrWhiteSpace($DbPath)) {
+$candidates += $DbPath
 }
-
+else {
+if ($env:APPDATA) {
+$candidates += Join-Path $env:APPDATA "Antigravity\User\globalStorage\state.vscdb"
+}
+if ($env:HOME) {
+$candidates += Join-Path $env:HOME "Library/Application Support/Antigravity/User/globalStorage/state.vscdb"
+$candidates += Join-Path $env:HOME ".config/Antigravity/User/globalStorage/state.vscdb"
+}
+}
+$dbFile = $null
+foreach ($c in $candidates) {
+if ($c -and (Test-Path -LiteralPath $c)) { $dbFile = $c; break }
+}
+if (-not $dbFile) {
+return @{ available = $false; status = "Unavailable"; source = "none"; models = @() }
+}
+$proRemain = $null
+$flashRemain = $null
+try {
+$fs = [IO.File]::Open($dbFile, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+try {
+$len = [int][Math]::Min(65536, $fs.Length)
+$buf = New-Object byte[] $len
+[void]$fs.Read($buf, 0, $len)
+$txt = [Text.Encoding]::ASCII.GetString($buf)
+$mList = @([regex]::Matches($txt, '"pctLeft"\s*:\s*(\d{1,3})'))
+if ($mList.Count -ge 1) { $proRemain = [int]$mList[0].Groups[1].Value }
+if ($mList.Count -ge 2) { $flashRemain = [int]$mList[1].Groups[1].Value }
+}
+finally { $fs.Close() }
+}
+catch { <# Safe fallback if SQLite file is locked exclusively #> }
+if ($null -eq $proRemain) {
+return @{ available = $false; status = "Unavailable"; source = "state.vscdb (unreadable)"; models = @() }
+}
+$modelsOut = @(@{ label = "Gemini Pro / Inherit"; pctLeft = $proRemain })
+if ($null -ne $flashRemain) { $modelsOut += @{ label = "Gemini Flash / Scout"; pctLeft = $flashRemain } }
+return @{
+available = $true
+status    = "Available"
+source    = "state.vscdb (read-only)"
+models    = $modelsOut
+}
+}
 function Get-SenTaskRiskScore {
-    [CmdletBinding()]
-    param(
-        [AllowEmptyString()][string]$Request = "",
-        [int]$FileCount = 1,
-        [Alias("ModifiedFiles", "Paths")][string[]]$Files = @(),
-        [switch]$TouchesDatabase, [switch]$TouchesAuth, [switch]$TouchesPayments,
-        [switch]$DeletesData, [switch]$NewProjectOrArchitecture, [switch]$SharedComponent,
-        [switch]$PublicApi, [switch]$ConfigOrMigration, [switch]$NewDependency,
-        [switch]$BusinessLogic, [switch]$TouchesPersonalDataOrLegal,
-        [ValidateSet("mini", "standard", "enterprise")][string]$ProjectScale = "standard"
-    )
-    $score = 0
-    $reasons = [System.Collections.Generic.List[string]]::new()
-    $hardFloorTier3 = $false
-    $req = ([string]$Request).Trim().ToLowerInvariant()
-    $validFiles = @($Files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    $effFileCount = [Math]::Max($FileCount, $validFiles.Count)
-    $fAuth = $false; $fDb = $false; $fPay = $false; $fCfg = $false
-    foreach ($fp in $validFiles) {
-        $nfp = ([string]$fp).Replace('\', '/')
-        if ($nfp -match '(?i)(^|/)(auth|login|password|oauth|jwt|rbac|sso|security|crypto|guard\.(ps1|sh))([/._-]|$)') { $fAuth = $true }
-        if ($nfp -match '(?i)(^|/)(migrations?|schema|prisma|database|db|sql)([/._-]|$)|\.(sql|prisma)$') { $fDb = $true }
-        if ($nfp -match '(?i)(^|/)(payments?|billing|stripe|vnpay|momo|checkout|wallet)([/._-]|$)') { $fPay = $true }
-        if ($nfp -match '(?i)(^|/)(\.github/workflows|docker|Dockerfile|terraform|k8s|helm|\.env)([/._-]|$)') { $fCfg = $true }
-    }
-
-    $forceTier1Override = $req -match '(\bjust\s+do\s+it\b|l.m\s+lu.n(\s+.i)?|lam\s+luon(\s+di)?)'
-    $forceTier3Override = $req -match '(^|[\s"''(\[])(\bthis\s+is\s+tier\s*3\b|\btier\s*3\b|c.p\s*3\b|cap\s*3\b)'
-    $hasCompoundRisk = $req -match '\b(rewrite|migrate|migration|drop|delete|truncate|purge|wipe|jwt|oauth|auth|authentication|authorization|password|passkey|2fa|mfa|sso|rbac|permission|encryption|microservice|postgres|mysql|mongodb|sqlite|prisma|schema|stripe|paypal|vnpay|momo|payment|billing|checkout|refund|wallet|and\s+(add|create|implement|build))\b'
-    $isCosmeticUiOnly = (-not $hasCompoundRisk) -and ($req -match '^(doi\s+mau\s+nut|..i\s+m.u\s+n.t|change\s+button\s+color|tang\s+co\s+chu|t.ng\s+c.\s+ch.|fix\s+the\s+typo|the\s+footer\s+overlaps)')
-
-    $hasDb = $TouchesDatabase.IsPresent -or $fDb -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
-    $hasAuth = $TouchesAuth.IsPresent -or $fAuth -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
-    $hasPay = $TouchesPayments.IsPresent -or $fPay -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
-    $hasDel = $DeletesData.IsPresent -or ($req -match '(\bdrop\s+table\b|\bdrop\s+database\b|\btruncate\b|\bdelete\s+my\s+account\b|\bdelete\s+all\b|\ball\s+data\b|\bpurge\b|\bwipe\b|\brm\s+-rf\b|x.a\s+to.n\s+b.|xoa\s+toan\s+bo|x.a\s+d.\s+li.u|xoa\s+du\s+lieu|x.a\s+t.i\s+kho.n|x.a\s+b.ng\b|xoa\s+bang\b)')
-    $hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|\bkubernetes\b|\bterraform\b|\bproduction\s+deploy\b|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
-
-    $hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or $TouchesPersonalDataOrLegal.IsPresent -or ($effFileCount -gt 1) -or $fAuth -or $fDb -or $fPay -or $fCfg
-    $isPureQuestion = (-not $hasExplicitSwitches) -and (-not ($hasDb -or $hasAuth -or $hasPay -or $hasDel -or $hasArch)) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
-    if ($isPureQuestion) {
-        return [pscustomobject]@{
-            Score = 0; Tier = 0; IsLookup = $true; RiskLevel = "none"; ComplexityLevel = "C0"; ExpressMode = $false
-            Reasons = @("Pure lookup question (no tier label)"); HardFloorTier3 = $false
-            RequiresDesignAndPlan = $false; LegalCheckRequired = $false
-            ProjectScale = $ProjectScale; RecommendedExecution = "direct-answer"
-        }
-    }
-
-    if ($hasDb) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Database/Schema (+5)") }
-    if ($hasAuth) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Auth/OAuth/Security (+5)") }
-    if ($hasPay) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Payments/Billing (+5)") }
-    if ($hasDel) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Data Deletion/Migration (+5)") }
-    if ($hasArch) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("New Project/Architecture (+5)") }
-
-    $hasApi = $PublicApi.IsPresent -or ($req -match '(\bapi\b|\bendpoint\b|\brest\b|\bgraphql\b|\bwebhook\b|\bcontract\b|\bbreaking\s+change\b|\bcontrollers,\s+services\s+and\s+routes\b)')
-    $hasShared = $SharedComponent.IsPresent -or ($req -match '(\bshared\s+component\b|\bcore\s+module\b|\bglobal\s+state\b|\bcommon\s+util\b|\bconcurrency\b|\bmutex\b|\brace\s+condition\b|d.ng\s+chung|dung\s+chung)')
-    $hasDep = $NewDependency.IsPresent -or ($req -match '(\bnpm\s+install\b|\bpip\s+install\b|\bnew\s+library\b|\bnew\s+package\b|\badd\s+dependency\b|\bdayjs\b|\bzod\b|th.\s+vi.n|thu\s+vien)')
-    $hasCfg = $ConfigOrMigration.IsPresent -or $fCfg -or ($req -match '(\bwebpack\b|\bvite\.config\b|\btsconfig\b|\bdockerfile\b|\bdocker-compose\b|\bgithub\s+actions\b|\bgitlab-ci\b)')
-    $hasLegal = $TouchesPersonalDataOrLegal.IsPresent -or $hasPay -or $hasAuth -or $hasArch -or ($req -match '(\bprivacy\s+policy\b|\bcookie\s+banner\b|\bconsent\b|\bgtag\b|\bfbq\b|\btiktok\s+pixel\b|\bpersonal\s+data\b|\bpdpl\b|\bnd\s*356\b|\bluat\s*91\b|d.\s+li.u\s+c.\s+nh.n|du\s+lieu\s+ca\s+nhan|ch.nh\s+s.ch\s+b.o\s+m.t|chinh\s+sach\s+bao\s+mat)')
-
-    if ($hasApi) { $score += 3; $reasons.Add("API/Endpoint Change (+3)") }
-    if ($hasShared) { $score += 3; $reasons.Add("Shared Component/Blast Radius (+3)") }
-    if ($hasDep) { $score += 3; $reasons.Add("New Dependency (+3)") }
-    if ($hasCfg) { $score += 3; $reasons.Add("Build/Infra Config (+3)") }
-    if ($effFileCount -ge 3) { $score += 3; $reasons.Add("Touches $effFileCount files (+3)") }
-
-    $hasLogic = $BusinessLogic.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bfeature\b|\bdark\s+mode\b|\bexport\b|\bimport\b|\bexcel\b|\bcsv\b|\bfilter\b|\bsearch\b|\bpagination\b|\bvalidation\b|\bworkflow\b|ch.c\s+n.ng\s+l.c|chuc\s+nang\s+loc|xu.t\s+danh\s+s.ch|xuat\s+danh\s+sach|ph.n\s+trang|phan\s+trang)'))
-    if ($hasLogic) { $score += 2; $reasons.Add("Business Logic/Feature (+2)") }
-    if ($reasons.Count -eq 0) { $reasons.Add("UI/CSS/Copy or localized 1-2 file fix (+0)") }
-
-    $tier = if ($hardFloorTier3 -or $forceTier3Override -or $score -ge 6) { 3 } elseif ($score -ge 2) { 2 } else { 1 }
-    if ($forceTier1Override -and -not $hardFloorTier3 -and -not $forceTier3Override -and $score -lt 5) {
-        $tier = 1; $reasons.Add("User override to Tier 1 (safe scope)")
-    }
-    elseif ($forceTier1Override -and ($hardFloorTier3 -or $score -ge 5)) {
-        $reasons.Add("Risk overrides 'just do it': stays higher tier")
-    }
-
-    $riskLevel = if ($hardFloorTier3 -or $score -ge 8) { "critical" } elseif ($score -ge 5) { "high" } elseif ($score -ge 2) { "medium" } else { "low" }
-    $compLevel = if ($hardFloorTier3 -or $score -ge 8) { "C4" } elseif ($tier -eq 3) { "C3" } elseif ($tier -eq 2) { "C2" } else { "C1" }
-    $expressMode = ($tier -eq 2) -and (-not $hardFloorTier3) -and (-not $hasApi) -and (-not $hasShared) -and (-not $hasDep) -and (-not $hasCfg)
-    $execMode = if ($tier -lt 3) { "single-agent" } elseif ($ProjectScale -eq "mini") { "native-compact" } elseif ($hardFloorTier3 -or $ProjectScale -eq "enterprise") { "subagent-driven" } else { "native" }
-
-    return [pscustomobject]@{
-        Score = [int]$score; Tier = [int]$tier; IsLookup = $false; RiskLevel = $riskLevel
-        ComplexityLevel = $compLevel; ExpressMode = [bool]$expressMode
-        Reasons = @($reasons.ToArray()); HardFloorTier3 = [bool]$hardFloorTier3
-        RequiresDesignAndPlan = [bool]($tier -eq 3); LegalCheckRequired = [bool]$hasLegal
-        ProjectScale = $ProjectScale; RecommendedExecution = $execMode
-    }
+[CmdletBinding()]
+param(
+[AllowEmptyString()][string]$Request = "",
+[int]$FileCount = 1,
+[Alias("ModifiedFiles", "Paths")][string[]]$Files = @(),
+[switch]$TouchesDatabase, [switch]$TouchesAuth, [switch]$TouchesPayments,
+[switch]$DeletesData, [switch]$NewProjectOrArchitecture, [switch]$SharedComponent,
+[switch]$PublicApi, [switch]$ConfigOrMigration, [switch]$NewDependency,
+[switch]$BusinessLogic, [switch]$TouchesPersonalDataOrLegal,
+[ValidateSet("mini", "standard", "enterprise")][string]$ProjectScale = "standard"
+)
+$score = 0
+$reasons = [Collections.Generic.List[string]]::new()
+$hardFloorTier3 = $false
+$req = ([string]$Request).Trim().ToLowerInvariant()
+$validFiles = @($Files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+$effFileCount = [Math]::Max($FileCount, $validFiles.Count)
+$fAuth = $false; $fDb = $false; $fPay = $false; $fCfg = $false
+foreach ($fp in $validFiles) {
+$nfp = ([string]$fp).Replace('\', '/')
+if ($nfp -match '(?i)(^|/)(auth|login|password|oauth|jwt|rbac|sso|security|crypto|guard\.(ps1|sh))([/._-]|$)') { $fAuth = $true }
+if ($nfp -match '(?i)(^|/)(migrations?|schema|prisma|database|db|sql)([/._-]|$)|\.(sql|prisma)$') { $fDb = $true }
+if ($nfp -match '(?i)(^|/)(payments?|billing|stripe|vnpay|momo|checkout|wallet)([/._-]|$)') { $fPay = $true }
+if ($nfp -match '(?i)(^|/)(\.github/workflows|docker|Dockerfile|terraform|k8s|helm|\.env)([/._-]|$)') { $fCfg = $true }
 }
-
+$forceTier1Override = $req -match '(\bjust\s+do\s+it\b|l.m\s+lu.n(\s+.i)?|lam\s+luon(\s+di)?)'
+$forceTier3Override = $req -match '(^|[\s"''(\[])(\bthis\s+is\s+tier\s*3\b|\btier\s*3\b|c.p\s*3\b|cap\s*3\b)'
+$hasCompoundRisk = $req -match '\b(rewrite|migrate|migration|drop|delete|truncate|purge|wipe|jwt|oauth|auth|authentication|authorization|password|passkey|2fa|mfa|sso|rbac|permission|encryption|microservice|postgres|mysql|mongodb|sqlite|prisma|schema|stripe|paypal|vnpay|momo|payment|billing|checkout|refund|wallet|and\s+(add|create|implement|build))\b'
+$isCosmeticUiOnly = (-not $hasCompoundRisk) -and ($req -match '^(doi\s+mau\s+nut|..i\s+m.u\s+n.t|change\s+button\s+color|tang\s+co\s+chu|t.ng\s+c.\s+ch.|fix\s+the\s+typo|the\s+footer\s+overlaps)')
+$hasDb = $TouchesDatabase.IsPresent -or $fDb -or ($req -match '(\bdatabase\b|\bdb\b|\bschema\b|\bmigration\b|\bmigrate\b|\bsql\b|\bpostgres|\bmysql\b|\bsqlite\b|\bmongodb\b|\bprisma\b|\btypeorm\b|\bsequelize\b|\bsupabase\b|\bcsdl\b|c.\s+s.\s+d.\s+li.u|co\s+so\s+du\s+lieu|th.m\s+b.ng\s+`?orders|them\s+bang\s+`?orders)')
+$hasAuth = $TouchesAuth.IsPresent -or $fAuth -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bauth\b|\bauthentication\b|\bauthorization\b|\boauth|\bjwt\b|\bsession\b|\bsso\b|\brbac\b|\bpermission\b|\bpassword\b|\bpasskey\b|\b2fa\b|\bmfa\b|\bcrypto|\bencryption\b|\bprivate\s+key\b|\blogin\s+with\b|..ng\s+nh.p\s+b.ng|dang\s+nhap\s+bang|ph.n\s+quy.n|phan\s+quyen|x.c\s+th.c)'))
+$hasPay = $TouchesPayments.IsPresent -or $fPay -or ($req -match '(\bpayment|\bbilling\b|\bstripe\b|\bpaypal\b|\bvnpay\b|\bmomo\b|\bzalopay\b|\bcheckout\b|\binvoice\b|\brefund\b|\bwallet\b|\bsubscription\b|thanh\s+to.n|thanh\s+toan|ho.n\s+ti.n|hoan\s+tien)')
+$hasDel = $DeletesData.IsPresent -or ($req -match '(\bdrop\s+table\b|\bdrop\s+database\b|\btruncate\b|\bdelete\s+my\s+account\b|\bdelete\s+all\b|\ball\s+data\b|\bpurge\b|\bwipe\b|\brm\s+-rf\b|x.a\s+to.n\s+b.|xoa\s+toan\s+bo|x.a\s+d.\s+li.u|xoa\s+du\s+lieu|x.a\s+t.i\s+kho.n|x.a\s+b.ng\b|xoa\s+bang\b)')
+$hasArch = $NewProjectOrArchitecture.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bnew\s+project\b|\bnew\s+mobile\s+app\b|\bnew\s+website\b|\bfrom\s+scratch\b|\barchitecture\b|\bmonolith\b|\bmicroservice|\bkubernetes\b|\bterraform\b|\bproduction\s+deploy\b|website\s+b.n\s+h.ng\s+m.i|website\s+ban\s+hang\s+moi|d.\s+.n\s+m.i|du\s+an\s+moi|ki.n\s+tr.c|kien\s+truc|x.y\s+d.ng\s+h.\s+th.ng|xay\s+dung\s+he\s+thong)'))
+$hasExplicitSwitches = $TouchesDatabase.IsPresent -or $TouchesAuth.IsPresent -or $TouchesPayments.IsPresent -or $DeletesData.IsPresent -or $NewProjectOrArchitecture.IsPresent -or $SharedComponent.IsPresent -or $PublicApi.IsPresent -or $ConfigOrMigration.IsPresent -or $NewDependency.IsPresent -or $BusinessLogic.IsPresent -or $TouchesPersonalDataOrLegal.IsPresent -or ($effFileCount -gt 1) -or $fAuth -or $fDb -or $fPay -or $fCfg
+$isPureQuestion = (-not $hasExplicitSwitches) -and (-not ($hasDb -or $hasAuth -or $hasPay -or $hasDel -or $hasArch)) -and ($req.EndsWith("?") -and ($req -match '\b(what\s+does|what\s+is|how\s+does|why\s+does|mean|dung\s+de\s+lam\s+gi|d.ng\s+..\s+l.m\s+g.|la\s+gi|l.\s+g.|lenh\s+git\s+nao|l.nh\s+git\s+n.o)\b'))
+if ($isPureQuestion) {
+return [pscustomobject]@{
+Score = 0; Tier = 0; IsLookup = $true; RiskLevel = "none"; ComplexityLevel = "C0"; ExpressMode = $false
+Reasons = @("Pure lookup question (no tier label)"); HardFloorTier3 = $false
+RequiresDesignAndPlan = $false; LegalCheckRequired = $false
+ProjectScale = $ProjectScale; RecommendedExecution = "direct-answer"
+}
+}
+if ($hasDb) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Database/Schema (+5)") }
+if ($hasAuth) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Auth/OAuth/Security (+5)") }
+if ($hasPay) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Payments/Billing (+5)") }
+if ($hasDel) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("Data Deletion/Migration (+5)") }
+if ($hasArch) { $score += 5; $hardFloorTier3 = $true; $reasons.Add("New Project/Architecture (+5)") }
+$hasApi = $PublicApi.IsPresent -or ($req -match '(\bapi\b|\bendpoint\b|\brest\b|\bgraphql\b|\bwebhook\b|\bcontract\b|\bbreaking\s+change\b|\bcontrollers,\s+services\s+and\s+routes\b)')
+$hasShared = $SharedComponent.IsPresent -or ($req -match '(\bshared\s+component\b|\bcore\s+module\b|\bglobal\s+state\b|\bcommon\s+util\b|\bconcurrency\b|\bmutex\b|\brace\s+condition\b|d.ng\s+chung|dung\s+chung)')
+$hasDep = $NewDependency.IsPresent -or ($req -match '(\bnpm\s+install\b|\bpip\s+install\b|\bnew\s+library\b|\bnew\s+package\b|\badd\s+dependency\b|\bdayjs\b|\bzod\b|th.\s+vi.n|thu\s+vien)')
+$hasCfg = $ConfigOrMigration.IsPresent -or $fCfg -or ($req -match '(\bwebpack\b|\bvite\.config\b|\btsconfig\b|\bdockerfile\b|\bdocker-compose\b|\bgithub\s+actions\b|\bgitlab-ci\b)')
+$hasLegal = $TouchesPersonalDataOrLegal.IsPresent -or $hasPay -or $hasAuth -or $hasArch -or ($req -match '(\bprivacy\s+policy\b|\bcookie\s+banner\b|\bconsent\b|\bgtag\b|\bfbq\b|\btiktok\s+pixel\b|\bpersonal\s+data\b|\bpdpl\b|\bnd\s*356\b|\bluat\s*91\b|d.\s+li.u\s+c.\s+nh.n|du\s+lieu\s+ca\s+nhan|ch.nh\s+s.ch\s+b.o\s+m.t|chinh\s+sach\s+bao\s+mat)')
+if ($hasApi) { $score += 3; $reasons.Add("API/Endpoint Change (+3)") }
+if ($hasShared) { $score += 3; $reasons.Add("Shared Component/Blast Radius (+3)") }
+if ($hasDep) { $score += 3; $reasons.Add("New Dependency (+3)") }
+if ($hasCfg) { $score += 3; $reasons.Add("Build/Infra Config (+3)") }
+if ($effFileCount -ge 3) { $score += 3; $reasons.Add("Touches $effFileCount files (+3)") }
+$hasLogic = $BusinessLogic.IsPresent -or ((-not $isCosmeticUiOnly) -and ($req -match '(\bfeature\b|\bdark\s+mode\b|\bexport\b|\bimport\b|\bexcel\b|\bcsv\b|\bfilter\b|\bsearch\b|\bpagination\b|\bvalidation\b|\bworkflow\b|ch.c\s+n.ng\s+l.c|chuc\s+nang\s+loc|xu.t\s+danh\s+s.ch|xuat\s+danh\s+sach|ph.n\s+trang|phan\s+trang)'))
+if ($hasLogic) { $score += 2; $reasons.Add("Business Logic/Feature (+2)") }
+if ($reasons.Count -eq 0) { $reasons.Add("UI/CSS/Copy or localized 1-2 file fix (+0)") }
+$tier = if ($hardFloorTier3 -or $forceTier3Override -or $score -ge 6) { 3 } elseif ($score -ge 2) { 2 } else { 1 }
+if ($forceTier1Override -and -not $hardFloorTier3 -and -not $forceTier3Override -and $score -lt 5) {
+$tier = 1; $reasons.Add("User override to Tier 1 (safe scope)")
+}
+elseif ($forceTier1Override -and ($hardFloorTier3 -or $score -ge 5)) {
+$reasons.Add("Risk overrides 'just do it': stays higher tier")
+}
+$riskLevel = if ($hardFloorTier3 -or $score -ge 8) { "critical" } elseif ($score -ge 5) { "high" } elseif ($score -ge 2) { "medium" } else { "low" }
+$compLevel = if ($hardFloorTier3 -or $score -ge 8) { "C4" } elseif ($tier -eq 3) { "C3" } elseif ($tier -eq 2) { "C2" } else { "C1" }
+$expressMode = ($tier -eq 2) -and (-not $hardFloorTier3) -and (-not $hasApi) -and (-not $hasShared) -and (-not $hasDep) -and (-not $hasCfg)
+$execMode = if ($tier -lt 3) { "single-agent" } elseif ($ProjectScale -eq "mini") { "native-compact" } elseif ($hardFloorTier3 -or $ProjectScale -eq "enterprise") { "subagent-driven" } else { "native" }
+return [pscustomobject]@{
+Score = [int]$score; Tier = [int]$tier; IsLookup = $false; RiskLevel = $riskLevel
+ComplexityLevel = $compLevel; ExpressMode = [bool]$expressMode
+Reasons = @($reasons.ToArray()); HardFloorTier3 = [bool]$hardFloorTier3
+RequiresDesignAndPlan = [bool]($tier -eq 3); LegalCheckRequired = [bool]$hasLegal
+ProjectScale = $ProjectScale; RecommendedExecution = $execMode
+}
+}
 function Get-SenControlFlowDepth {
-    param($Node, $StopNode)
-    $d = 1
-    $p = $Node.Parent
-    while ($null -ne $p -and $p -ne $StopNode) {
-        if ($p -is [System.Management.Automation.Language.IfStatementAst] -or
-            $p -is [System.Management.Automation.Language.ForEachStatementAst] -or
-            $p -is [System.Management.Automation.Language.ForStatementAst] -or
-            $p -is [System.Management.Automation.Language.WhileStatementAst] -or
-            $p -is [System.Management.Automation.Language.SwitchStatementAst] -or
-            $p -is [System.Management.Automation.Language.TryStatementAst]) {
-            $d++
-        }
-        $p = $p.Parent
-    }
-    return $d
+param($Node, $StopNode)
+$d = 1
+$p = $Node.Parent
+while ($null -ne $p -and $p -ne $StopNode) {
+if ($p -is [System.Management.Automation.Language.IfStatementAst] -or
+$p -is [System.Management.Automation.Language.ForEachStatementAst] -or
+$p -is [System.Management.Automation.Language.ForStatementAst] -or
+$p -is [System.Management.Automation.Language.WhileStatementAst] -or
+$p -is [System.Management.Automation.Language.SwitchStatementAst] -or
+$p -is [System.Management.Automation.Language.TryStatementAst]) {
+$d++
 }
-
+$p = $p.Parent
+}
+return $d
+}
 function Measure-SenPowerShellAstSmells {
-    param(
-        [string]$FullPath,
-        [string]$RelPath,
-        [int]$MaxFunctionLines,
-        [int]$MaxNestingDepth,
-        $LongFunctions,
-        $DeepNesting,
-        $EmptyCatches,
-        $DefinedFunctions
-    )
-    $tokens = $null; $errs = $null
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile($FullPath, [ref]$tokens, [ref]$errs)
-    $funcs = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
-    foreach ($fn in $funcs) {
-        $fnLines = $fn.Extent.EndLineNumber - $fn.Extent.StartLineNumber + 1
-        $DefinedFunctions.Add([pscustomobject]@{ name = $fn.Name; path = $RelPath; line = $fn.Extent.StartLineNumber })
-        if ($fnLines -gt $MaxFunctionLines) {
-            $LongFunctions.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fn.Name; lines = $fnLines; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" })
-        }
-        $ctrlNodes = $fn.Body.FindAll({
-                param($n)
-                $n -is [System.Management.Automation.Language.IfStatementAst] -or
-                $n -is [System.Management.Automation.Language.ForEachStatementAst] -or
-                $n -is [System.Management.Automation.Language.ForStatementAst] -or
-                $n -is [System.Management.Automation.Language.WhileStatementAst] -or
-                $n -is [System.Management.Automation.Language.SwitchStatementAst] -or
-                $n -is [System.Management.Automation.Language.TryStatementAst]
-            }, $false)
-        $maxD = 0
-        foreach ($cn in $ctrlNodes) {
-            $depth = Get-SenControlFlowDepth -Node $cn -StopNode $fn.Body
-            if ($depth -gt $maxD) { $maxD = $depth }
-        }
-        if ($maxD -gt $MaxNestingDepth) {
-            $DeepNesting.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fn.Name; depth = $maxD; maxDepth = $MaxNestingDepth; rule = "Sonar:S134/CWE-1121" })
-        }
-    }
-    $catches = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CatchClauseAst] }, $true)
-    foreach ($c in $catches) {
-        if ($c.Body.Statements.Count -eq 0 -and $c.Extent.Text -notmatch '#') {
-            $EmptyCatches.Add([pscustomobject][ordered]@{ path = $RelPath; line = $c.Extent.StartLineNumber; rule = "PSAvoidUsingEmptyCatchBlock/Sonar:S108/CWE-1069" })
-        }
-    }
+param(
+[string]$FullPath,
+[string]$RelPath,
+[int]$MaxFunctionLines,
+[int]$MaxNestingDepth,
+$LongFunctions,
+$DeepNesting,
+$EmptyCatches,
+$DefinedFunctions
+)
+$tokens = $null; $errs = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($FullPath, [ref]$tokens, [ref]$errs)
+$funcs = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
+foreach ($fn in $funcs) {
+$fnLines = $fn.Extent.EndLineNumber - $fn.Extent.StartLineNumber + 1
+$DefinedFunctions.Add([pscustomobject]@{ name = $fn.Name; path = $RelPath; line = $fn.Extent.StartLineNumber })
+if ($fnLines -gt $MaxFunctionLines) {
+$LongFunctions.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fn.Name; lines = $fnLines; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" })
 }
-
+$ctrlNodes = $fn.Body.FindAll({
+param($n)
+$n -is [System.Management.Automation.Language.IfStatementAst] -or
+$n -is [System.Management.Automation.Language.ForEachStatementAst] -or
+$n -is [System.Management.Automation.Language.ForStatementAst] -or
+$n -is [System.Management.Automation.Language.WhileStatementAst] -or
+$n -is [System.Management.Automation.Language.SwitchStatementAst] -or
+$n -is [System.Management.Automation.Language.TryStatementAst]
+}, $false)
+$maxD = 0
+foreach ($cn in $ctrlNodes) {
+$depth = Get-SenControlFlowDepth -Node $cn -StopNode $fn.Body
+if ($depth -gt $maxD) { $maxD = $depth }
+}
+if ($maxD -gt $MaxNestingDepth) {
+$DeepNesting.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fn.Name; depth = $maxD; maxDepth = $MaxNestingDepth; rule = "Sonar:S134/CWE-1121" })
+}
+}
+$catches = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CatchClauseAst] }, $true)
+foreach ($c in $catches) {
+if ($c.Body.Statements.Count -eq 0 -and $c.Extent.Text -notmatch '#') {
+$EmptyCatches.Add([pscustomobject][ordered]@{ path = $RelPath; line = $c.Extent.StartLineNumber; rule = "PSAvoidUsingEmptyCatchBlock/Sonar:S108/CWE-1069" })
+}
+}
+}
 function Find-SenDuplicateCodeBlocks {
-    param([hashtable]$FileSubstantiveLines, [int]$WindowSize = 8)
-    $seen = @{}
-    $dups = [System.Collections.Generic.List[object]]::new()
-    $reportedKeys = [System.Collections.Generic.HashSet[string]]::new()
-    foreach ($rel in $FileSubstantiveLines.Keys) {
-        $normLines = $FileSubstantiveLines[$rel]
-        if ($normLines.Count -lt $WindowSize) { continue }
-        for ($i = 0; $i -le ($normLines.Count - $WindowSize); $i++) {
-            $block = ($normLines[$i..($i + $WindowSize - 1)]) -join "`n"
-            if (-not $seen.ContainsKey($block)) {
-                $seen[$block] = @{ file = $rel; index = $i }
-            }
-            else {
-                $prev = $seen[$block]
-                $sameFileGap = ($prev.file -eq $rel) -and (($i - $prev.index) -ge $WindowSize)
-                $crossFile = ($prev.file -ne $rel)
-                if (($crossFile -or $sameFileGap) -and -not $reportedKeys.Contains("$($prev.file)|$rel")) {
-                    [void]$reportedKeys.Add("$($prev.file)|$rel")
-                    $dups.Add([pscustomobject][ordered]@{ fileA = $prev.file; fileB = $rel; lines = $WindowSize; rule = "Sonar:CPD/CWE-1041" })
-                }
-            }
-        }
-    }
-    return $dups
+param([hashtable]$FileSubstantiveLines, [int]$WindowSize = 8)
+$seen = @{}
+$dups = [Collections.Generic.List[object]]::new()
+$reportedKeys = [Collections.Generic.HashSet[string]]::new()
+foreach ($rel in $FileSubstantiveLines.Keys) {
+$normLines = $FileSubstantiveLines[$rel]
+if ($normLines.Count -lt $WindowSize) { continue }
+for ($i = 0; $i -le ($normLines.Count - $WindowSize); $i++) {
+$block = ($normLines[$i..($i + $WindowSize - 1)]) -join "`n"
+if (-not $seen.ContainsKey($block)) {
+$seen[$block] = @{ file = $rel; index = $i }
 }
-
+else {
+$prev = $seen[$block]
+$sameFileGap = ($prev.file -eq $rel) -and (($i - $prev.index) -ge $WindowSize)
+$crossFile = ($prev.file -ne $rel)
+if (($crossFile -or $sameFileGap) -and -not $reportedKeys.Contains("$($prev.file)|$rel")) {
+[void]$reportedKeys.Add("$($prev.file)|$rel")
+$dups.Add([pscustomobject][ordered]@{ fileA = $prev.file; fileB = $rel; lines = $WindowSize; rule = "Sonar:CPD/CWE-1041" })
+}
+}
+}
+}
+return $dups
+}
 function Measure-SenNonPsFunctionSpans {
-    param([string[]]$Lines, [string]$RelPath, [int]$MaxFunctionLines, $LongFunctions)
-    $fnStarts = [System.Collections.Generic.List[object]]::new()
-    for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match '^\s*(export\s+)?(async\s+)?(function|def|func)\s+([A-Za-z0-9_]+)') {
-            $fnStarts.Add([pscustomobject]@{ Name = $matches[4]; Line = $i })
-        }
-    }
-    for ($j = 0; $j -lt $fnStarts.Count; $j++) {
-        $startIdx = $fnStarts[$j].Line
-        $endLimit = if (($j + 1) -lt $fnStarts.Count) { $fnStarts[$j + 1].Line - 1 } else { $Lines.Count - 1 }
-        $span = ($endLimit - $startIdx) + 1
-        if ($span -gt $MaxFunctionLines) {
-            $LongFunctions.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fnStarts[$j].Name; lines = $span; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" })
-        }
-    }
+param([string[]]$Lines, [string]$RelPath, [int]$MaxFunctionLines, $LongFunctions)
+$fnStarts = [Collections.Generic.List[object]]::new()
+for ($i = 0; $i -lt $Lines.Count; $i++) {
+if ($Lines[$i] -match '^\s*(export\s+)?(async\s+)?(function|def|func)\s+([A-Za-z0-9_]+)') {
+$fnStarts.Add([pscustomobject]@{ Name = $matches[4]; Line = $i })
 }
-
+}
+for ($j = 0; $j -lt $fnStarts.Count; $j++) {
+$startIdx = $fnStarts[$j].Line
+$endLimit = if (($j + 1) -lt $fnStarts.Count) { $fnStarts[$j + 1].Line - 1 } else { $Lines.Count - 1 }
+$span = ($endLimit - $startIdx) + 1
+if ($span -gt $MaxFunctionLines) {
+$LongFunctions.Add([pscustomobject][ordered]@{ path = $RelPath; function = $fnStarts[$j].Name; lines = $span; maxLines = $MaxFunctionLines; rule = "Sonar:S138/CWE-1064" })
+}
+}
+}
 function Measure-SenCodeHealth {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Path, [int]$MaxLogicLines = 800, [int]$MaxLogicBytes = 46080, [int]$MaxUiLines = 1500, [int]$MaxUiBytes = 81920, [int]$MaxTestLines = 1000, [int]$MaxTestBytes = 61440, [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4, [switch]$UseNativeLinters)
-    $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
-    $exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
-    $skipDirRe = '^(?i)(\.git|node_modules|dist|build|out|target|coverage|vendor|\.next|\.nuxt|\.svelte-kit|\.venv|venv|clone|\.superpowers|\.gemini|\.claude|\.cursor|\.codex|\.windsurf|\.agents.*|\.sen-backup|\.sen-restore|snapshots|Pods|\.gradle|\.dart_tool|Antigravity IDE|VSCode.*|Code|Templates|Sen-Review)$'
-    $files = [System.Collections.Generic.List[System.IO.FileInfo]]::new(); $q = [System.Collections.Generic.Queue[string]]::new()
-    if (Test-Path -LiteralPath $root -PathType Leaf) { $files.Add((Get-Item -LiteralPath $root)); $root = Split-Path -Parent $root } else { $q.Enqueue($root) }
-    while ($q.Count -gt 0) {
-        $cur = $q.Dequeue()
-        foreach ($d in @(Get-ChildItem -LiteralPath $cur -Directory -EA SilentlyContinue)) { if ($d.Name -notmatch $skipDirRe) { $q.Enqueue($d.FullName) } }
-        foreach ($f in @(Get-ChildItem -LiteralPath $cur -File -EA SilentlyContinue)) { if ($exts -contains $f.Extension.ToLowerInvariant()) { $files.Add($f) } }
-    }
-
-    $oversized = [System.Collections.Generic.List[object]]::new(); $longFuncs = [System.Collections.Generic.List[object]]::new()
-    $deepNest = [System.Collections.Generic.List[object]]::new(); $emptyCat = [System.Collections.Generic.List[object]]::new()
-    $deadFuncs = [System.Collections.Generic.List[object]]::new(); $definedFn = [System.Collections.Generic.List[object]]::new()
-    $subLines = @{}; $corpusSb = [System.Text.StringBuilder]::new(); $todoCount = 0; $totalLines = 0; $astCount = 0; $heurCount = 0
-
-    foreach ($f in $files) {
-        if ($f.Extension -match '(?i)^\.psm?1$') { $astCount++ } else { $heurCount++ }
-        $rel = $f.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
-        $isTest = $rel -match '(?i)(\.Tests\.ps1|\.test\.[jt]sx?|\.spec\.[jt]sx?|^tests?[\\/]|_test\.(py|go))$'
-        $isUi = (-not $isTest) -and ($f.Extension -match '(?i)^\.(html|css|vue)$')
-        $cat = if ($isTest) { 'test' } elseif ($isUi) { 'ui' } else { 'logic' }
-        $maxL = if ($cat -eq 'test') { $MaxTestLines } elseif ($cat -eq 'ui') { $MaxUiLines } else { $MaxLogicLines }
-        $maxB = if ($cat -eq 'test') { $MaxTestBytes } elseif ($cat -eq 'ui') { $MaxUiBytes } else { $MaxLogicBytes }
-
-        $rawText = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
-        [void]$corpusSb.AppendLine($rawText)
-        $lines = @([System.IO.File]::ReadAllLines($f.FullName))
-        $totalLines += $lines.Count
-        foreach ($ln in $lines) { if ($ln -match '(?i)\b(TODO|FIXME|HACK):') { $todoCount++ } }
-        $effBytes = [System.Text.Encoding]::UTF8.GetByteCount((($lines | ForEach-Object { $_.TrimStart() }) -join "`n"))
-        if ($lines.Count -gt $maxL -or $effBytes -gt $maxB) {
-            $oversized.Add([pscustomobject][ordered]@{ path = $rel; category = $cat; lines = $lines.Count; maxLines = $maxL; bytes = $effBytes; maxBytes = $maxB; rule = "Sonar:S104/CWE-1080" })
-        }
-        if ($cat -eq 'logic') {
-            $subLines[$rel] = @($lines | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -ge 28 -and $_ -notmatch '^(#|//|param\(|\[Parameter|\[CmdletBinding|Export-ModuleMember|\}|\{|return\b)' })
-            if ($f.Extension -match '(?i)^\.psm?1$') {
-                Measure-SenPowerShellAstSmells -FullPath $f.FullName -RelPath $rel -MaxFunctionLines $MaxFunctionLines -MaxNestingDepth $MaxNestingDepth -LongFunctions $longFuncs -DeepNesting $deepNest -EmptyCatches $emptyCat -DefinedFunctions $definedFn
-            }
-            else {
-                if ($rawText -match 'catch\s*(\([^)]*\))?\s*\{\s*\}') { $emptyCat.Add([pscustomobject][ordered]@{ path = $rel; line = 1; rule = "ESLint:no-empty/Sonar:S108/CWE-1069" }) }
-                Measure-SenNonPsFunctionSpans -Lines $lines -RelPath $rel -MaxFunctionLines $MaxFunctionLines -LongFunctions $longFuncs
-            }
-        }
-    }
-
-    $corpus = $corpusSb.ToString()
-    foreach ($fn in $definedFn) {
-        if ([regex]::Matches($corpus, "\b$([regex]::Escape($fn.name))\b").Count -le 1) {
-            $deadFuncs.Add([pscustomobject][ordered]@{ path = $fn.path; function = $fn.name; line = $fn.line; rule = "Sonar:S1144/CWE-561" })
-        }
-    }
-    $dupBlocks = @(Find-SenDuplicateCodeBlocks -FileSubstantiveLines $subLines -WindowSize 8)
-    $issueCount = $oversized.Count + $longFuncs.Count + $deepNest.Count + $emptyCat.Count + $deadFuncs.Count + $dupBlocks.Count
-    $healthy = ($issueCount -eq 0)
-    $score = [Math]::Max(0, 100 - ($oversized.Count * 15) - ($longFuncs.Count * 10) - ($deepNest.Count * 10) - ($dupBlocks.Count * 10) - ($emptyCat.Count * 5) - ($deadFuncs.Count * 5))
-    $rec = if ($healthy) { "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)." } else { "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'." }
-    $nativeRep = $null
-    if ($UseNativeLinters.IsPresent) {
-        $psaOk = $null -ne (Get-Command Invoke-ScriptAnalyzer -ErrorAction SilentlyContinue)
-        $esOk = $null -ne (Get-Command eslint -ErrorAction SilentlyContinue)
-        $rfOk = $null -ne (Get-Command ruff -ErrorAction SilentlyContinue)
-        $nFind = [System.Collections.Generic.List[object]]::new()
-        if ($psaOk) {
-            try { foreach ($r in @(Invoke-ScriptAnalyzer -Path $root -Recurse -Severity Warning, Error -ErrorAction SilentlyContinue | Select-Object -First 25)) { $nFind.Add([pscustomobject]@{ tool = "PSScriptAnalyzer"; rule = [string]$r.RuleName; file = [string]$r.ScriptName; line = [int]$r.Line }) } } catch { <# Ignore #> }
-        }
-        $nativeRep = [pscustomobject][ordered]@{ AvailableLinters = [ordered]@{ PSScriptAnalyzer = $psaOk; ESLint = $esOk; Ruff = $rfOk }; FindingsCount = $nFind.Count; Findings = @($nFind.ToArray()) }
-    }
-    return [pscustomobject][ordered]@{
-        Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = $(if ($UseNativeLinters.IsPresent) { "AST+ScopedHeuristic+NativeLinters" } else { "AST+ScopedHeuristic" }); ScannedFiles = [int]$files.Count; AstAnalyzedCount = [int]$astCount; HeuristicAnalyzedCount = [int]$heurCount; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
-        OversizedFiles = @($oversized.ToArray()); LongFunctions = @($longFuncs.ToArray()); DeepNesting = @($deepNest.ToArray())
-        DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray()); NativeLinterReport = $nativeRep
-        Standards = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
-        Recommendation = $rec
-    }
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Path, [int]$MaxLogicLines = 800, [int]$MaxLogicBytes = 46080, [int]$MaxUiLines = 1500, [int]$MaxUiBytes = 81920, [int]$MaxTestLines = 1000, [int]$MaxTestBytes = 61440, [int]$MaxFunctionLines = 100, [int]$MaxNestingDepth = 4, [switch]$UseNativeLinters)
+$root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
+$exts = @('.ps1', '.psm1', '.ts', '.tsx', '.js', '.jsx', '.py', '.cs', '.go', '.html', '.css', '.vue')
+$skipDirRe = '^(?i)(\.git|node_modules|dist|build|out|target|coverage|vendor|\.next|\.nuxt|\.svelte-kit|\.venv|venv|clone|\.superpowers|\.gemini|\.claude|\.cursor|\.codex|\.windsurf|\.agents.*|\.sen-backup|\.sen-restore|snapshots|Pods|\.gradle|\.dart_tool|Antigravity IDE|VSCode.*|Code|Templates|Sen-Review)$'
+$files = [Collections.Generic.List[IO.FileInfo]]::new(); $q = [Collections.Generic.Queue[string]]::new()
+if (Test-Path -LiteralPath $root -PathType Leaf) { $files.Add((Get-Item -LiteralPath $root)); $root = Split-Path -Parent $root } else { $q.Enqueue($root) }
+while ($q.Count -gt 0) {
+$cur = $q.Dequeue()
+foreach ($d in @(Get-ChildItem -LiteralPath $cur -Directory -EA SilentlyContinue)) { if ($d.Name -notmatch $skipDirRe) { $q.Enqueue($d.FullName) } }
+foreach ($f in @(Get-ChildItem -LiteralPath $cur -File -EA SilentlyContinue)) { if ($exts -contains $f.Extension.ToLowerInvariant()) { $files.Add($f) } }
 }
-
+$oversized = [Collections.Generic.List[object]]::new(); $longFuncs = [Collections.Generic.List[object]]::new()
+$deepNest = [Collections.Generic.List[object]]::new(); $emptyCat = [Collections.Generic.List[object]]::new()
+$deadFuncs = [Collections.Generic.List[object]]::new(); $definedFn = [Collections.Generic.List[object]]::new()
+$subLines = @{}; $corpusSb = [Text.StringBuilder]::new(); $todoCount = 0; $totalLines = 0; $astCount = 0; $heurCount = 0
+foreach ($f in $files) {
+if ($f.Extension -match '(?i)^\.psm?1$') { $astCount++ } else { $heurCount++ }
+$rel = $f.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
+$isTest = $rel -match '(?i)(\.Tests\.ps1|\.test\.[jt]sx?|\.spec\.[jt]sx?|^tests?[\\/]|_test\.(py|go))$'
+$isUi = (-not $isTest) -and ($f.Extension -match '(?i)^\.(html|css|vue)$')
+$cat = if ($isTest) { 'test' } elseif ($isUi) { 'ui' } else { 'logic' }
+$maxL = if ($cat -eq 'test') { $MaxTestLines } elseif ($cat -eq 'ui') { $MaxUiLines } else { $MaxLogicLines }
+$maxB = if ($cat -eq 'test') { $MaxTestBytes } elseif ($cat -eq 'ui') { $MaxUiBytes } else { $MaxLogicBytes }
+$rawText = [IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8)
+[void]$corpusSb.AppendLine($rawText)
+$lines = @([IO.File]::ReadAllLines($f.FullName))
+$totalLines += $lines.Count
+foreach ($ln in $lines) { if ($ln -match '(?i)\b(TODO|FIXME|HACK):') { $todoCount++ } }
+$effBytes = [Text.Encoding]::UTF8.GetByteCount((($lines | ForEach-Object { $_.TrimStart() }) -join "`n"))
+if ($lines.Count -gt $maxL -or $effBytes -gt $maxB) {
+$oversized.Add([pscustomobject][ordered]@{ path = $rel; category = $cat; lines = $lines.Count; maxLines = $maxL; bytes = $effBytes; maxBytes = $maxB; rule = "Sonar:S104/CWE-1080" })
+}
+if ($cat -eq 'logic') {
+$subLines[$rel] = @($lines | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -ge 28 -and $_ -notmatch '^(#|//|param\(|\[Parameter|\[CmdletBinding|Export-ModuleMember|\}|\{|return\b)' })
+if ($f.Extension -match '(?i)^\.psm?1$') {
+Measure-SenPowerShellAstSmells -FullPath $f.FullName -RelPath $rel -MaxFunctionLines $MaxFunctionLines -MaxNestingDepth $MaxNestingDepth -LongFunctions $longFuncs -DeepNesting $deepNest -EmptyCatches $emptyCat -DefinedFunctions $definedFn
+}
+else {
+if ($rawText -match 'catch\s*(\([^)]*\))?\s*\{\s*\}') { $emptyCat.Add([pscustomobject][ordered]@{ path = $rel; line = 1; rule = "ESLint:no-empty/Sonar:S108/CWE-1069" }) }
+Measure-SenNonPsFunctionSpans -Lines $lines -RelPath $rel -MaxFunctionLines $MaxFunctionLines -LongFunctions $longFuncs
+}
+}
+}
+$corpus = $corpusSb.ToString()
+foreach ($fn in $definedFn) {
+if ([regex]::Matches($corpus, "\b$([regex]::Escape($fn.name))\b").Count -le 1) {
+$deadFuncs.Add([pscustomobject][ordered]@{ path = $fn.path; function = $fn.name; line = $fn.line; rule = "Sonar:S1144/CWE-561" })
+}
+}
+$dupBlocks = @(Find-SenDuplicateCodeBlocks -FileSubstantiveLines $subLines -WindowSize 8)
+$issueCount = $oversized.Count + $longFuncs.Count + $deepNest.Count + $emptyCat.Count + $deadFuncs.Count + $dupBlocks.Count
+$healthy = ($issueCount -eq 0)
+$score = [Math]::Max(0, 100 - ($oversized.Count * 15) - ($longFuncs.Count * 10) - ($deepNest.Count * 10) - ($dupBlocks.Count * 10) - ($emptyCat.Count * 5) - ($deadFuncs.Count * 5))
+$rec = if ($healthy) { "All 6 ISO/IEC 5055 + SonarQube + PSScriptAnalyzer + AI-Native checks passed across $($files.Count) file(s)." } else { "Detected $issueCount Clean Code violation(s) (Oversized=$($oversized.Count), LongFn=$($longFuncs.Count), DeepNest=$($deepNest.Count), DupBlocks=$($dupBlocks.Count), EmptyCatch=$($emptyCat.Count), DeadFn=$($deadFuncs.Count)). Run 'sen-clean-code'." }
+$nativeRep = $null
+if ($UseNativeLinters.IsPresent) {
+$psaOk = $null -ne (Get-Command Invoke-ScriptAnalyzer -EA SilentlyContinue)
+$esOk = $null -ne (Get-Command eslint -EA SilentlyContinue)
+$rfOk = $null -ne (Get-Command ruff -EA SilentlyContinue)
+$nFind = [Collections.Generic.List[object]]::new()
+if ($psaOk) {
+try { foreach ($r in @(Invoke-ScriptAnalyzer -Path $root -Recurse -Severity Warning, Error -EA SilentlyContinue | Select-Object -First 25)) { $nFind.Add([pscustomobject]@{ tool = "PSScriptAnalyzer"; rule = [string]$r.RuleName; file = [string]$r.ScriptName; line = [int]$r.Line }) } } catch { <# Ignore #> }
+}
+$nativeRep = [pscustomobject][ordered]@{ AvailableLinters = [ordered]@{ PSScriptAnalyzer = $psaOk; ESLint = $esOk; Ruff = $rfOk }; FindingsCount = $nFind.Count; Findings = @($nFind.ToArray()) }
+}
+return [pscustomobject][ordered]@{
+Healthy = [bool]$healthy; Score = [int]$score; HeuristicScore = [int]$score; AnalysisMode = $(if ($UseNativeLinters.IsPresent) { "AST+ScopedHeuristic+NativeLinters" } else { "AST+ScopedHeuristic" }); ScannedFiles = [int]$files.Count; AstAnalyzedCount = [int]$astCount; HeuristicAnalyzedCount = [int]$heurCount; TotalLines = [int]$totalLines; TodoCount = [int]$todoCount
+OversizedFiles = @($oversized.ToArray()); LongFunctions = @($longFuncs.ToArray()); DeepNesting = @($deepNest.ToArray())
+DuplicateBlocks = $dupBlocks; EmptyCatches = @($emptyCat.ToArray()); DeadFunctions = @($deadFuncs.ToArray()); NativeLinterReport = $nativeRep
+Standards = @("ISO/IEC 5055 (CWE-1041,1064,1069,1080,1121,561)", "SonarQube (S104,S108,S134,S138,S1144,CPD)", "ESLint/Pylint/PSScriptAnalyzer", "AI-Native 800L/45KB")
+Recommendation = $rec
+}
+}
 if (-not $global:SenCoreBootstrapActive) {
-    $senLegalPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Legal.psm1"
-    if (Test-Path -LiteralPath $senLegalPath) { Import-Module -Name $senLegalPath -Global -Force }
-    $senOrchestratorPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Orchestrator.psm1"
-    if (Test-Path -LiteralPath $senOrchestratorPath) { Import-Module -Name $senOrchestratorPath -Global -Force }
+$senLegalPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Legal.psm1"
+if (Test-Path -LiteralPath $senLegalPath) { Import-Module -Name $senLegalPath -Global -Force }
+$senOrchestratorPath = Join-Path -Path $PSScriptRoot -ChildPath "Sen.Orchestrator.psm1"
+if (Test-Path -LiteralPath $senOrchestratorPath) { Import-Module -Name $senOrchestratorPath -Global -Force }
 }
-
 Export-ModuleMember -Function Write-SenAtomicJson, Read-SenSafeJson, Test-SenPathOverlap, Protect-SenRedactedText, Get-SenOfficeConfig, Set-SenOfficeConfig, Get-SenOfficeTabStatus, Write-SenOfficeEvent, Read-SenOfficeEvents, Clear-SenOfficeEvents, Test-SenStuckLoop, Write-SenOfficeShowcase, Read-SenOfficeShowcase, Get-SenAntigravityQuota, Get-SenTaskRiskScore, Measure-SenCodeHealth
